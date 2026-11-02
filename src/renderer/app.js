@@ -259,17 +259,25 @@ function App() {
   // drop is normal and HomeCable is already reconnecting. Once per 3 min per channel.
   const [liveNote, setLiveNote] = useState(null);
   const noteSaid = useRef({});
-  const onHiccup = useCallback((t) => {
+  const onHiccup = useCallback((t, still) => {
     if (t !== tunedRef.current || !t?.channel?.iptv) return;
     const k = t.channel.id;
-    if (Date.now() - (noteSaid.current[k] || 0) < 180e3) return;
+    // While it keeps failing to connect the note stays up; a one-off hiccup says so once per 3 min.
+    if (!still && Date.now() - (noteSaid.current[k] || 0) < 180e3) return;
     noteSaid.current[k] = Date.now();
     const prov = providerOf(t.channel);
-    setLiveNote(prov
-      ? `📡 ${prov}’s stream hiccuped — reconnecting. ${prov} stitches its shows and ad breaks together on its own servers, so the picture can stutter at a break.`
-      : `📡 The signal dropped — reconnecting. Free stations stream from servers around the world, and far-away ones can lose the connection for a moment.`);
+    setLiveNote(still
+      ? (prov ? `📡 ${prov} can seem broken sometimes — it’ll be back. Still trying to connect…` : `📡 Still trying to connect — this station’s server may be far away or busy. It’ll keep trying until it plays.`)
+      : prov ? `📡 ${prov}’s stream hiccuped — reconnecting. ${prov} stitches its shows and ad breaks together on its own servers, so the picture can stutter at a break.`
+        : `📡 The signal dropped — reconnecting. Free stations stream from servers around the world, and far-away ones can lose the connection for a moment.`);
     clearTimeout(timers.current.liveNote);
-    timers.current.liveNote = setTimeout(() => setLiveNote(null), 9000);
+    timers.current.liveNote = setTimeout(() => setLiveNote(null), still ? 40000 : 9000);
+  }, []);
+  // It's playing: the next problem starts its retries from scratch, and the note goes.
+  const liveTries = useRef({});
+  const onPlaying = useCallback((t) => {
+    if (!t?.channel?.iptv) return;
+    if (liveTries.current[t.channel.id]) { liveTries.current[t.channel.id] = 0; setLiveNote(null); }
   }, []);
   // Live stations that keep dropping get spaced-out retries (never abandoned).
   const liveDrops = useRef({});
@@ -343,15 +351,16 @@ function App() {
     }
     if (!mode && t.play?.mode === 'live') {
       if (t.channel.iptv) {
-        // They picked this channel — it NEVER gets abandoned, switched away from
-        // or hidden. Show "getting the signal back" and keep quietly retrying
-        // until they change the channel themselves.
+        // They picked this channel — it NEVER gets abandoned, switched away from,
+        // hidden or covered with an "off the air" card. The picture stays on
+        // "connecting", a note up top says why, and it keeps retrying (3 s, 6 s…
+        // up to every 30 s) until it plays or they change the channel.
         const k = t.channel.id;
-        if (Date.now() - (signalToast.current[k] || 0) > 300000) { signalToast.current[k] = Date.now(); toast(`📡 ${t.channel.name} lost its signal — hang on, trying to get it back`); }
-        offAir(t, 'Lost the signal — trying to get it back…');
+        const n = (liveTries.current[k] = (liveTries.current[k] || 0) + 1);
+        onHiccup(t, true);
         liveDrops.current[k] = [];
         clearTimeout(timers.current.liveRetry);
-        timers.current.liveRetry = setTimeout(() => { const c = tunedRef.current; if (c?.channel?.id === k && !c.play && !vodRef.current) tune(k, { quiet: true }); }, 20000);
+        timers.current.liveRetry = setTimeout(() => { const c = tunedRef.current; if (c?.channel?.id === k && !vodRef.current) tune(k, { quiet: true }); }, Math.min(30000, 3000 * n));
       } else offAir(t); // a live block inside your own channel: show off-air until the slot ends
       return true;
     }
@@ -589,7 +598,7 @@ function App() {
   const live = player.current.isLive ? player.current.isLive() : true;
   const now = entryText(tuned?.entry);
   return html`<div class=${'app' + (idle ? ' idle' : '') + (mini ? ' mini' : '')} onMouseMove=${poke} onMouseDown=${poke} onWheel=${onWheel}>
-    ${(channels.length > 0 || vod) && html`<${Player} tuned=${vod || tuned} settings=${settings} transitions=${settings.transitions} pip=${overlay === 'guide'} quiet=${overlay === 'arcade'} covered=${(!!overlay && overlay !== 'guide' && overlay !== 'help') || setup} bufferStart=${bufferStart.current} apiRef=${player} cast=${cast.mode === 'media' ? cast : null} onEnded=${onEnded} onFailed=${onFailed} onShift=${onShift} onCaptionsError=${() => { toast('💬 Live captions couldn’t start on this PC'); setSettings({ liveCaptions: false }); }} onVolume=${(p) => setSettings(p)} onStalled=${onStalled} onHiccup=${onHiccup}>
+    ${(channels.length > 0 || vod) && html`<${Player} tuned=${vod || tuned} settings=${settings} transitions=${settings.transitions} pip=${overlay === 'guide'} quiet=${overlay === 'arcade'} covered=${(!!overlay && overlay !== 'guide' && overlay !== 'help') || setup} bufferStart=${bufferStart.current} apiRef=${player} cast=${cast.mode === 'media' ? cast : null} onEnded=${onEnded} onFailed=${onFailed} onShift=${onShift} onCaptionsError=${() => { toast('💬 Live captions couldn’t start on this PC'); setSettings({ liveCaptions: false }); }} onVolume=${(p) => setSettings(p)} onStalled=${onStalled} onHiccup=${onHiccup} onPlaying=${onPlaying}>
       <${Banner} tuned=${vod || tuned} show=${banner && !overlay} live=${live} getBehind=${() => player.current.behind?.() || 0} getPos=${() => player.current.position?.() || 0} paused=${player.current.paused} raised=${chrome} />
       ${digits && html`<div class="number-entry">${digits.padEnd(2, '–')}<small>${channels.find((c) => c.number === +digits)?.name || ''}</small></div>`}
       ${volFlash === 'volume' && html`<div class="osd-level">${settings.muted ? html`<${Icon.mute} />` : html`<${Icon.vol} />`}<div class="meter"><i style=${`width:${settings.muted ? 0 : (settings.volume ?? 0.9) * 100}%`}></i></div><span>${settings.muted ? 'Muted' : Math.round((settings.volume ?? 0.9) * 100)}</span></div>`}

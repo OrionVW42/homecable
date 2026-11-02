@@ -166,16 +166,33 @@ function installed(shell) {
     const asar = path.join(root, n, 'app.asar');
     let st = null; try { st = fs.statSync(asar); } catch {}
     if (!meta || meta.version !== n || !st || (meta.size && st.size !== meta.size)) continue;
+    linkUnpacked(path.join(root, n)); // versions downloaded by 1.4.8's updater lack the link
     out.push({ version: n, dir: asar, shell: meta.shell, notes: meta.notes || '', matches: !!shell && meta.shell === shell });
   }
   return out.sort((a, b) => (newer(a.version, b.version) ? -1 : 1));
 }
+
+// Files the build keeps OUTSIDE the app file (ffmpeg-static) are looked up next
+// to whichever app file runs — so a downloaded version gets a link to the
+// installed program's copy (a junction: removing it never touches the target).
+function linkUnpacked(dir) {
+  try {
+    if (!process.resourcesPath) return;
+    const target = path.join(process.resourcesPath, 'app.asar.unpacked');
+    const link = path.join(dir, 'app.asar.unpacked');
+    if (!fs.existsSync(target)) return;
+    try { fs.lstatSync(link); return; } catch {}
+    fs.symlinkSync(target, link, 'junction');
+  } catch {}
+}
+const unlinkUnpacked = (dir) => { try { const l = path.join(dir, 'app.asar.unpacked'); if (fs.lstatSync(l).isSymbolicLink()) fs.unlinkSync(l); } catch {} };
 
 // Download one app version into place (used by both the window and the app).
 async function fetchApp(info, { current, onProgress, signal } = {}) {
   const dir = path.join(versionsDir(), info.version);
   const asar = path.join(dir, 'app.asar');
   const size = await download(info.app.url, asar, { size: info.app.size, sha256: info.app.sha256, version: current, onProgress, signal, max: MAX_APP });
+  linkUnpacked(dir);
   writeJson(path.join(dir, 'meta.json'), { version: info.version, shell: info.app.shell, size, sha256: info.app.sha256, notes: info.notes || '', at: Date.now() });
   const st = readState();
   st.bad = (st.bad || []).filter((v) => v !== info.version); // a fresh copy gets a fresh chance
@@ -234,7 +251,7 @@ function tidy({ keep = [], shell }) {
   for (const n of names) {
     const p = path.join(root, n);
     if (n === 'state.json' || n === 'installer' || save.has(n)) continue;
-    try { if (fs.statSync(p).isDirectory()) fs.rmSync(p, { recursive: true, force: true }); } catch {}
+    try { if (fs.statSync(p).isDirectory()) { unlinkUnpacked(p); fs.rmSync(p, { recursive: true, force: true }); } } catch {}
   }
 }
 

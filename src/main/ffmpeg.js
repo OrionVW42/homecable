@@ -2,15 +2,22 @@
 // stream summary that `ffmpeg -i` prints to stderr.
 const { spawn } = require('child_process');
 
+// The installed copy of ffmpeg, beside the program's own app file. Looked up
+// directly — NOT via require('ffmpeg-static'): that package is unpacked from
+// the asar, so when an updated app file runs from app-versions\<v>\ its
+// require() looked for the package next to THAT file and failed — in 1.4.9
+// no stream could start at all ("ENOENT …app-versions\1.4.9\app.asar.unpacked…").
+let cached = null;
 function ffmpegPath() {
-  let p = require('ffmpeg-static');
-  // In a packaged build the binary lives next to the installed app file, not
-  // inside it — also when an updated app file runs from app-versions\<v>\.
-  if (process.resourcesPath && /\.asar[\\/]/.test(p)) {
-    const shellCopy = require('path').join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'ffmpeg-static', require('path').basename(p));
-    if (require('fs').existsSync(shellCopy)) return shellCopy;
+  if (cached) return cached;
+  const path = require('path'), fs = require('fs');
+  const exe = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+  if (process.resourcesPath) {
+    const shellCopy = path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'ffmpeg-static', exe);
+    if (fs.existsSync(shellCopy)) return (cached = shellCopy);
   }
-  return p.replace('app.asar' + require('path').sep, 'app.asar.unpacked' + require('path').sep);
+  const p = require('ffmpeg-static'); // running from source
+  return (cached = p.replace('app.asar' + path.sep, 'app.asar.unpacked' + path.sep));
 }
 
 function parseProbe(stderr) {

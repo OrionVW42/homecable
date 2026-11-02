@@ -144,7 +144,7 @@ const fmtDur = (s) => { s = Math.max(0, Math.round(s / 60)); return s >= 60 ? `$
 // Plays whatever `tuned` says is on air. Calls onEnded when the program is over
 // (the app then re-tunes to whatever is live now) and onFailed when a file
 // won't decode (the app asks main for a transcode and re-tunes).
-export function Player({ tuned, settings, transitions, pip, quiet, covered, bufferStart = 0, apiRef, onEnded, onFailed, onShift, onStalled, onHiccup, cast, children, onCaptionsError, onVolume }) {
+export function Player({ tuned, settings, transitions, pip, quiet, covered, bufferStart = 0, apiRef, onEnded, onFailed, onShift, onStalled, onHiccup, onPlaying: onPlayingCb, cast, children, onCaptionsError, onVolume }) {
   // While casting, everything below talks to a CastMedia stand-in instead of the
   // <video> element — same API, but the picture plays on the TV.
   const realVid = useRef();
@@ -212,7 +212,7 @@ export function Player({ tuned, settings, transitions, pip, quiet, covered, buff
       v.play().catch(() => {});
     };
     let started = false;
-    const onPlaying = () => { started = true; setLoading(false); tv.playing(true); };
+    const onPlaying = () => { started = true; setLoading(false); tv.playing(true); onPlayingRef.current?.(tuned); };
     // A live station that never starts (dead source, endless buffering): treat it as a failure
     // so the app can re-encode once and then show "off the air" instead of a black screen.
     const stall = live ? setTimeout(() => { if (!started) onFailedRef.current?.(tuned, 'stall'); }, 20000) : null;
@@ -225,6 +225,8 @@ export function Player({ tuned, settings, transitions, pip, quiet, covered, buff
   }, [tuned, burn]);
   const onFailedRef = useRef(onFailed);
   onFailedRef.current = onFailed;
+  const onPlayingRef = useRef(onPlayingCb);
+  onPlayingRef.current = onPlayingCb;
 
   // Live captions: on for whatever plays when no subtitle track is showing.
   // (a burn stream only blocks captions while subtitles are actually drawn into it)
