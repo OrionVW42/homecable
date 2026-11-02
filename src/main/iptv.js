@@ -72,17 +72,23 @@ function inputArgs(st) {
 }
 
 // Is the stream up, and can we copy it as-is? Resolves { ok, video, audio }.
+// ALWAYS resolves: a station that doesn't answer in time is simply not ok and the
+// checker moves on — one dead stream can never wedge an add (or the progress bar).
 function checkStream(st, timeout = 12000) {
   return new Promise((resolve) => {
-    let err = '';
-    const p = spawn(ffmpegPath(), [...inputArgs(st), '-i', st.url, '-t', '0.1', '-f', 'null', '-'], { windowsHide: true });
-    const t = setTimeout(() => p.kill('SIGKILL'), timeout);
-    p.stderr.on('data', (c) => { err += c; if (err.length > 100000) p.kill(); });
-    p.on('error', () => { clearTimeout(t); resolve({ ok: false }); });
+    let err = '', done = false, t = null, hard = null;
+    const finish = (r) => { if (done) return; done = true; clearTimeout(t); clearTimeout(hard); resolve(r); };
+    let p;
+    try { p = spawn(ffmpegPath(), [...inputArgs(st), '-i', st.url, '-t', '0.1', '-f', 'null', '-'], { windowsHide: true }); } catch { return finish({ ok: false }); }
+    t = setTimeout(() => { try { p.kill('SIGKILL'); } catch {} }, timeout);
+    // Backstop: even if the killed process never reports closing (stuck network
+    // I/O on Windows can do this), the slot is freed and the station skipped.
+    hard = setTimeout(() => finish({ ok: false }), timeout + 8000);
+    p.stderr.on('data', (c) => { err += c; if (err.length > 100000) { try { p.kill(); } catch {} } });
+    p.on('error', () => finish({ ok: false }));
     p.on('close', () => {
-      clearTimeout(t);
       const info = parseProbe(err);
-      resolve({ ok: !!(info.video || info.audio), video: info.video, audio: info.audio, width: info.width, height: info.height });
+      finish({ ok: !!(info.video || info.audio), video: info.video, audio: info.audio, width: info.width, height: info.height });
     });
   });
 }
@@ -93,7 +99,7 @@ async function checkMany(list, { concurrency = 6, onProgress } = {}) {
   await Promise.all(Array.from({ length: concurrency }, async () => {
     while (i < list.length) {
       const k = i++;
-      out[k] = { ...list[k], check: await checkStream(list[k]) };
+      out[k] = { ...list[k], check: await checkStream(list[k]).catch(() => ({ ok: false })) };
       onProgress?.(++done, list.length, list[k].name);
     }
   }));

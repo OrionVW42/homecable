@@ -21,14 +21,46 @@ function Choice({ on, title, desc, onClick }) {
 }
 const LANG = (c) => { try { return new Intl.DisplayNames([navigator.language], { type: 'language' }).of(c.length === 3 ? ({ eng: 'en', spa: 'es', fra: 'fr', deu: 'de', por: 'pt', ita: 'it', jpn: 'ja', kor: 'ko', zho: 'zh', ara: 'ar', hin: 'hi', rus: 'ru' }[c] || c) : c); } catch { return c; } };
 
+// While HomeCable works, the screen mutters nonsense from the same dimension the
+// ads come from. Pure decoration — the real status line stays right above it.
+const SCAN_JOKES = [
+  'Untangling 400 light-years of coaxial cable…',
+  'Bribing the scheduling gnomes (3 Fleebles each)…',
+  'Asking the one-eyed salesman for directions…',
+  'Convincing channel 3 it is not channel 4…',
+  'Polishing the static until it sparkles…',
+  'Warming up the tubes. The TV has tubes now. Don’t ask…',
+  'Negotiating broadcast rights with your toaster…',
+  'Counting your pixels. All of them. By hand…',
+  'Teaching the TV guide to read…',
+  'Do not adjust your set. We are adjusting it for you…',
+  'Feeding the hamsters that power channel surfing…',
+  'Translating the static from the original Static…',
+  'Checking behind the couch for the remote…',
+  'Aligning your antenna with Dimension 7-B…',
+  'Applying a fresh coat of ultraviolet to the reds…',
+  'Asking the moon to stop interfering. It knows what it did…',
+  'Rolling the vertical hold back up the hill…',
+  'Installing couch gravity…',
+  'Signal tested on three dimensions. Yours came highly recommended…',
+  'Reticulating channel splines…',
+];
+
 export function Setup({ settings, setSettings, progress, onDone, onCancel, canCancel }) {
   const [step, setStep] = useState('welcome');
+  // One joke at a time while scanning or applying, a new one every few seconds.
+  const [joke, setJoke] = useState(() => Math.floor(Math.random() * SCAN_JOKES.length));
+  useEffect(() => {
+    if (step !== 'scanning' && step !== 'applying') return;
+    const t = setInterval(() => setJoke((j) => (j + 1) % SCAN_JOKES.length), 3800);
+    return () => clearInterval(t);
+  }, [step]);
   const [auto, setAuto] = useState(true);
   const [sources, setSources] = useState([]);
   const [odFolder, setOdFolder] = useState('');
   const [seriesFolder, setSeriesFolder] = useState('');
   useEffect(() => { tv.onDemandDefaultFolder('movies').then(setOdFolder); tv.onDemandDefaultFolder('series').then(setSeriesFolder); }, []);
-  const [opts, setOpts] = useState({ onDemand: true, series: true, newMedia: 'auto', scanInterval: '6h', timing: 'cable', newArrivals: true, lockOne: false, startFullscreen: false, onlineMeta: settings.onlineMeta !== false, ads: false, bumpers: true, subMode: settings.subMode || 'auto', subLang: settings.subLang || 'eng', audioPref: settings.audioPref || 'orig' });
+  const [opts, setOpts] = useState({ onDemand: true, series: true, newMedia: 'auto', scanInterval: '6h', timing: 'cable', newArrivals: true, lockOne: false, startFullscreen: false, onlineMeta: settings.onlineMeta !== false, ads: true, bumpers: true, subMode: settings.subMode || 'auto', subLang: settings.subLang || 'eng', audioPref: settings.audioPref || 'orig' });
   const [adPrev, setAdPrev] = useState(null); // one of the shipped wacky ads, for the Showtime page
   useEffect(() => {
     let stop = false; // the shipped ads register a moment after a fresh start — keep asking
@@ -154,7 +186,7 @@ export function Setup({ settings, setSettings, progress, onDone, onCancel, canCa
 
     ${step === 'sources' && html`
       <h1 style="font-size:34px">Where’s your media?</h1>
-      <p class="lead" style="margin-bottom:14px">HomeCable looked around this PC, your USB drives and your network. ${auto ? 'Everything it found is ticked.' : 'Tick what you want in HomeCable.'} You can add more any time.</p>
+      <p class="lead" style="margin-bottom:14px">HomeCable looked around this PC, your USB drives and your network. ${auto ? 'Your video folders and media servers are ticked — tick anything else you want in.' : 'Tick what you want in HomeCable.'} It stays out of program, game and code folders on its own.</p>
       <${SourcesPicker} value=${sources} onChange=${setSources} />
       <div class="opt-section">Folders for watching on demand</div>
       <div class="opt-row od-setup"><div class="grow"><b>🎬 Movies folder — On Demand</b><span>HomeCable makes this folder for you. Movies you put in it show up on <strong>channel 1, On Demand</strong>: pick one, watch it from the start, pause and resume.</span>
@@ -178,7 +210,8 @@ export function Setup({ settings, setSettings, progress, onDone, onCancel, canCa
       <h1 style="font-size:34px">${progress?.phase === 'probing' ? 'Reading your videos…' : status || 'Looking for videos…'}</h1>
       <p class="lead">${progress?.phase === 'probing' ? `${progress.probed} of ${progress.total} files analyzed` : progress?.found ? `${progress.found} media files found so far` : 'This can take a minute on big libraries. Nothing is changed yet.'}</p>
       <div class=${'progress' + (pct == null ? ' indeterminate' : '')}><i style=${pct != null ? `width:${pct}%` : ''}></i></div>
-      <div class="scan-path">${progress?.current || ''}</div>`}
+      <div class="scan-path">${progress?.current || ''}</div>
+      <div class="scan-joke" key=${joke}>${SCAN_JOKES[joke]}</div>`}
 
     ${step === 'found' && inv && plan && html`
       <h1 style="font-size:34px">Here’s what we found</h1>
@@ -248,7 +281,8 @@ export function Setup({ settings, setSettings, progress, onDone, onCancel, canCa
       <${Logo} size=${48} />
       <h1 style="font-size:34px">Setting it up…</h1>
       <p class="lead">${status}</p>
-      <div class="progress indeterminate"><i></i></div>`}
+      <div class="progress indeterminate"><i></i></div>
+      <div class="scan-joke" key=${joke}>${SCAN_JOKES[joke]}</div>`}
 
     ${step === 'done' && html`
       <${Logo} size=${56} />

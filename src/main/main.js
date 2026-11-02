@@ -55,9 +55,10 @@ const DEFAULT_SETTINGS = { setupDone: false, onlineMeta: true, transitions: true
   scanInterval: '6h',        // 'off' | '1h' | '6h' | '24h' (folders are also watched live)
   newArrivals: false,        // the "New Arrivals" channel appears only when you choose it (setup offers it on)
   lastScan: 0,
-  // Commercial breaks — just for fun, off by default. The ads are the short
-  // videos that ship with HomeCable plus any ad packs you add; each pack has a switch.
-  adsOn: false, adSeconds: 30, adEvery: 'every', adFeed: '', adFolder: '',
+  // Commercial breaks — just for fun, ON by default (the Showtime setup page and
+  // Settings are the chance to turn them off). The ads are the short videos that
+  // ship with HomeCable plus any ad packs you add; each pack has a switch.
+  adsOn: true, adSeconds: 30, adEvery: 'every', adFeed: '', adFolder: '',
   // Channel bumpers: a few seconds of the channel's own logo between shows (like
   // a real network), and in/out of commercial breaks when those are on.
   bumpersOn: true, bumperSeconds: 5,
@@ -120,7 +121,21 @@ function normalizeChannel(c) {
     ...(c.ondemand && !c.iptv ? { ondemand: true, odStyle: c.odStyle === 'series' ? 'series' : 'movies', ...(c.locked ? { locked: true } : {}) } : {}),
     // Who can see it: 'all' (kids too), 'teen', 'adult'. Picked automatically unless set.
     rating: ['all', 'teen', 'adult'].includes(c.rating) ? c.rating : null,
+    // Unchecked from being seen (guide right-click / Free TV manager): stays in the
+    // lineup lists for restoring, but out of the guide, surfing and the phone.
+    ...(c.hidden ? { hidden: true } : {}),
+    // Hearted in the guide (right-click → ❤): the ♥ filter shows only these.
+    ...(c.fav ? { fav: true } : {}),
   };
+}
+
+// Keep live-station numbers gapless: visible stations count up from liveStart,
+// hidden ones are parked after them (numbers stay unique for when they return).
+function renumberIptv() {
+  const live = channels.filter((c) => c.iptv).sort((a, b) => a.number - b.number);
+  let n = settings.liveStart || 100;
+  for (const c of live.filter((x) => !x.hidden)) c.number = n++;
+  for (const c of live.filter((x) => x.hidden)) c.number = n++;
 }
 // A channel with no rating set is guessed from its content — guessed fresh (and
 // never saved) so adding grown-up shows to a channel re-rates it for kids' eyes.
@@ -729,25 +744,36 @@ async function iptvAutoAdd({ country = 'us', countries = null, regions = [], cat
     for (const st of candidates) { const b = brand(st.name); const n = perBrand.get(b) || 0; if (n < 2) { perBrand.set(b, n + 1); kept.push(st); } }
     candidates.length = 0; candidates.push(...kept);
     const cap = max > 0 ? max : Infinity; // 0 = no limit: every station that works
-    let added = 0, checked = 0, i = 0;
+    let added = 0, checked = 0, i = 0, lastSave = 0;
     send('iptv-progress', { checked, total: candidates.length, added, running: true });
     await Promise.all(Array.from({ length: 10 }, async () => {
+      // Each worker shrugs off anything a station throws at it — a stream that
+      // doesn't answer in time is skipped and the next one is tried.
       while (i < candidates.length && added < cap) {
         const st = candidates[i++];
-        const check = await iptv.checkStream(st, 10000);
-        checked++;
-        if (check.ok && added < cap) {
-          added++;
-          channels.push(normalizeChannel({
-            number: nextNumber(settings.liveStart || 100), name: st.name.slice(0, 60), color: PALETTE[channels.length % PALETTE.length],
-            iptv: { url: st.url, logo: st.logo, group: st.group, tvgId: st.tvgId, country: st.country, userAgent: st.userAgent, referer: st.referer, audioOnly: !check.video, mode: check.video && check.video !== 'h264' ? 'transcode' : 'copy' },
-          }));
-          saveChannels();
-          send('channels-changed');
-        }
+        try {
+          const check = await iptv.checkStream(st, 10000);
+          checked++;
+          if (check.ok && added < cap) {
+            added++;
+            channels.push(normalizeChannel({
+              number: nextNumber(settings.liveStart || 100), name: st.name.slice(0, 60), color: PALETTE[channels.length % PALETTE.length],
+              iptv: { url: st.url, logo: st.logo, group: st.group, tvgId: st.tvgId, country: st.country, userAgent: st.userAgent, referer: st.referer, audioOnly: !check.video, mode: check.video && check.video !== 'h264' ? 'transcode' : 'copy' },
+            }));
+            // Saving is synchronous (whole channel list to disk) — doing it for every
+            // station stuttered whatever was PLAYING during a big add. Save at most
+            // every few seconds; the final save below catches the rest.
+            if (Date.now() - lastSave > 3000) { lastSave = Date.now(); saveChannels(); }
+            send('channels-changed');
+          }
+        } catch (e) { checked++; log('iptv check', st.name, e.message); }
         send('iptv-progress', { checked, total: candidates.length, added, running: true, name: st.name });
       }
     }));
+    saveChannels();
+    // Done: tell every screen to refresh so the new stations appear right away.
+    send('channels-changed');
+    send('schedule-changed');
     send('iptv-progress', { checked, total: candidates.length, added, running: false });
     log('iptv auto: checked', checked, 'added', added);
     return { added, checked };
@@ -757,6 +783,8 @@ async function iptvAutoAdd({ country = 'us', countries = null, regions = [], cat
 
 // Program guides for live stations (free-streamer guides + playlist-declared + epg.pw by country).
 let playlistGuides = [];
+// Fetched iptv-org playlists, kept for the session so searching is instant.
+const iptvCatalog = new Map();
 // Free guide files for the big free streamers (i.mjh.nz, see NOTICES.md) — only
 // fetched when the lineup actually has stations from that service, so "what's on"
 // shows the real programme names and times instead of hour-long "Live" slots.
@@ -788,11 +816,22 @@ async function refreshLive() {
   settings.lastLiveRefresh = Date.now();
   saveSettings();
   const live = channels.filter((c) => c.iptv);
-  for (const ch of live) {
-    const r = await iptv.checkStream(ch.iptv, 12000);
-    if (r.ok) { delete ch.iptv.dead; ch.iptv.misses = 0; } else { ch.iptv.dead = ch.iptv.dead || Date.now(); ch.iptv.misses = (ch.iptv.misses || 0) + 1; }
+  // A few at a time, not one by one — re-checking hundreds of stations serially
+  // took ages; in parallel the whole lineup is done in a couple of minutes.
+  if (live.length) {
+    const results = await iptv.checkMany(live.map((c) => c.iptv), { concurrency: 8 });
+    live.forEach((ch, i) => {
+      const r = results[i]?.check || { ok: false };
+      if (r.ok) { delete ch.iptv.dead; ch.iptv.misses = 0; } else { ch.iptv.dead = ch.iptv.dead || Date.now(); ch.iptv.misses = (ch.iptv.misses || 0) + 1; }
+    });
   }
-  const gone = channels.filter((c) => c.iptv && c.iptv.misses >= 3).map((c) => c.id); // off the air three days running
+  // Removing stations is the USER's call, not the program's (Free TV manager →
+  // Remove dead). Auto-remove is opt-in; even then the channel being WATCHED
+  // (settings.lastChannel) is never pulled out from under them. The 💤 dead
+  // mark itself is informational either way.
+  const gone = settings.live.autoRemove
+    ? channels.filter((c) => c.iptv && c.iptv.misses >= 3 && c.id !== settings.lastChannel).map((c) => c.id)
+    : [];
   channels = channels.filter((c) => !gone.includes(c.id));
   if (gone.includes(settings.lockChannel)) settings.lockChannel = null;
   if (gone.includes(settings.lastChannel)) settings.lastChannel = channels.find((c) => !c.ondemand)?.id || null;
@@ -825,7 +864,11 @@ function createWindow() {
     width: Math.min(1440, Math.round(width * 0.85)), height: Math.min(900, Math.round(height * 0.85)), minWidth: 860, minHeight: 440,
     backgroundColor: '#07080b', frame: false, show: false, title: 'HomeCable',
     icon: path.join(__dirname, '../../assets/icon.png'),
-    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
+    // backgroundThrottling OFF: HomeCable plays in the background by design.
+    // With it on (the default), a hidden window's timers drop to once a minute,
+    // so the between-shows rollover lagged minutes behind and looked frozen —
+    // exactly "it just stopped while I was working / it ended and never moved on".
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false },
   });
   win.loadFile(path.join(__dirname, '../renderer/index.html'));
   // Automated checks can run without popping a window up on the screen.
@@ -841,7 +884,7 @@ function createWindow() {
 function handlers() {
   // Changing things is for grown-ups; watching is for everyone.
   const ADMIN = new Set(['channels:create', 'channels:update', 'channels:delete', 'channels:renumber', 'channels:setNumber', 'channels:addSources', 'channels:related', 'channels:logoPick', 'live:mix', 'live:renumber',
-    'iptv:add', 'iptv:auto', 'iptv:removeDead', 'iptv:checkAll', 'iptv:recheck', 'free:add', 'sources:add', 'sources:removeServer', 'library:scan', 'library:rescan',
+    'iptv:add', 'iptv:auto', 'iptv:removeDead', 'iptv:checkAll', 'iptv:recheck', 'iptv:addOne', 'iptv:autoRemove', 'channels:hide', 'free:add', 'sources:add', 'sources:removeServer', 'library:scan', 'library:rescan',
     'library:removeFolder', 'library:approve', 'library:scanAll', 'library:pickFolders', 'import:legacy', 'ads:makePack', 'ads:pickFolder', 'ads:sync', 'ads:packAdd', 'ads:packsOpen', 'ads:rescanPacks', 'guides:refresh',
     'profiles:upsert', 'profiles:remove', 'profiles:setLock', 'profiles:ask', 'ondemand:useFolder', 'ondemand:pickFolder', 'art:set', 'art:candidates', 'art:pickFile', 'meta:refresh', 'meta:refreshAll', 'name:set', 'show:move', 'show:make', 'tags:set', 'items:hide', 'app:startOver', 'vault:create', 'vault:update', 'vault:remove', 'phone:enable', 'phone:pairStart', 'phone:forget', 'phone:setLevel']);
   const VIEWER_SETTINGS = new Set(['volume', 'muted', 'brightness', 'fit', 'lastChannel', 'prevChannel', 'arcadeScores', 'castAuto', 'castHinted', 'vodResume', 'vodWatched', 'castMode', 'showLast', 'subMode', 'subLang', 'audioPref', 'liveCaptions']);
@@ -928,8 +971,10 @@ function handlers() {
       if ('adFolder' in patch && settings.adFolder) { await lib.scan([settings.adFolder], { prune: false, policy: 'auto', minBytes: 64 * 1024 }); adsLib.markFolder(lib, settings.adFolder); }
       applyAds();
       applyIdents();
-      // Re-plan what hasn't aired yet; what's on now keeps playing.
-      for (const ch of channels) if (!ch.iptv) sched.rebuild(ch);
+      // Re-plan what hasn't aired yet; what's on now keeps playing. One channel
+      // at a time with a breath between each — a solid block of re-planning used
+      // to starve the media server and stall whatever was PLAYING.
+      for (const ch of channels) if (!ch.iptv) { sched.rebuild(ch); await new Promise((r) => setImmediate(r)); }
       send('schedule-changed');
     }
     return shownSettings();
@@ -979,6 +1024,14 @@ function handlers() {
     return { url: media.urlFor(a.id, { mode: 'direct' }), title: a.title };
   });
   h('ads:rescanPacks', () => loadAdPacks(true));
+  // One random ad from everything that's switched ON (shipped pack + yours) —
+  // used for the little commercial in the break between live programmes.
+  h('ads:pick', () => {
+    const ads = lib.list().filter((i) => i.kind === 'ad' && adEnabled(i));
+    if (!ads.length) return null;
+    const a = ads[Math.floor(Math.random() * ads.length)];
+    return { url: media.urlFor(a.id, { mode: 'direct' }), title: a.title };
+  });
 
   h('tune', (id, at) => tune(id, at));
 
@@ -1023,8 +1076,11 @@ function handlers() {
       // While casting, a station the TV can't take isn't "off the air" — just re-encode it.
       if (casting?.mode === 'media' && ch.iptv.mode === 'transcode') return null;
       // Couldn't copy the station's video as-is: re-encode it from now on.
-      // Already re-encoding and still failing: the station is off the air.
-      if (ch.iptv.mode === 'transcode') { ch.iptv.dead = Date.now(); saveChannels(); send('channels-changed'); return null; }
+      // Already re-encoding and still failing: nothing more to try right now —
+      // but NEVER flag a station dead while someone is watching it (that pulled
+      // it out of the guide mid-watch). The boot/daily lineup check handles
+      // stations that are truly gone; the player keeps quietly retrying.
+      if (ch.iptv.mode === 'transcode') return null;
       ch.iptv.mode = 'transcode';
       saveChannels();
       log('iptv fallback to transcode', ch.name);
@@ -1054,7 +1110,12 @@ function handlers() {
 
   // Library
   // Tests can point "your usual places" at a fixed folder.
-  h('library:quickRoots', () => (process.env.HOMECABLE_QUICK_ROOTS ? process.env.HOMECABLE_QUICK_ROOTS.split(';') : quickScanRoots()));
+  // Each root says whether it's a video place: only those get pre-ticked in setup
+  // (Downloads, Desktop and whole drives stay listed but unticked — media is the
+  // job; nobody wants their code or ComfyUI folders indexed).
+  h('library:quickRoots', () => (process.env.HOMECABLE_QUICK_ROOTS
+    ? process.env.HOMECABLE_QUICK_ROOTS.split(';').map((p) => ({ path: p, video: true }))
+    : quickScanRoots().map((p) => ({ path: p, video: /^(videos|movies|movie|tv|tv shows|shows|film|films|media|video|plex|jellyfin|recordings|dvr)$/i.test(path.basename(p)) }))));
   h('library:scan', async (kind) => {
     const roots = Array.isArray(kind) ? kind : kind === 'deep' ? deepScanRoots() : quickScanRoots();
     const r = await lib.scan(roots, { prune: true });
@@ -1571,6 +1632,72 @@ function handlers() {
     send('free-progress', { done: true });
     return sortedChannels();
   });
+  // ---- The Free TV manager (Edit → Free TV stations) ----
+  h('iptv:list', () => channels.filter((c) => c.iptv).sort((a, b) => a.number - b.number)
+    .map((c) => ({ id: c.id, number: c.number, name: c.name, group: c.iptv.group || '', country: c.iptv.country || '', logo: c.iptv.logo || '', hidden: !!c.hidden, dead: !!c.iptv.dead })));
+  h('iptv:genres', () => {
+    const have = [...new Set(channels.filter((c) => c.iptv && c.iptv.group).flatMap((c) => String(c.iptv.group).split(/[;,/]/).map((s) => s.trim()).filter(Boolean)))].sort();
+    return { have, all: iptv.CATEGORIES };
+  });
+  // Search the iptv-org index by name / genre / country. Lists are cached for the
+  // session; `urls` (tests) searches those playlists instead of going online.
+  h('iptv:search', async ({ q = '', category = '', country = '', urls = null } = {}) => {
+    const kind = urls ? 'urls:' + urls.join(',') : country ? 'country:' + String(country).toLowerCase() : category ? 'category:' + String(category).toLowerCase() : 'index';
+    if (!iptvCatalog.has(kind)) {
+      const list = urls ? (await Promise.all(urls.map((u) => iptv.fetchPlaylist(u).catch(() => [])))).flat()
+        : await iptv.fetchPlaylist(kind === 'index' ? `${iptv.IPTV_ORG}/index.m3u` : kind.startsWith('country:') ? iptv.presetUrl({ country: kind.slice(8) }) : iptv.presetUrl({ category: kind.slice(9) }));
+      iptvCatalog.set(kind, list);
+      if (iptvCatalog.size > 12) iptvCatalog.delete(iptvCatalog.keys().next().value);
+    }
+    const base = iptvCatalog.get(kind);
+    const have = new Set(channels.filter((c) => c.iptv).map((c) => c.iptv.url));
+    const qq = q.trim().toLowerCase(), cat = String(category).toLowerCase();
+    const results = [], seen = new Set();
+    for (const st of base) {
+      if (st.flags?.geo || have.has(st.url) || seen.has(st.url)) continue;
+      if (qq && !st.name.toLowerCase().includes(qq)) continue;
+      if (cat && !String(st.group || '').toLowerCase().includes(cat)) continue;
+      seen.add(st.url);
+      results.push({ name: st.name, url: st.url, group: st.group || '', country: st.country || '', logo: st.logo || '', tvgId: st.tvgId, userAgent: st.userAgent, referer: st.referer });
+      if (results.length >= 120) break;
+    }
+    return { results, searched: base.length };
+  });
+  // Add one station by hand: it's tested first, exactly like the bulk add.
+  h('iptv:addOne', async (st) => {
+    if (!st?.url || !/^https?:\/\//i.test(st.url)) return { ok: false, why: 'bad url' };
+    if (channels.some((c) => c.iptv?.url === st.url)) return { ok: false, why: 'already in your lineup' };
+    const check = await iptv.checkStream(st, 12000);
+    if (!check.ok) return { ok: false, why: 'not answering right now' };
+    const ch = normalizeChannel({
+      number: nextNumber(settings.liveStart || 100), name: String(st.name || 'Station').slice(0, 60), color: PALETTE[channels.length % PALETTE.length],
+      iptv: { url: st.url, logo: st.logo, group: st.group, tvgId: st.tvgId, country: st.country, userAgent: st.userAgent, referer: st.referer, audioOnly: !check.video, mode: check.video && check.video !== 'h264' ? 'transcode' : 'copy' },
+    });
+    channels.push(ch);
+    renumberIptv();
+    saveChannels();
+    send('channels-changed'); send('schedule-changed');
+    refreshGuides().catch(() => {});
+    return { ok: true, id: ch.id, number: ch.number, name: ch.name };
+  });
+  // Heart a channel (guide right-click) — the guide's ♥ filter shows only these.
+  h('channels:fav', (id, on = true) => {
+    const ch = channels.find((c) => c.id === id);
+    if (ch) { ch.fav = !!on; if (!on) delete ch.fav; saveChannels(); send('channels-changed'); }
+    return sortedChannels();
+  });
+  // Uncheck a channel from being seen (or bring it back) and fix the numbers.
+  h('channels:hide', (id, on = true) => {
+    const ch = channels.find((c) => c.id === id);
+    if (!ch) return sortedChannels();
+    ch.hidden = !!on;
+    if (!on) delete ch.hidden;
+    if (on && settings.lockChannel === id) { settings.lockChannel = null; saveSettings(); }
+    if (ch.iptv) renumberIptv();
+    saveChannels();
+    send('channels-changed'); send('schedule-changed');
+    return sortedChannels();
+  });
   h('iptv:auto', (opts) => {
     // Remember what the lineup should be stocked with, for the daily refresh.
     settings.live = { country: opts.country || (opts.countries || [])[0] || 'us', countries: opts.countries || [opts.country || 'us'], regions: opts.regions || [], categories: opts.categories || [], languages: opts.languages || [], max: opts.max ?? 0, sources: opts.sources || ['iptv-org', 'free-tv'], urls: opts.urls || [], anime: !!opts.anime };
@@ -1650,6 +1777,11 @@ function handlers() {
     saveChannels();
     send('channels-changed');
     return sortedChannels();
+  });
+  // Auto-removing stations that stay dead: the user's choice, OFF by default.
+  h('iptv:autoRemove', (on) => {
+    if (settings.live) { settings.live.autoRemove = !!on; saveSettings(); }
+    return { autoRemove: !!settings.live?.autoRemove };
   });
   h('iptv:removeDead', () => {
     const dead = channels.filter((c) => c.iptv?.dead).map((c) => c.id);
@@ -2053,6 +2185,10 @@ app.whenReady().then(async () => {
   // Live TV: last guides from disk, then keep guides fresh (12 h) and the lineup checked (daily).
   guides = store.read('guides', { guides: {} }).guides || {};
   setTimeout(() => { if (settings.live && Date.now() - (store.read('guides', {}).at || 0) > 12 * 3600e3) refreshGuides().catch((e) => log('guides', e.message)); }, 15000);
+  // Every start: scan the lineup against the iptv database in the background —
+  // stations that work come back, three-strikes-dead ones go, new ones that fit
+  // your saved languages/countries/regions are added, and the guide refreshes.
+  setTimeout(() => { if (settings.live) refreshLive().catch((e) => log('live refresh', e.message)); }, 25000);
   setInterval(() => {
     if (!settings.live) return;
     if (Date.now() - settings.lastLiveRefresh > 24 * 3600e3) refreshLive().catch((e) => log('live refresh', e.message));

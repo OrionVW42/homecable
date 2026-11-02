@@ -56,8 +56,8 @@ function OffAirScreen({ channel, entry, next }) {
     </div>
     <div class="label">
       <div class="kicker">${channel.number} · ${channel.name}</div>
-      <h1>${entry?.title === 'No programming' ? 'Nothing scheduled' : 'Off Air'}</h1>
-      <div class="sub">${resumes ? `Programming resumes at ${fmtTime(resumes)}` : entry?.title === 'No programming' ? 'Add shows to this channel in Channels' : `Back at ${fmtTime(entry.end)}`}</div>
+      <h1>${entry?.reason ? 'Hang tight' : entry?.title === 'No programming' ? 'Nothing scheduled' : 'Off Air'}</h1>
+      <div class="sub">${entry?.reason ? entry.reason : resumes ? `Programming resumes at ${fmtTime(resumes)}` : entry?.title === 'No programming' ? 'Add shows to this channel in Channels' : `Back at ${fmtTime(entry.end)}`}</div>
     </div>
   </div>`;
 }
@@ -144,7 +144,7 @@ const fmtDur = (s) => { s = Math.max(0, Math.round(s / 60)); return s >= 60 ? `$
 // Plays whatever `tuned` says is on air. Calls onEnded when the program is over
 // (the app then re-tunes to whatever is live now) and onFailed when a file
 // won't decode (the app asks main for a transcode and re-tunes).
-export function Player({ tuned, settings, transitions, pip, quiet, covered, bufferStart = 0, apiRef, onEnded, onFailed, onShift, cast, children, onCaptionsError }) {
+export function Player({ tuned, settings, transitions, pip, quiet, covered, bufferStart = 0, apiRef, onEnded, onFailed, onShift, onStalled, cast, children, onCaptionsError, onVolume }) {
   // While casting, everything below talks to a CastMedia stand-in instead of the
   // <video> element — same API, but the picture plays on the TV.
   const realVid = useRef();
@@ -395,6 +395,25 @@ export function Player({ tuned, settings, transitions, pip, quiet, covered, buff
     return () => { v.removeEventListener('error', onError); v.removeEventListener('ended', onEnd); };
   }, [tuned, onEnded, onFailed, casting]);
 
+  // Playback can stall SILENTLY — the data stops but no 'ended' or 'error' ever
+  // fires (hours in the background, or the PC briefly too busy to serve video).
+  // If the clock freezes for ~15s while we're supposed to be playing: a live
+  // station goes through its reconnect logic, a file quietly resumes where it
+  // was. Once something is playing it must NEVER sit there not knowing what to do.
+  useEffect(() => {
+    if (!tuned?.play || casting) return;
+    const isLive = tuned.play.mode === 'live';
+    let last = -1, still = 0;
+    const t = setInterval(() => {
+      const v = vid.current;
+      if (!v || v.paused || v.seeking || loading || error) { still = 0; return; }
+      if (v.currentTime > 0 && v.currentTime === last) {
+        if (++still >= 3) { still = 0; last = -1; if (isLive) onEnded(tuned); else onStalled?.(tuned, v.currentTime); }
+      } else { still = 0; last = v.currentTime; }
+    }, 5000);
+    return () => clearInterval(t);
+  }, [tuned, casting, loading, error, onEnded, onStalled]);
+
   // ---- DVR: pause, rewind, fast-forward — like a cable box ----
   // The buffer starts when you tune to the channel: rewind as far back as you've
   // been watching it, fast-forward up to live. Only this viewer is time-shifted;
@@ -563,6 +582,11 @@ export function Player({ tuned, settings, transitions, pip, quiet, covered, buff
     ${!transitions && loading && html`<div class="card-screen" style="background:#000"></div>`}
     ${dvrBar}
     ${pip && html`<button class=${'pip-pause' + (paused ? ' show' : '')} title=${paused ? 'Play' : 'Pause'} onClick=${(e) => { e.stopPropagation(); apiRef.current.togglePause(); }}>${paused ? '▶' : '❚❚'}</button>`}
+    ${pip && onVolume && html`
+      <button class="pip-mute" title=${settings.muted ? 'Unmute (M)' : 'Mute (M)'} onClick=${(e) => { e.stopPropagation(); onVolume({ muted: !settings.muted }); }}>${settings.muted ? '🔇' : '🔊'}</button>
+      <div class="pip-volbar" onClick=${(e) => e.stopPropagation()}>
+        <input type="range" min="0" max="1" step="0.05" value=${settings.muted ? 0 : settings.volume ?? 0.9} onInput=${(e) => onVolume({ volume: +e.target.value, muted: false })} />
+      </div>`}
     ${children}
   </div>`;
 }

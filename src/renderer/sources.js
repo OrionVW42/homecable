@@ -22,10 +22,11 @@ export function SourcesPicker({ value, onChange, autoSelect = true }) {
     const [r, quick] = await Promise.all([tv.discover(), tv.quickRoots()]);
     setFound(r); setRoots(quick); setBusy(false);
     if (autoSelect && !value.length) {
-      // Auto: your usual video places + every media server and share found.
-      const pick = [...quick.map((p) => ({ type: 'folder', path: p, label: p.split(/[\\/]/).filter(Boolean).pop() || p }))];
+      // Auto: only real VIDEO places get ticked — plus media servers, which can
+      // only ever hand over media. Downloads, Desktop, Music, whole drives and
+      // other PCs' shares are listed right below, one tap to add.
+      const pick = [...quick.filter((q) => q.video).map((q) => ({ type: 'folder', path: q.path, label: q.path.split(/[\\/]/).filter(Boolean).pop() || q.path }))];
       for (const d of r.dlna) pick.push({ type: 'dlna', server: d, label: d.name });
-      for (const pc of r.pcs) for (const sh of pc.shares) pick.push({ type: 'folder', path: sh.path, label: `${sh.name} on ${pc.name}` });
       onChange(pick);
     }
   };
@@ -50,7 +51,7 @@ export function SourcesPicker({ value, onChange, autoSelect = true }) {
 
   const Row = ({ s, icon, title, sub }) => html`<div class=${'src-row' + (has(s) ? ' on' : '')} onClick=${() => toggle(s)}>
     <${Check} on=${has(s)} /><span class="src-ic">${icon}</span><div class="grow"><b>${title}</b>${sub && html`<span>${sub}</span>`}</div></div>`;
-  const extra = value.filter((v) => v.type === 'folder' && !roots.includes(v.path) && !found?.thisPc.drives.some((d) => d.path === v.path) && !found?.pcs.some((pc) => pc.shares.some((sh) => sh.path === v.path)));
+  const extra = value.filter((v) => v.type === 'folder' && !roots.some((q) => q.path === v.path) && !found?.thisPc.drives.some((d) => d.path === v.path) && !found?.pcs.some((pc) => pc.shares.some((sh) => sh.path === v.path)));
 
   return html`<div class="sources">
     <div class="row" style="margin-bottom:10px"><b class="grow">${busy ? 'Looking around your PC and network…' : 'Found on this PC and your network'}</b>
@@ -58,7 +59,7 @@ export function SourcesPicker({ value, onChange, autoSelect = true }) {
     ${busy && html`<div class="progress indeterminate" style="margin-bottom:12px"><i></i></div>`}
     ${found && html`
       <div class="src-group">💻 This PC — ${found.thisPc.name}</div>
-      ${roots.map((p) => html`<${Row} s=${{ type: 'folder', path: p, label: p.split(/[\\/]/).filter(Boolean).pop() }} icon="📁" title=${p.split(/[\\/]/).filter(Boolean).pop()} sub=${p} />`)}
+      ${roots.map((q) => html`<${Row} s=${{ type: 'folder', path: q.path, label: q.path.split(/[\\/]/).filter(Boolean).pop() }} icon=${q.video ? '🎬' : '📁'} title=${q.path.split(/[\\/]/).filter(Boolean).pop()} sub=${q.path} />`)}
       ${found.thisPc.drives.map((d) => html`<${Row} s=${{ type: 'folder', path: d.path, label: d.name }} icon=${d.type === 'network' ? '🌐' : d.type === 'removable' ? '🔌' : '🖴'} title=${'Whole drive: ' + d.name} sub=${d.detail || 'Everything on it (skips Windows and program folders)'} />`)}
       <div class="src-group">📡 Media servers on your network (DLNA — NAS, Plex, Jellyfin, Emby, TVs)</div>
       ${found.dlna.length ? found.dlna.map((d) => html`<${Row} s=${{ type: 'dlna', server: d, label: d.name }} icon="📡" title=${d.name} sub=${d.detail} />`) : html`<div class="src-empty">None found. Turn on DLNA / “media sharing” on your NAS or media server to have it show up here.</div>`}

@@ -61,6 +61,9 @@ test('setup wizard: choose sources, options and lineup', async () => {
   await page.screenshot({ path: path.join(SHOTS, 'setup-03-free.png') });
   while (await page.locator('.freetv .toggle.on').count()) await page.locator('.freetv .toggle.on').first().click();
   await page.getByRole('button', { name: 'Next', exact: true }).click();
+  // The Showtime page (bumpers & wacky ads) sits between free TV and options.
+  await expect(page.getByText('The stuff between the shows')).toBeVisible();
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
   await expect(page.getByText('How should it run?')).toBeVisible();
   // Back to back: something is always playing (cable timing can sit on "Up next" until the half hour).
   await page.getByRole('button', { name: /Back to back/ }).click();

@@ -4,13 +4,20 @@ import { tv, fmtTime, entryText, ChannelLogo, Icon } from './util.js';
 
 const SLOT = 30 * 60e3;
 const SPAN = 2.5 * 3600e3; // visible window
+// Guide filters stay as you set them — closing and reopening the guide keeps
+// your search, genre and ♥ choice until you change them or restart the app
+// (the ♥ filter survives restarts too).
+const sticky = { q: '', genre: '' };
 
 // Cable-style grid guide. The live picture shrinks to the top-right corner
 // while it's open (handled by the Player's `pip` class).
-export function Guide({ channels, tunedId, onTune, onClose, mixTargets = [], toast }) {
+export function Guide({ channels, tunedId, onTune, onClose, mixTargets = [], toast, onHide, onFav }) {
   const [mix, setMix] = useState(null); // live programme being mixed into a channel
-  const [q, setQ] = useState(''); // the search bar up top
-  const [genre, setGenre] = useState(''); // the genre filter beside it
+  const [q, setQ] = useState(sticky.q); // the search bar up top — kept until changed or the app restarts
+  const [genre, setGenre] = useState(sticky.genre); // the genre filter beside it, same deal
+  useEffect(() => { sticky.q = q; sticky.genre = genre; }, [q, genre]);
+  const [favOnly, setFavOnly] = useState(() => { try { return localStorage.getItem('hc-guide-favs') === '1'; } catch { return false; } });
+  const [menu, setMenu] = useState(null); // right-click menu: { x, y, ch }
   const [gmap, setGmap] = useState({}); // channel id → its genres
   useEffect(() => { tv.channelGenres().then(setGmap).catch(() => {}); }, [channels]);
   const [start, setStart] = useState(() => Math.floor(Date.now() / SLOT) * SLOT);
@@ -19,10 +26,11 @@ export function Guide({ channels, tunedId, onTune, onClose, mixTargets = [], toa
   const [now, setNow] = useState(Date.now());
   const rowsRef = useRef();
   const mdrag = useRef(null); // middle-button drag: pan channels and time
+  const toggleFavOnly = () => setFavOnly((v) => { try { localStorage.setItem('hc-guide-favs', v ? '0' : '1'); } catch {} return !v; });
   // Search narrows the rows: channel names, and what's on them now or next.
   const ql = q.trim().toLowerCase();
   const byGenre = (c) => !genre || (gmap[c.id] || []).includes(genre);
-  const chans = channels.filter((c) => byGenre(c) && (!ql || c.name.toLowerCase().includes(ql)
+  const chans = channels.filter((c) => (!favOnly || c.fav) && byGenre(c) && (!ql || c.name.toLowerCase().includes(ql)
     || (rows.find((r) => r.id === c.id)?.entries || []).some((e) => String(e.title || '').toLowerCase().includes(ql) || String(e.show || '').toLowerCase().includes(ql))));
   const allGenres = (() => {
     const count = new Map();
@@ -110,6 +118,7 @@ export function Guide({ channels, tunedId, onTune, onClose, mixTargets = [], toa
           <option value="">🏷 All genres</option>
           ${allGenres.map(([g, n]) => html`<option value=${g}>${g} (${n})</option>`)}
         </select>`}
+        <button class=${'btn sm guide-fav' + (favOnly ? ' on' : '')} title=${favOnly ? 'Showing favorites only — click for all channels' : 'Show only ❤ favorites (right-click a channel to heart it)'} onClick=${toggleFavOnly}>${favOnly ? '❤' : '♡'}</button>
       </div>
     </div>
     <div class="grid-wrap">
@@ -127,8 +136,9 @@ export function Guide({ channels, tunedId, onTune, onClose, mixTargets = [], toa
         onPointerMove=${(e) => { const d = mdrag.current; if (!d) return; rowsRef.current.scrollTop = d.top - (e.clientY - d.y); const steps = Math.trunc((d.x - e.clientX) / 110); if (steps !== d.steps) { shift(steps - d.steps); d.steps = steps; } }}
         onPointerUp=${() => { mdrag.current = null; }}
         onPointerCancel=${() => { mdrag.current = null; }}>
+        ${favOnly && !chans.length && html`<div class="guide-empty">No favorites yet — right-click any channel and tap ❤, then the heart up top shows just those.</div>`}
         ${chans.map((ch, i) => html`<div class=${'grid-row' + (ch.id === tunedId ? ' tuned' : '')} key=${ch.id}>
-          <div class="ch" onClick=${() => onTune(ch.id)} title="Watch"><b>${ch.number}</b><${ChannelLogo} ch=${ch} size=${32} /><span>${ch.name}</span></div>
+          <div class="ch" onClick=${() => onTune(ch.id)} onContextMenu=${(e) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, ch }); }} title="Watch"><b>${ch.number}</b><${ChannelLogo} ch=${ch} size=${32} /><span>${ch.fav ? '❤ ' : ''}${ch.name}</span></div>
           <div class="cells">
             ${now >= start && now < start + SPAN && html`<div class="nowline" style=${`left:${pos(now)}%`}></div>`}
             ${entriesFor(i).filter((e) => e.end > start && e.start < start + SPAN).map((e) => {
@@ -147,6 +157,12 @@ export function Guide({ channels, tunedId, onTune, onClose, mixTargets = [], toa
       </div>
     </div>
     ${mix && html`<${MixDialog} entry=${mix} station=${channels.find((c) => c.id === mix.stationId)} targets=${mixTargets} onClose=${() => setMix(null)} toast=${toast} />`}
+    ${menu && html`<div class="ctx-bg" onClick=${() => setMenu(null)} onContextMenu=${(e) => { e.preventDefault(); setMenu(null); }}></div>
+      <div class="ctx-menu" style=${`left:${Math.min(menu.x, window.innerWidth - 240)}px;top:${Math.min(menu.y, window.innerHeight - 140)}px`}>
+        <button onClick=${() => { setMenu(null); onTune(menu.ch.id); }}>▶ Watch channel ${menu.ch.number}</button>
+        ${onFav && html`<button onClick=${() => { setMenu(null); onFav(menu.ch, !menu.ch.fav); }}>${menu.ch.fav ? '💔 Remove from favorites' : '❤ Favorite'}</button>`}
+        ${onHide && html`<button onClick=${() => { setMenu(null); onHide(menu.ch); }}>🙈 Hide from the guide</button>`}
+      </div>`}
   </div>`;
 }
 

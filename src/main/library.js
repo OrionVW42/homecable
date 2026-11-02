@@ -13,7 +13,17 @@ const SKIP_DIRS = new Set(['windows', 'program files', 'program files (x86)', 'p
   'appdata', 'node_modules', '.git', '.svn', 'recovery', 'perflogs', 'msocache', 'intel', 'amd', 'nvidia', 'drivers', 'steamapps',
   'steamlibrary', 'epic games', 'riot games', 'origin games', 'xboxgames', 'windowsapps', '$windows.~bt', '$windows.~ws', 'config.msi',
   'onedrivetemp', 'cache', 'caches', 'temp', 'tmp', '.cache', '.vscode', '.npm', 'site-packages', 'venv', '.venv', 'obs-studio',
-  'sample', 'samples', 'android', 'sdk']);
+  'sample', 'samples', 'android', 'sdk',
+  // Big tool/AI/dev folders that never hold someone's TV library — a ComfyUI or
+  // Claude install can be hundreds of thousands of files; walking it helps no one.
+  'comfyui', 'comfyui_windows_portable', 'stable-diffusion-webui', 'automatic1111', 'invokeai', 'text-generation-webui',
+  'ollama', 'huggingface', 'claude', 'claude code', 'anaconda3', 'miniconda3', 'envs', 'scoop', 'chocolatey',
+  'jetbrains', 'github', 'repos', 'rustup', 'virtualbox vms', 'vms']);
+// A folder that *is* a software project (repo, package, python env) — spotted by
+// its own files, whatever it's named. Never someone's video library; skipped whole
+// unless the user explicitly picked it as a source.
+const CODE_MARKERS = new Set(['package.json', '.git', 'pyproject.toml', 'requirements.txt', 'cargo.toml', 'go.mod',
+  'composer.json', 'gemfile', 'pipfile', 'yarn.lock', 'pnpm-lock.yaml', '.venv', 'venv', 'node_modules', '.gitignore']);
 const MIN_VIDEO_BYTES = 2 * 1024 * 1024;
 const MIN_AUDIO_BYTES = 200 * 1024;
 
@@ -108,6 +118,7 @@ class Library extends EventEmitter {
     const found = [];
     const stack = [...roots];
     const seen = new Set();
+    const rootSet = new Set(roots.map((r) => path.resolve(r).toLowerCase()));
     while (stack.length) {
       const dir = stack.pop();
       const key = dir.toLowerCase();
@@ -115,22 +126,28 @@ class Library extends EventEmitter {
       seen.add(key);
       let dh;
       try { dh = await fsp.opendir(dir); } catch { continue; }
+      // Read the whole directory first: if it turns out to be a software project
+      // (ComfyUI, a repo, a python env — whatever it's named), skip it entirely.
+      // A folder the user picked as a source themselves is always honored.
+      const dirs = [], files = [];
       try {
-        for await (const ent of dh) {
-          const full = path.join(dir, ent.name);
-          if (ent.isDirectory()) {
-            const n = ent.name.toLowerCase();
-            if (SKIP_DIRS.has(n) || n.startsWith('.') || n.startsWith('$')) continue;
-            if (this.isQuiet(full, roots)) continue; // an On Demand folder inside this one
-            stack.push(full);
-          } else if (ent.isFile()) {
-            const type = mediaType(ent.name);
-            if (!type) continue;
-            found.push({ path: full, type });
-            if (found.length % 50 === 0) onFound?.(found.length, dir);
-          }
-        }
+        for await (const ent of dh) (ent.isDirectory() ? dirs : ent.isFile() ? files : []).push(ent.name);
       } catch { /* permission errors mid-iteration */ }
+      if (!rootSet.has(path.resolve(dir).toLowerCase())
+        && (files.some((n) => CODE_MARKERS.has(n.toLowerCase())) || dirs.some((n) => CODE_MARKERS.has(n.toLowerCase())))) continue;
+      for (const name of dirs) {
+        const n = name.toLowerCase();
+        if (SKIP_DIRS.has(n) || n.startsWith('.') || n.startsWith('$')) continue;
+        const full = path.join(dir, name);
+        if (this.isQuiet(full, roots)) continue; // an On Demand folder inside this one
+        stack.push(full);
+      }
+      for (const name of files) {
+        const type = mediaType(name);
+        if (!type) continue;
+        found.push({ path: path.join(dir, name), type });
+        if (found.length % 50 === 0) onFound?.(found.length, dir);
+      }
     }
     return found;
   }

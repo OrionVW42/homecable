@@ -14,6 +14,7 @@ import { CastMenu, CastGlyph } from './castmenu.js';
 import { OnDemandWall } from './ondemand.js';
 import { ChannelManager } from './manager.js';
 import { TagsPanel } from './tagspanel.js';
+import { FreeTvPanel } from './freetv.js';
 import { Tour } from './tour.js';
 import { startMirror, stopMirror } from './mirror.js';
 
@@ -89,8 +90,10 @@ function App() {
 
   const surf = useCallback((dir) => {
     if (settingsRef.current.lockChannel) { toast('Single channel mode is on — change it in Settings'); return; }
-    // Stations that won't play aren't offered; On Demand / Stream Demand open from their own buttons.
-    const list = channelsRef.current.filter((c) => !c.iptv?.dead && !c.ondemand);
+    // On Demand / Stream Demand open from their own buttons; channels unchecked
+    // from being seen are skipped. A 💤 station still surfs — if it answers it
+    // plays, if not the player keeps trying; only the USER removes channels.
+    const list = channelsRef.current.filter((c) => !c.ondemand && !c.hidden);
     if (!list.length) return;
     lastDir.current = dir;
     const i = list.findIndex((c) => c.id === tunedRef.current?.channel?.id);
@@ -198,11 +201,30 @@ function App() {
 
   // Live TV: when the current program's slot is over, move on to whatever is
   // airing. Time-shifted viewers move on to what aired next (still delayed).
+  const deadRetry = useRef(0);
   useEffect(() => {
     const t = setInterval(() => {
       const cur = tunedRef.current;
-      // Live stations have no schedule to follow (live blocks inside your channels do).
-      if (!cur?.entry || !cur.channel || vodRef.current || cur.channel.iptv) return;
+      if (!cur?.channel || vodRef.current) return;
+      // Tuned but the schedule had nothing at that instant (it was mid-rebuild,
+      // or freshly topped up): keep knocking until something airs. A tuned
+      // channel must never just sit there dark.
+      if (!cur.entry) {
+        if (Date.now() - deadRetry.current > 5000) { deadRetry.current = Date.now(); tune(cur.channel.id, { quiet: true }); }
+        return;
+      }
+      // Live stations have no schedule to follow (live blocks inside your channels
+      // do) — but the moment between two programmes is a black-screen break, just
+      // long enough for one of our ads when commercials are on.
+      if (cur.channel.iptv) {
+        const end = cur.entry.end;
+        if (end && cur.play && settingsRef.current.adsOn && Date.now() >= end && liveAdAt.current !== end) {
+          liveAdAt.current = end;
+          if (cur.next?.start) setTuned({ ...cur, entry: cur.next, next: null }); // the banner moves on with the guide
+          tv.adsPick().then((a) => { if (a && tunedRef.current?.channel?.id === cur.channel.id && !vodRef.current) setLiveAd(a); }).catch(() => {});
+        }
+        return;
+      }
       if (!cur.play) {
         // "Up next" / off-air cards follow the clock, shifted by the tune delay.
         const delay = cur.now - cur.at;
@@ -214,9 +236,20 @@ function App() {
     return () => clearInterval(t);
   }, []);
 
-  // Live stations that keep dropping: give up after a few reconnects instead of looping.
+  // One wacky ad in the break between two live programmes (when ads are on).
+  const [liveAd, setLiveAd] = useState(null);
+  const liveAdAt = useRef(0); // the programme boundary already handled
+  useEffect(() => { setLiveAd(null); }, [tuned?.channel?.id, vod]);
+  useEffect(() => {
+    if (!liveAd) return;
+    const t = setTimeout(() => setLiveAd(null), 90000); // whatever happens, back to the show
+    return () => clearTimeout(t);
+  }, [liveAd]);
+
+  // Live stations that keep dropping get spaced-out retries (never abandoned).
   const liveDrops = useRef({});
-  const offAir = (t, why) => setTuned({ ...t, play: null, entry: { ...t.entry, type: 'offair', live: false, title: why || 'This station is off the air' }, next: null });
+  const signalToast = useRef({}); // "lost its signal" said at most every 5 min per channel
+  const offAir = (t, why) => setTuned({ ...t, play: null, entry: { ...t.entry, type: 'offair', live: false, title: why || 'This station is off the air', reason: why || null }, next: null });
   const onEnded = useCallback((t) => {
     // Events from something we've already changed away from must not pull us back.
     if (t !== tunedRef.current && t !== vodRef.current) return;
@@ -258,18 +291,42 @@ function App() {
     if (!cur?.channel) return;
     tune(cur.channel.id, { quiet: true, at: wall >= Date.now() - 2000 ? undefined : wall });
   }, []);
+  // A video that froze mid-file (the PC too busy for a moment, a network share
+  // hiccup): quietly pick it back up where it was. Channels resume on their own
+  // schedule; On Demand resumes at the exact second.
+  const fileRetry = useRef({});
+  const onStalled = useCallback((t, pos) => {
+    if (t !== tunedRef.current && t !== vodRef.current) return;
+    if (t?.vod && t.entry?.itemId) { playVod(t.entry.itemId, pos, t.from); return; }
+    if (t?.channel) tune(t.channel.id, { quiet: true });
+  }, []);
   const onFailed = useCallback(async (t, code) => {
     if (t !== tunedRef.current && t !== vodRef.current) return true; // stale: we've moved on, stay quiet
     const mode = await tv.playbackFailed(t.entry.itemId, code, t.vod ? null : t.channel?.id);
     if (t !== tunedRef.current && t !== vodRef.current) return true;
+    // Before ever showing an error card for a FILE, try resuming once — most
+    // "errors" are a moment of starvation, not a broken file. Once per half
+    // minute per item, so a truly broken file still shows its card.
+    if (!mode && t.play?.mode !== 'live' && t.entry?.itemId) {
+      const k = (t.channel?.id || 'vod') + ':' + t.entry.itemId;
+      if (Date.now() - (fileRetry.current[k] || 0) > 30000) {
+        fileRetry.current[k] = Date.now();
+        if (t.vod) playVod(t.entry.itemId, player.current.position?.() || 0, t.from);
+        else tune(t.channel.id, { quiet: true });
+        return true;
+      }
+    }
     if (!mode && t.play?.mode === 'live') {
       if (t.channel.iptv) {
-        // A live station that won't play isn't offered: hide it and go to the next working channel.
-        toast(`📡 ${t.channel.name} is off the air — hidden for now (it’s re-checked daily)`);
-        const list = channelsRef.current.filter((c) => !c.iptv?.dead && c.id !== t.channel.id);
-        if (!list.length) { offAir(t); return true; }
-        const after = list.find((c) => (lastDir.current > 0 ? c.number > t.channel.number : false)) || (lastDir.current > 0 ? list[0] : [...list].reverse().find((c) => c.number < t.channel.number) || list[list.length - 1]);
-        tune(after.id, { quiet: false });
+        // They picked this channel — it NEVER gets abandoned, switched away from
+        // or hidden. Show "getting the signal back" and keep quietly retrying
+        // until they change the channel themselves.
+        const k = t.channel.id;
+        if (Date.now() - (signalToast.current[k] || 0) > 300000) { signalToast.current[k] = Date.now(); toast(`📡 ${t.channel.name} lost its signal — hang on, trying to get it back`); }
+        offAir(t, 'Lost the signal — trying to get it back…');
+        liveDrops.current[k] = [];
+        clearTimeout(timers.current.liveRetry);
+        timers.current.liveRetry = setTimeout(() => { const c = tunedRef.current; if (c?.channel?.id === k && !c.play && !vodRef.current) tune(k, { quiet: true }); }, 20000);
       } else offAir(t); // a live block inside your own channel: show off-air until the slot ends
       return true;
     }
@@ -501,7 +558,7 @@ function App() {
   const live = player.current.isLive ? player.current.isLive() : true;
   const now = entryText(tuned?.entry);
   return html`<div class=${'app' + (idle ? ' idle' : '') + (mini ? ' mini' : '')} onMouseMove=${poke} onMouseDown=${poke} onWheel=${onWheel}>
-    ${(channels.length > 0 || vod) && html`<${Player} tuned=${vod || tuned} settings=${settings} transitions=${settings.transitions} pip=${overlay === 'guide'} quiet=${overlay === 'arcade'} covered=${(!!overlay && overlay !== 'guide' && overlay !== 'help') || setup} bufferStart=${bufferStart.current} apiRef=${player} cast=${cast.mode === 'media' ? cast : null} onEnded=${onEnded} onFailed=${onFailed} onShift=${onShift} onCaptionsError=${() => { toast('💬 Live captions couldn’t start on this PC'); setSettings({ liveCaptions: false }); }}>
+    ${(channels.length > 0 || vod) && html`<${Player} tuned=${vod || tuned} settings=${settings} transitions=${settings.transitions} pip=${overlay === 'guide'} quiet=${overlay === 'arcade' || !!liveAd} covered=${(!!overlay && overlay !== 'guide' && overlay !== 'help') || setup} bufferStart=${bufferStart.current} apiRef=${player} cast=${cast.mode === 'media' ? cast : null} onEnded=${onEnded} onFailed=${onFailed} onShift=${onShift} onCaptionsError=${() => { toast('💬 Live captions couldn’t start on this PC'); setSettings({ liveCaptions: false }); }} onVolume=${(p) => setSettings(p)} onStalled=${onStalled}>
       <${Banner} tuned=${vod || tuned} show=${banner && !overlay} live=${live} getBehind=${() => player.current.behind?.() || 0} getPos=${() => player.current.position?.() || 0} paused=${player.current.paused} raised=${chrome} />
       ${digits && html`<div class="number-entry">${digits.padEnd(2, '–')}<small>${channels.find((c) => c.number === +digits)?.name || ''}</small></div>`}
       ${volFlash === 'volume' && html`<div class="osd-level">${settings.muted ? html`<${Icon.mute} />` : html`<${Icon.vol} />`}<div class="meter"><i style=${`width:${settings.muted ? 0 : (settings.volume ?? 0.9) * 100}%`}></i></div><span>${settings.muted ? 'Muted' : Math.round((settings.volume ?? 0.9) * 100)}</span></div>`}
@@ -528,10 +585,13 @@ function App() {
       <div class="row" style="justify-content:center"><button class="btn primary big" onClick=${() => setSetup(true)}><${Icon.sparkle} /> Find my videos</button><button class="btn big" onClick=${() => setOverlay('channels')}>Make a channel</button></div></div>
     </div></div>`}
 
-    ${overlay === 'guide' && html`<${Guide} mixTargets=${channels.filter((c) => !c.iptv)} toast=${toast} channels=${settings.lockChannel ? channels.filter((c) => c.id === settings.lockChannel) : channels.filter((c) => !c.iptv?.dead && !c.ondemand)} tunedId=${ch?.id} onTune=${(id) => { tune(id); }} onClose=${() => setOverlay(null)} />`}
+    ${overlay === 'guide' && html`<${Guide} mixTargets=${channels.filter((c) => !c.iptv)} toast=${toast} channels=${settings.lockChannel ? channels.filter((c) => c.id === settings.lockChannel) : channels.filter((c) => !c.ondemand && !c.hidden)} tunedId=${ch?.id} onTune=${(id) => { tune(id); }} onClose=${() => setOverlay(null)}
+      onFav=${isAdult ? async (c, on) => { setChannels(await tv.channelFav(c.id, on)); toast(on ? `❤ ${c.name} favorited` : `💔 ${c.name} un-favorited`); } : null}
+      onHide=${isAdult ? async (c) => { setChannels(await tv.channelHide(c.id, true)); toast(`🙈 ${c.name} hidden — bring it back in Edit → ${c.iptv ? 'Free TV stations' : 'Channel list'}`); } : null} />`}
     ${overlay === 'channels' && html`<${ChannelsPanel} channels=${channels} setChannels=${setChannels} onTune=${(id) => { tune(id); setOverlay(null); }} onEdit=${setEditing} toast=${toast} />`}
     ${overlay === 'manager' && html`<${ChannelManager} channels=${channels} setChannels=${setChannels} initialId=${ch?.id} toast=${toast} onTune=${(id) => { setOverlay(null); ui.current.overlay = null; tune(id); }} onEdit=${setEditing} />`}
     ${overlay === 'tags' && html`<${TagsPanel} isAdult=${isAdult} toast=${toast} />`}
+    ${overlay === 'freetv' && html`<${FreeTvPanel} isAdult=${isAdult} setChannels=${setChannels} toast=${toast} onTune=${(id) => { setOverlay(null); ui.current.overlay = null; tune(id); }} />`}
     ${overlay === 'library' && html`<${LibraryPanel} isAdult=${isAdult} stats=${stats} onScan=${scan} enrichProgress=${enrichProgress} channels=${channels} setChannels=${setChannels} onPlay=${playVod} onEdit=${setEditing} toast=${toast} />`}
     ${overlay === 'settings' && html`<${SettingsPanel} isAdult=${isAdult} profile=${profile} setProfile=${setProfile} onSwitch=${() => { setOverlay(null); setPicker(true); }} stats=${stats} onOpenLibrary=${() => setOverlay('library')} toast=${toast} channels=${channels} onLock=${(id) => { setSettings({ lockChannel: id || null }); if (id) tune(id); }} settings=${settings} setSettings=${setSettings} version=${version} onShowTour=${() => { setOverlay(null); ui.current.overlay = null; setTour(true); }} onRunSetup=${() => { setOverlay(null); setSetup(true); }} onEnrich=${() => { tv.enrich().then((n) => toast(`Looked up ${n} shows`)); }} cast=${cast} tvs=${tvs} onOpenCast=${() => setOverlay('cast')} vault=${vault} setVault=${setVault} onOpenVault=${() => { setOverlay(null); ui.current.overlay = null; tune(vault.channelId, { quiet: true }); }} />`}
     ${overlay === 'cast' && html`<${CastMenu} cast=${cast} tvs=${tvs} setTvs=${setTvs} settings=${settings} setSettings=${setSettings} toast=${toast} onClose=${() => setOverlay(null)} />`}
@@ -551,6 +611,7 @@ function App() {
             <button onClick=${() => { setEditMenu(false); setOverlay('manager'); }}><b>📝 Manage channels</b><span>Add shows & movies to a channel — plus its name, logo, order and times</span><kbd>E</kbd></button>
             <button onClick=${() => { setEditMenu(false); setOverlay('channels'); }}><b>📡 Channel list</b><span>New channels, numbers, suggestions, live stations</span><kbd>C</kbd></button>
             <button onClick=${() => { setEditMenu(false); setOverlay('tags'); }}><b>🏷 Tags & info</b><span>Edit tags by hand, or auto-tag the whole library</span></button>
+            <button onClick=${() => { setEditMenu(false); setOverlay('freetv'); }}><b>📡 Free TV stations</b><span>Every live station — search, add one by one, hide or remove any</span></button>
           </div>`}
         </div>`}
         ${[['arcade', 'Arcade', Icon.game, 'A'], ['settings', 'Settings', Icon.settings, 'S']].map(([k, l, I, key]) => html`
@@ -606,6 +667,11 @@ function App() {
     ${bgAdd && !setup && html`<div class="bgjob"><div class="bgjob-bar"><i style=${bgAdd.pct != null ? `width:${Math.round(bgAdd.pct * 100)}%` : 'width:30%;animation:bgslide 1.2s linear infinite'}></i></div><span>${bgAdd.text}</span></div>`}
     ${toastMsg && html`<div class="toast">${toastMsg}</div>`}
     ${updMsg && html`<div class="upd-toast">⬇ HomeCable v${updMsg} is here — it'll install itself next time you start</div>`}
+    ${liveAd && !overlay && !setup && html`<div class="live-ad">
+      <video src=${liveAd.url} autoplay playsinline ref=${(v) => { if (v) { v.volume = settings.muted ? 0 : settings.volume ?? 0.9; } }} onEnded=${() => setLiveAd(null)} onError=${() => setLiveAd(null)}></video>
+      <span class="live-ad-tag">COMMERCIAL BREAK</span>
+      <button class="live-ad-skip" onClick=${() => setLiveAd(null)}>Skip ▸</button>
+    </div>`}
   </div>`;
 }
 

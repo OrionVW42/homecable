@@ -33,7 +33,7 @@ It only goes online for features you turn on:
 | Classic movies, cartoons & TV (optional) | archive.org | Requests for public-domain films |
 | Free live TV (optional) | iptv-org.github.io, then each station's own server | Requests for playlists and streams |
 | TV guide for free live stations (with free TV on) | epg.pw; i.mjh.nz (only for stations you have from Pluto TV, Samsung TV Plus, Plex, Stirr or Roku); any guide a playlist itself names | Plain requests for public XMLTV guide files — nothing about you or your library is sent |
-| Commercial breaks with an ad pack (optional, off by default) | The ad pack's host | A plain request for the ad list and new ad videos — no cookies, IDs or tracking |
+| Commercial breaks with an ad pack (optional; the shipped joke ads are on by default, every switch is in setup and Settings) | The ad pack's host | A plain request for the ad list and new ad videos — no cookies, IDs or tracking |
 | App updates | api.github.com, github.com (the HomeCable releases page) | A plain request for the newest version's name, and the installer download itself — no accounts, cookies, IDs or tracking. New versions install only when HomeCable restarts; Settings → Updates sets how often to look |
 | Network sources | Devices on your own network only | Discovery messages (DLNA/SSDP, WS-Discovery, mDNS) |
 | Phone app (only while on) | Your paired phones, on your home network or your own VPN | Channels, your library lists and video streams — only to phones paired with a code shown on this PC |
@@ -51,4 +51,4 @@ HomeCable is a player. It doesn't host, sell or provide any of the media it play
 - **Your media** — you're responsible for having the right to play what's in your library.
 - **Free live TV** — stations come from the public iptv-org lists of streams that broadcasters make freely available on the internet. HomeCable doesn't host or endorse them; availability, quality and content are up to each broadcaster, and some may not be available in your country.
 - **Classic movies, cartoons & TV** — public-domain titles streamed from the Internet Archive. HomeCable only imports items marked public domain.
-- **Commercial breaks** — off by default. HomeCable ships a small set of its own short, family-friendly interdimensional joke ads inside the app (nothing is downloaded for them). Your own ad packs are plain folders of short videos on this PC, each with its own switch. Hosted ad packs are optional and provided by whoever hosts them.
+- **Commercial breaks** — the shipped joke ads are ON by default; the Showtime setup page and Settings both carry the off switch. HomeCable ships a small set of its own short, family-friendly interdimensional joke ads inside the app (nothing is downloaded for them). Your own ad packs are plain folders of short videos on this PC, each with its own switch. Hosted ad packs are optional and provided by whoever hosts them.
