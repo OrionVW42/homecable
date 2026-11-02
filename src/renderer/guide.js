@@ -34,6 +34,18 @@ export function Guide({ channels, tunedId, onTune, onClose, mixTargets = [], toa
   const [genre, setGenre] = useState(sticky.genre); // the genre filter beside it, same deal
   useEffect(() => { sticky.q = q; sticky.genre = genre; }, [q, genre]);
   useEffect(() => { liveSet = (f) => { if ('q' in f) setQ(f.q); if ('genre' in f) setGenre(f.genre); }; return () => { liveSet = null; }; }, []);
+  // Opening (or coming back to) the guide lands ON the channel being watched,
+  // centered — not back at the top of the list. A beat after mount, so layout
+  // is real; again if the tuned row appears a moment later.
+  const centered = useRef(false);
+  useEffect(() => {
+    if (centered.current || !tunedId) return;
+    const t = setTimeout(() => {
+      const row = rowsRef.current?.querySelector('.grid-row.tuned');
+      if (row) { centered.current = true; row.scrollIntoView({ block: 'center' }); }
+    }, 60);
+    return () => clearTimeout(t);
+  });
   const [favOnly, setFavOnly] = useState(() => { try { return localStorage.getItem('hc-guide-favs') === '1'; } catch { return false; } });
   const [menu, setMenu] = useState(null); // right-click menu: { x, y, ch }
   const [gmap, setGmap] = useState({}); // channel id → its genres
