@@ -226,18 +226,13 @@ function App() {
         if (Date.now() - deadRetry.current > 5000) { deadRetry.current = Date.now(); tune(cur.channel.id, { quiet: true }); }
         return;
       }
-      // Live stations have no schedule to follow (live blocks inside your channels
-      // do) — but the moment between two programmes is a black-screen break, just
-      // long enough for one of our ads when commercials are on.
-      if (cur.channel.iptv) {
-        const end = cur.entry.end;
-        if (end && cur.play && settingsRef.current.adsOn && Date.now() >= end && liveAdAt.current !== end) {
-          liveAdAt.current = end;
-          if (cur.next?.start) setTuned({ ...cur, entry: cur.next, next: null }); // the banner moves on with the guide
-          tv.adsPick().then((a) => { if (a && tunedRef.current?.channel?.id === cur.channel.id && !vodRef.current) setLiveAd(a); }).catch(() => {});
-        }
-        return;
-      }
+      // Live stations have no schedule to follow (live blocks inside your
+      // channels do). NOTHING is allowed to touch a playing live stream — ads,
+      // guide boundaries, nothing. Tried and removed (2026-11-02): a wacky ad in
+      // the gap between EPG programmes — free-TV guide times are too sloppy, it
+      // interrupted mid-show and the mute-under-the-ad could stick. Do not
+      // reintroduce anything that acts on iptv entry boundaries.
+      if (cur.channel.iptv) return;
       if (!cur.play) {
         // "Up next" / off-air cards follow the clock, shifted by the tune delay.
         const delay = cur.now - cur.at;
@@ -248,16 +243,6 @@ function App() {
     }, 500);
     return () => clearInterval(t);
   }, []);
-
-  // One wacky ad in the break between two live programmes (when ads are on).
-  const [liveAd, setLiveAd] = useState(null);
-  const liveAdAt = useRef(0); // the programme boundary already handled
-  useEffect(() => { setLiveAd(null); }, [tuned?.channel?.id, vod]);
-  useEffect(() => {
-    if (!liveAd) return;
-    const t = setTimeout(() => setLiveAd(null), 90000); // whatever happens, back to the show
-    return () => clearTimeout(t);
-  }, [liveAd]);
 
   // Live stations that keep dropping get spaced-out retries (never abandoned).
   const liveDrops = useRef({});
@@ -571,7 +556,7 @@ function App() {
   const live = player.current.isLive ? player.current.isLive() : true;
   const now = entryText(tuned?.entry);
   return html`<div class=${'app' + (idle ? ' idle' : '') + (mini ? ' mini' : '')} onMouseMove=${poke} onMouseDown=${poke} onWheel=${onWheel}>
-    ${(channels.length > 0 || vod) && html`<${Player} tuned=${vod || tuned} settings=${settings} transitions=${settings.transitions} pip=${overlay === 'guide'} quiet=${overlay === 'arcade' || !!liveAd} covered=${(!!overlay && overlay !== 'guide' && overlay !== 'help') || setup} bufferStart=${bufferStart.current} apiRef=${player} cast=${cast.mode === 'media' ? cast : null} onEnded=${onEnded} onFailed=${onFailed} onShift=${onShift} onCaptionsError=${() => { toast('💬 Live captions couldn’t start on this PC'); setSettings({ liveCaptions: false }); }} onVolume=${(p) => setSettings(p)} onStalled=${onStalled}>
+    ${(channels.length > 0 || vod) && html`<${Player} tuned=${vod || tuned} settings=${settings} transitions=${settings.transitions} pip=${overlay === 'guide'} quiet=${overlay === 'arcade'} covered=${(!!overlay && overlay !== 'guide' && overlay !== 'help') || setup} bufferStart=${bufferStart.current} apiRef=${player} cast=${cast.mode === 'media' ? cast : null} onEnded=${onEnded} onFailed=${onFailed} onShift=${onShift} onCaptionsError=${() => { toast('💬 Live captions couldn’t start on this PC'); setSettings({ liveCaptions: false }); }} onVolume=${(p) => setSettings(p)} onStalled=${onStalled}>
       <${Banner} tuned=${vod || tuned} show=${banner && !overlay} live=${live} getBehind=${() => player.current.behind?.() || 0} getPos=${() => player.current.position?.() || 0} paused=${player.current.paused} raised=${chrome} />
       ${digits && html`<div class="number-entry">${digits.padEnd(2, '–')}<small>${channels.find((c) => c.number === +digits)?.name || ''}</small></div>`}
       ${volFlash === 'volume' && html`<div class="osd-level">${settings.muted ? html`<${Icon.mute} />` : html`<${Icon.vol} />`}<div class="meter"><i style=${`width:${settings.muted ? 0 : (settings.volume ?? 0.9) * 100}%`}></i></div><span>${settings.muted ? 'Muted' : Math.round((settings.volume ?? 0.9) * 100)}</span></div>`}
@@ -686,11 +671,6 @@ function App() {
       <h1>Installing HomeCable${updInstall ? ` v${updInstall}` : ''}…</h1>
       <p>The app closes for a few seconds and <b>reopens by itself</b> — nothing to do.</p>
       <div class="progress indeterminate"><i></i></div>
-    </div>`}
-    ${liveAd && !overlay && !setup && html`<div class="live-ad">
-      <video src=${liveAd.url} autoplay playsinline ref=${(v) => { if (v) { v.volume = settings.muted ? 0 : settings.volume ?? 0.9; } }} onEnded=${() => setLiveAd(null)} onError=${() => setLiveAd(null)}></video>
-      <span class="live-ad-tag">COMMERCIAL BREAK</span>
-      <button class="live-ad-skip" onClick=${() => setLiveAd(null)}>Skip ▸</button>
     </div>`}
   </div>`;
 }

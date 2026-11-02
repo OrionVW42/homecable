@@ -403,12 +403,18 @@ export function Player({ tuned, settings, transitions, pip, quiet, covered, buff
   useEffect(() => {
     if (!tuned?.play || casting) return;
     const isLive = tuned.play.mode === 'live';
-    let last = -1, still = 0;
+    let last = -1, still = 0, loadStuck = 0;
+    const kick = () => { still = 0; loadStuck = 0; last = -1; if (isLive) onEnded(tuned); else onStalled?.(tuned, vid.current?.currentTime || 0); };
     const t = setInterval(() => {
       const v = vid.current;
-      if (!v || v.paused || v.seeking || loading || error) { still = 0; return; }
+      if (!v || error) { still = 0; loadStuck = 0; return; }
+      // Stuck CONNECTING is a drop too: a reconnect that answers but never
+      // sends a byte used to spin forever until someone re-clicked the channel.
+      if (loading) { if (++loadStuck >= 5) kick(); return; }
+      loadStuck = 0;
+      if (v.paused || v.seeking) { still = 0; return; }
       if (v.currentTime > 0 && v.currentTime === last) {
-        if (++still >= 3) { still = 0; last = -1; if (isLive) onEnded(tuned); else onStalled?.(tuned, v.currentTime); }
+        if (++still >= 4) kick(); // ~20s frozen (a touch patient — live TV re-buffers)
       } else { still = 0; last = v.currentTime; }
     }, 5000);
     return () => clearInterval(t);

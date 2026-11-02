@@ -122,7 +122,6 @@ contextBridge.exposeInMainWorld('tv', {
   iptvAddOne: call('iptv:addOne'),
   channelHide: call('channels:hide'),
   channelFav: call('channels:fav'),
-  adsPick: call('ads:pick'),
   iptvAutoRemove: call('iptv:autoRemove'),
   iptvSources: call('iptv:sources'),
   iptvLanguages: call('iptv:languages'),

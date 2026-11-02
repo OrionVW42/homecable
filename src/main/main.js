@@ -837,7 +837,11 @@ async function refreshLive() {
   if (!settings.live) return;
   settings.lastLiveRefresh = Date.now();
   saveSettings();
-  const live = channels.filter((c) => c.iptv);
+  // NEVER probe the station being WATCHED: many free servers allow one
+  // connection per viewer and kick the live session when the test connects —
+  // that was "my stream just randomly died mid-show" after the boot re-scan
+  // shipped. The watched channel keeps its current state untouched.
+  const live = channels.filter((c) => c.iptv && c.id !== settings.lastChannel);
   // A few at a time, not one by one — re-checking hundreds of stations serially
   // took ages; in parallel the whole lineup is done in a couple of minutes.
   if (live.length) {
@@ -1057,14 +1061,6 @@ function handlers() {
     return { url: media.urlFor(a.id, { mode: 'direct' }), title: a.title };
   });
   h('ads:rescanPacks', () => loadAdPacks(true));
-  // One random ad from everything that's switched ON (shipped pack + yours) —
-  // used for the little commercial in the break between live programmes.
-  h('ads:pick', () => {
-    const ads = lib.list().filter((i) => i.kind === 'ad' && adEnabled(i));
-    if (!ads.length) return null;
-    const a = ads[Math.floor(Math.random() * ads.length)];
-    return { url: media.urlFor(a.id, { mode: 'direct' }), title: a.title };
-  });
 
   h('tune', (id, at) => tune(id, at));
 
