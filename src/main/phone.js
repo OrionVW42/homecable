@@ -120,6 +120,11 @@ function createPhone({ settings, saveSettings, media, call, send, log, profiles,
         const g = await call('guide', +q('from') || Date.now(), +q('to') || Date.now() + 3 * 3600e3);
         return out(g.filter((row) => ok.has(row.id)));
       }
+      case 'genres': {
+        // Every genre the guide knows, for the remote's dropdown.
+        const map = await call('channels:genres');
+        return out([...new Set(Object.values(map).flat())].sort());
+      }
       case 'tune': {
         const ch = (await call('state')).channels.find((c) => c.id === q('id'));
         if (!okChannel(dev, ch)) return json(res, 404, { error: 'No such channel' });
@@ -199,7 +204,11 @@ function createPhone({ settings, saveSettings, media, call, send, log, profiles,
         }
         // Audio / subtitle picks from the phone's own CC menu (applied by the PC's player).
         const av = b.av && typeof b.av === 'object' ? { ...(typeof b.av.audio === 'number' ? { audio: b.av.audio } : {}), ...('sub' in b.av ? { sub: b.av.sub == null ? null : String(b.av.sub) } : {}) } : null;
-        send('remote', { button: b.button || null, key: b.key || null, play: b.play || null, av: av && Object.keys(av).length ? av : null, from: dev.name });
+        // Guide search / genre typed on the phone: opens and filters the guide on
+        // the screen being watched; picking something clears it back to normal.
+        const guide = b.guide && typeof b.guide === 'object'
+          ? { ...('q' in b.guide ? { q: String(b.guide.q ?? '').slice(0, 80) } : {}), ...('genre' in b.guide ? { genre: String(b.guide.genre ?? '').slice(0, 40) } : {}) } : null;
+        send('remote', { button: b.button || null, key: b.key || null, play: b.play || null, av: av && Object.keys(av).length ? av : null, guide: guide && Object.keys(guide).length ? guide : null, from: dev.name });
         return json(res, 200, { ok: true });
       }
     }

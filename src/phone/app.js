@@ -421,7 +421,11 @@ function Remote({ state, now, cast, toast, goWatch }) {
   const [screen, setScreen] = useState(null); // 'guide' — opens here, on this device
   const [sheet, setSheet] = useState(null); // 'av' (audio & subtitles) | 'pick' (channel list)
   const castOn = !!cast?.on;
-  const tvMode = castOn && !pcMode;
+  // Mirroring: the TV IS the PC screen, so this is a full normal remote — the
+  // guide and every menu you press shows up right on the TV. Only the
+  // picture-only cast mode needs the phone-side guide (the TV has just video).
+  const mirror = castOn && cast.mode === 'mirror';
+  const tvMode = castOn && !pcMode && !mirror;
   useEffect(() => { if (!castOn) { setPcMode(false); setScreen(null); setSheet((s) => (s === 'av' ? null : s)); } }, [castOn]);
   useBack(!!sheet, () => setSheet(null));
   const send = (b) => { navigator.vibrate?.(15); api('remote', b).catch((e) => toast(e.message)); };
@@ -435,11 +439,19 @@ function Remote({ state, now, cast, toast, goWatch }) {
     onBack=${() => setScreen(null)}
     onPick=${(c) => { send({ play: { channelId: c.id } }); toast(tvMode ? `📡 ${c.name} is on ${cast.device}` : `📺 ${c.name} is on the PC`); setScreen(null); }} />`;
 
+  // Search + genres up top: they open and filter the GUIDE on the screen being
+  // watched; picking something there puts the guide back to normal.
+  const screenName = mirror ? cast.device : 'the PC';
+  const od = state.channels.find((c) => c.ondemand && (c.odStyle || 'movies') === 'movies');
+  const sd = state.channels.find((c) => c.ondemand && c.odStyle === 'series');
+
   return html`<div class="remote">
-    ${castOn && html`<div class="seg target">
+    ${!tvMode && html`<${GuideSearch} send=${send} where=${screenName} />`}
+    ${castOn && !mirror && html`<div class="seg target">
       <button class=${tvMode ? 'on' : ''} onClick=${() => setPcMode(false)}>📡 ${cast.device}</button>
       <button class=${!tvMode ? 'on' : ''} onClick=${() => setPcMode(true)}>💻 PC screen</button>
     </div>`}
+    ${mirror && html`<p class="muted small center-text" style="margin:0 0 8px">📡 ${cast.device} mirrors the PC — everything you press here shows on the TV.</p>`}
     <div class="now">${stale ? html`<small class="muted">Waiting for the PC…</small>` : html`
       ${now.art && (now.art.startsWith('/') || now.art.startsWith('https:')) && html`<img class="now-art" src=${now.art} alt="" />`}
       <div class="grow now-info">
@@ -484,6 +496,10 @@ function Remote({ state, now, cast, toast, goWatch }) {
         <button class="r" onClick=${btn('Y')}>⚙ Menu</button>
         <button class="r" onClick=${key('BackToTV')}>📺 TV</button>
       </div>
+      ${(od || sd) && html`<div class="r-row">
+        ${od && html`<button class="r" onClick=${() => { send({ play: { channelId: od.id } }); toast(`🎬 On Demand is on ${screenName}`); }}>🎬 On Demand</button>`}
+        ${sd && html`<button class="r" onClick=${() => { send({ play: { channelId: sd.id } }); toast(`📺 Stream Demand is on ${screenName}`); }}>📺 Stream Demand</button>`}
+      </div>`}
       <div class="r-row">
         <button class="r" onClick=${btn('LT')}>⟲ 10</button>
         <button class="r wide" onClick=${btn('X')}>${now?.paused ? '▶ Play' : '❚❚ Pause'}</button>
@@ -508,6 +524,28 @@ function Remote({ state, now, cast, toast, goWatch }) {
       <button class=${'opt' + (!av.on ? ' on' : '')} onClick=${() => send({ av: { sub: null } })}>${!av.on ? '✓ ' : ''}Off</button>
       ${av.tracks.map((t) => html`<button class=${'opt' + (av.on === t.id ? ' on' : '')} onClick=${() => send({ av: { sub: t.id } })}>${av.on === t.id ? '✓ ' : ''}${t.label}</button>`)}
     <//>`}
+  </div>`;
+}
+
+// Search + genre row for the remote: typing filters the guide on the screen
+// being watched, live; the ✕ (or picking something there) puts it back.
+function GuideSearch({ send, where }) {
+  const [q, setQ] = useState('');
+  const [genres, setGenres] = useState([]);
+  const [genre, setGenre] = useState('');
+  const t = useRef(null);
+  useEffect(() => { api('genres').then(setGenres).catch(() => {}); }, []);
+  const push = (patch) => send({ guide: patch });
+  const type = (v) => { setQ(v); clearTimeout(t.current); t.current = setTimeout(() => push({ q: v }), 350); };
+  const clearAll = () => { setQ(''); setGenre(''); push({ q: '', genre: '' }); };
+  return html`<div class="g-search">
+    <input type="search" placeholder=${`🔍 Search the guide on ${where}…`} value=${q}
+      onInput=${(e) => type(e.target.value)} onKeyDown=${(e) => e.stopPropagation()} />
+    ${genres.length > 0 && html`<select value=${genre} onChange=${(e) => { setGenre(e.target.value); push({ genre: e.target.value }); }}>
+      <option value="">🏷 All</option>
+      ${genres.map((g) => html`<option value=${g}>${g}</option>`)}
+    </select>`}
+    ${(q || genre) && html`<button class="g-clear" onClick=${clearAll}>✕</button>`}
   </div>`;
 }
 

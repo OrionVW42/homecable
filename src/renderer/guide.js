@@ -7,7 +7,24 @@ const SPAN = 2.5 * 3600e3; // visible window
 // Guide filters stay as you set them — closing and reopening the guide keeps
 // your search, genre and ♥ choice until you change them or restart the app
 // (the ♥ filter survives restarts too).
-const sticky = { q: '', genre: '' };
+const sticky = { q: '', genre: '', remote: false };
+let liveSet = null; // the mounted guide's setters, when it's open
+
+// The phone remote typed a search or picked a genre: filter the guide (open or
+// about to open) exactly like typing it here.
+export function guideFilter(f) {
+  if ('q' in f) sticky.q = f.q;
+  if ('genre' in f) sticky.genre = f.genre;
+  sticky.remote = true;
+  liveSet?.(f);
+}
+// Picking something returns the guide to normal — only for remote-set filters,
+// never for ones typed on this screen.
+export function guideFilterReset() {
+  if (!sticky.remote) return;
+  sticky.q = ''; sticky.genre = ''; sticky.remote = false;
+  liveSet?.({ q: '', genre: '' });
+}
 
 // Cable-style grid guide. The live picture shrinks to the top-right corner
 // while it's open (handled by the Player's `pip` class).
@@ -16,6 +33,7 @@ export function Guide({ channels, tunedId, onTune, onClose, mixTargets = [], toa
   const [q, setQ] = useState(sticky.q); // the search bar up top — kept until changed or the app restarts
   const [genre, setGenre] = useState(sticky.genre); // the genre filter beside it, same deal
   useEffect(() => { sticky.q = q; sticky.genre = genre; }, [q, genre]);
+  useEffect(() => { liveSet = (f) => { if ('q' in f) setQ(f.q); if ('genre' in f) setGenre(f.genre); }; return () => { liveSet = null; }; }, []);
   const [favOnly, setFavOnly] = useState(() => { try { return localStorage.getItem('hc-guide-favs') === '1'; } catch { return false; } });
   const [menu, setMenu] = useState(null); // right-click menu: { x, y, ch }
   const [gmap, setGmap] = useState({}); // channel id → its genres

@@ -2,7 +2,7 @@ import { html, render } from 'htm/preact';
 import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
 import { tv, Icon, Logo, ChannelLogo, entryText, fmtClock } from './util.js';
 import { Player, Banner } from './player.js';
-import { Guide } from './guide.js';
+import { Guide, guideFilter, guideFilterReset } from './guide.js';
 import { ChannelsPanel, ChannelEditor, SettingsPanel } from './panels.js';
 import { LibraryPanel, FreeTvDialog } from './libraryview.js';
 import { ControlsMap } from './controls.js';
@@ -68,6 +68,7 @@ function App() {
 
   const tune = useCallback(async (id, { quiet, at } = {}) => {
     if (!id) return;
+    guideFilterReset(); // picking something ends a remote-set guide filter
     clearTimeout(timers.current.endWait);
     // Changing channels (or going back to On Demand / Stream Demand) leaves on-demand playback:
     // remember where you were first, so the wall shows it and you can pick right back up.
@@ -159,6 +160,12 @@ function App() {
         if (r.button) pressButton(r.button);
         else if (r.key) window.dispatchEvent(new KeyboardEvent('keydown', { key: r.key, bubbles: true, cancelable: true }));
         else if (r.av) { if ('audio' in r.av) player.current.setAudio?.(r.av.audio); if ('sub' in r.av) player.current.setSubtitle?.(r.av.sub); }
+        else if (r.guide) {
+          // Search / genre from the phone remote: open the guide right here (on
+          // the TV when mirroring) and filter it live.
+          guideFilter(r.guide);
+          if (ui.current.overlay !== 'guide') { ui.current.overlay = 'guide'; setOverlay('guide'); }
+        }
         else if (r.play) {
           setOverlay(null); ui.current.overlay = null; setAvMenu(false);
           if (r.play.channelId) await tuneRef.current(r.play.channelId, { quiet: !!r.play.itemId });

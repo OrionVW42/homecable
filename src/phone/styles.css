@@ -149,3 +149,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .vault { max-width: 360px; margin: 40px auto; padding: 0 18px; text-align: center; display: flex; flex-direction: column; gap: 8px; }
 .vault h2 { margin: 0; font-family: var(--display); }
 .vault-msg { min-height: 20px; color: #f5a524; font-weight: 600; }
+
+/* 1.20: guide search + genre on the remote */
+.g-search { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; }
+.g-search input { flex: 1; min-width: 0; background: var(--raise, rgba(255,255,255,.07)); border: 1px solid var(--line, rgba(255,255,255,.12)); border-radius: 12px; color: inherit; font: inherit; padding: 10px 12px; }
+.g-search select { max-width: 34%; background: var(--raise, rgba(255,255,255,.07)); border: 1px solid var(--line, rgba(255,255,255,.12)); border-radius: 12px; color: inherit; font: inherit; padding: 10px 8px; }
+.g-search .g-clear { border: 1px solid var(--line, rgba(255,255,255,.12)); background: none; color: inherit; border-radius: 10px; padding: 8px 11px; font: inherit; }
