@@ -129,6 +129,28 @@ function normalizeChannel(c) {
   };
 }
 
+// Every live station gets a genre tag, so the guide's genre filter and the Free
+// TV manager can group as many of them as possible: the index's own group when
+// it has one, otherwise a guess from the station's name. 'Live TV' is the
+// honest fallback for the truly unknowable.
+const GENRE_GUESS = [
+  ['News', /news|cnn|msnbc|bbc|weather|c-?span|bloomberg|headline/i],
+  ['Sports', /sport|espn|nfl|nba|mlb|nhl|golf|tennis|racing|motor|fight|wwe|ufc|bein|dazn/i],
+  ['Movies', /movie|cinema|film|flix|screen|hollywood/i],
+  ['Kids', /kids|cartoon|toon|junior|baby|teen|anime|nick|pbs kids/i],
+  ['Music', /music|mtv|vevo|hits|radio|fm\b|concert|stingray/i],
+  ['Comedy', /comedy|funny|laugh|sitcom/i],
+  ['Documentary', /docu|discovery|history|nat ?geo|science|wild|nature|planet|crime/i],
+  ['Classic', /classic|retro|rerun|nostalgia|westerns/i],
+  ['Entertainment', /entertain|drama|series|novelas|reality|lifestyle/i],
+];
+function stationGenre(name, group) {
+  const g = String(group || '').split(/[;,/]/)[0].trim();
+  if (g && !/^(undefined|general)$/i.test(g)) return g[0].toUpperCase() + g.slice(1).toLowerCase();
+  for (const [tag, re] of GENRE_GUESS) if (re.test(String(name || ''))) return tag;
+  return 'Live TV';
+}
+
 // Keep live-station numbers gapless: visible stations count up from liveStart,
 // hidden ones are parked after them (numbers stay unique for when they return).
 function renumberIptv() {
@@ -758,7 +780,7 @@ async function iptvAutoAdd({ country = 'us', countries = null, regions = [], cat
             added++;
             channels.push(normalizeChannel({
               number: nextNumber(settings.liveStart || 100), name: st.name.slice(0, 60), color: PALETTE[channels.length % PALETTE.length],
-              iptv: { url: st.url, logo: st.logo, group: st.group, tvgId: st.tvgId, country: st.country, userAgent: st.userAgent, referer: st.referer, audioOnly: !check.video, mode: check.video && check.video !== 'h264' ? 'transcode' : 'copy' },
+              iptv: { url: st.url, logo: st.logo, group: st.group, genre: stationGenre(st.name, st.group), tvgId: st.tvgId, country: st.country, userAgent: st.userAgent, referer: st.referer, audioOnly: !check.video, mode: check.video && check.video !== 'h264' ? 'transcode' : 'copy' },
             }));
             // Saving is synchronous (whole channel list to disk) — doing it for every
             // station stuttered whatever was PLAYING during a big add. Save at most
@@ -1049,7 +1071,7 @@ function handlers() {
   h('channels:genres', () => {
     const out = {};
     for (const ch of sortedChannels()) {
-      if (ch.iptv) { out[ch.id] = String(ch.iptv.group || '').split(/[;,]/).map((x) => x.trim()).filter(Boolean); continue; }
+      if (ch.iptv) { out[ch.id] = [...new Set([ch.iptv.genre || stationGenre(ch.name, ch.iptv.group), ...String(ch.iptv.group || '').split(/[;,/]/).map((x) => x.trim()).filter(Boolean)])]; continue; }
       if (ch.ondemand) { out[ch.id] = []; continue; }
       const prof = new Map();
       for (const s of ch.sources) for (const it of lib.resolve(s)) {
@@ -1645,9 +1667,9 @@ function handlers() {
   });
   // ---- The Free TV manager (Edit → Free TV stations) ----
   h('iptv:list', () => channels.filter((c) => c.iptv).sort((a, b) => a.number - b.number)
-    .map((c) => ({ id: c.id, number: c.number, name: c.name, group: c.iptv.group || '', country: c.iptv.country || '', logo: c.iptv.logo || '', hidden: !!c.hidden, dead: !!c.iptv.dead })));
+    .map((c) => ({ id: c.id, number: c.number, name: c.name, group: c.iptv.genre || c.iptv.group || '', country: c.iptv.country || '', logo: c.iptv.logo || '', hidden: !!c.hidden, dead: !!c.iptv.dead })));
   h('iptv:genres', () => {
-    const have = [...new Set(channels.filter((c) => c.iptv && c.iptv.group).flatMap((c) => String(c.iptv.group).split(/[;,/]/).map((s) => s.trim()).filter(Boolean)))].sort();
+    const have = [...new Set(channels.filter((c) => c.iptv).map((c) => c.iptv.genre || stationGenre(c.name, c.iptv.group)))].sort();
     return { have, all: iptv.CATEGORIES };
   });
   // Search the iptv-org index by name / genre / country. Lists are cached for the
@@ -1682,7 +1704,7 @@ function handlers() {
     if (!check.ok) return { ok: false, why: 'not answering right now' };
     const ch = normalizeChannel({
       number: nextNumber(settings.liveStart || 100), name: String(st.name || 'Station').slice(0, 60), color: PALETTE[channels.length % PALETTE.length],
-      iptv: { url: st.url, logo: st.logo, group: st.group, tvgId: st.tvgId, country: st.country, userAgent: st.userAgent, referer: st.referer, audioOnly: !check.video, mode: check.video && check.video !== 'h264' ? 'transcode' : 'copy' },
+      iptv: { url: st.url, logo: st.logo, group: st.group, genre: stationGenre(st.name, st.group), tvgId: st.tvgId, country: st.country, userAgent: st.userAgent, referer: st.referer, audioOnly: !check.video, mode: check.video && check.video !== 'h264' ? 'transcode' : 'copy' },
     });
     channels.push(ch);
     renumberIptv();
@@ -2123,6 +2145,9 @@ app.whenReady().then(async () => {
   lib.defaultPolicy = settings.newMedia;
   // Uploaded channel-logo pictures are served with this run's media token — refresh saved links.
   for (const c of channels) if (c.look?.custom) { const m = /art\/(chlogo-[\w.-]+)/.exec(c.look.custom); if (m) c.look.custom = media.artUrl(m[1]); }
+  // One-time: stations added before genre tags existed get theirs now, so the
+  // guide's genre filter groups the whole lineup, not just new arrivals.
+  { let tagged = 0; for (const c of channels) if (c.iptv && !c.iptv.genre) { c.iptv.genre = stationGenre(c.name, c.iptv.group); tagged++; } if (tagged) { saveChannels(); log('live stations genre-tagged:', tagged); } }
   const adsMigrated = migrateAds();
   applyAds();
   applyIdents();
