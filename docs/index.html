@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HomeCable — Your videos. Live, like cable.</title>
+<meta name="description" content="HomeCable turns the videos you already own into real TV channels — schedules that never stop, a cable guide, On Demand walls, casting, a phone app and more. Free, open source, no accounts, no tracking.">
+<link rel="icon" href="docs/media/icon/icon.png">
+<style>
+  /* ---- edit the whole look from these tokens ---- */
+  :root {
+    --bg: #07080b; --panel: #12141c; --raise: rgba(255,255,255,.06); --line: rgba(255,255,255,.09);
+    --text: #eef0f6; --dim: #9aa0b2; --accent: #6c8cff; --accent-2: #a46cff; --good: #3ddc97;
+    --font: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+    --display: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: radial-gradient(ellipse at 20% -10%, rgba(108,140,255,.16), transparent 50%), radial-gradient(ellipse at 100% 0%, rgba(164,108,255,.10), transparent 45%), var(--bg); color: var(--text); font: 16px/1.6 var(--font); }
+  a { color: var(--accent); text-decoration: none; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+  header { padding: 90px 0 40px; text-align: center; }
+  .logo { width: 84px; height: 84px; border-radius: 22%; }
+  h1 { font: 800 clamp(40px, 7vw, 72px)/1.05 var(--display); letter-spacing: -.03em; margin: 22px 0 8px; }
+  h1 em { font-style: normal; background: linear-gradient(135deg, var(--accent), var(--accent-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .lead { max-width: 720px; margin: 0 auto; color: var(--dim); font-size: 19px; }
+  .cta { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; margin: 34px 0 10px; }
+  .btn { display: inline-flex; align-items: center; gap: 10px; padding: 14px 26px; border-radius: 14px; font-weight: 700; font-size: 16px; border: 1px solid var(--line); background: var(--raise); color: var(--text); transition: transform .12s, filter .15s; }
+  .btn:hover { transform: translateY(-2px); }
+  .btn.primary { background: linear-gradient(135deg, var(--accent), var(--accent-2)); border: 0; color: #fff; box-shadow: 0 14px 40px -12px rgba(108,140,255,.55); }
+  .btn.primary:hover { filter: brightness(1.08); }
+  .note { color: var(--dim); font-size: 13px; }
+  .hero-shot { display: block; width: 100%; border-radius: 18px; border: 1px solid var(--line); box-shadow: 0 40px 120px -30px rgba(0,0,0,.8); margin: 44px 0 0; }
+  section { padding: 72px 0 8px; }
+  h2 { font: 700 34px var(--display); letter-spacing: -.02em; margin: 0 0 8px; }
+  .sub { color: var(--dim); max-width: 720px; margin: 0 0 32px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 22px; }
+  .card h3 { margin: 0 0 6px; font-size: 17px; }
+  .card p { margin: 0; color: var(--dim); font-size: 14.5px; }
+  .card .ic { font-size: 26px; margin-bottom: 10px; }
+  .showcase { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 18px; }
+  .showcase figure { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+  .showcase img { display: block; width: 100%; }
+  .showcase figcaption { padding: 12px 16px; font-size: 14px; color: var(--dim); }
+  .shots { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
+  .shots img { width: 100%; border-radius: 12px; border: 1px solid var(--line); display: block; }
+  .faq details { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 20px; margin-bottom: 10px; }
+  .faq summary { font-weight: 700; cursor: pointer; }
+  .faq p { color: var(--dim); margin: 10px 0 0; }
+  .road li { margin: 8px 0; color: var(--dim); } .road b { color: var(--text); }
+  .pill { display: inline-block; padding: 3px 12px; border-radius: 999px; background: var(--raise); border: 1px solid var(--line); font-size: 12.5px; color: var(--dim); margin: 0 6px 8px 0; }
+  footer { margin-top: 80px; padding: 36px 0 48px; border-top: 1px solid var(--line); color: var(--dim); font-size: 14px; text-align: center; }
+  @media (max-width: 560px) { .showcase { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<header class="wrap">
+  <img class="logo" src="docs/media/icon/icon.png" alt="HomeCable">
+  <h1>Your videos.<br><em>Live, like cable.</em></h1>
+  <p class="lead">HomeCable turns the shows and movies you already own into real TV channels — schedules that never stop, a cable-style guide, channel surfing, pause &amp; rewind — plus On Demand walls, casting, a phone app, and free live TV. No accounts. No tracking. Open source.</p>
+  <div class="cta">
+    <!-- When the first release is up, point this at the Setup exe asset -->
+    <a class="btn primary" href="https://github.com/OrionVW42/homecable/releases/latest">⬇ Download for Windows — coming soon</a>
+    <a class="btn" href="https://github.com/OrionVW42/homecable">⭐ View on GitHub</a>
+  </div>
+  <div class="note">Windows 10/11 (64-bit) · free &amp; MIT-licensed · phone app for Android included</div>
+  <img class="hero-shot" src="docs/media/screenshots/01-live-tv.png" alt="HomeCable playing live TV with the channel banner">
+</header>
+
+<section class="wrap" id="why">
+  <h2>Why HomeCable exists</h2>
+  <p class="sub">Streaming menus turned watching TV into homework. HomeCable brings back the other way: channels that are already playing something, a guide to flip through, and the couch feeling of just watching TV — built out of your own library. You bring the media; HomeCable brings the cable company (minus the bill).</p>
+</section>
+
+<section class="wrap" id="features">
+  <h2>Everything a cable box did — and plenty it didn't</h2>
+  <p class="sub">All of it works out of the box after a guided first-run setup that can configure everything for you.</p>
+  <div class="grid">
+    <div class="card"><div class="ic">📺</div><h3>Channels that never stop</h3><p>Shows start on the half hour, episodes air in order (or shuffled, or fully random — per channel). Channels keep airing while the app is closed: open it next week and the schedule has moved on, exactly on time.</p></div>
+    <div class="card"><div class="ic">🗓</div><h3>A real cable guide</h3><p>A grid guide with what's on now and next across every channel, time blocks ("Saturday Cartoons 8–11am"), and live TV programmes with real titles and times from free public guides.</p></div>
+    <div class="card"><div class="ic">⏪</div><h3>Live DVR</h3><p>Pause, rewind and fast-forward live channels like a cable box — back as far as you've been watching, forward to live.</p></div>
+    <div class="card"><div class="ic">🎬</div><h3>On Demand &amp; Stream Demand</h3><p>A wall of your movie posters with resume, and a binge screen for shows — seasons, episodes, "Continue S2 · E4", and the next episode plays itself.</p></div>
+    <div class="card"><div class="ic">🎨</div><h3>Network logos &amp; bumpers</h3><p>Every channel gets its own network mark — ready-made looks, fonts, shapes, colors, or your own picture. Between shows the channel plays a few seconds of its own animated logo bump, just like real networks.</p></div>
+    <div class="card"><div class="ic">📣</div><h3>Wacky commercial breaks</h3><p>Optional, off by default: short, family-friendly interdimensional joke ads between shows, shipped inside the app. Add your own ad packs — a pack is just a folder of short videos, each with its own switch.</p></div>
+    <div class="card"><div class="ic">🏷</div><h3>Tags &amp; info, done for you</h3><p>One click looks everything up by name (titles only): posters, genres, correct names, anime detection with the tags fans sort by, and true airing order so OVAs land between the right seasons.</p></div>
+    <div class="card"><div class="ic">📱</div><h3>Watch all over the house</h3><p>Cast to Chromecast / Google TV (mirror everything or send just the picture). Pair phones and tablets with a QR code to watch anywhere on your network — or use one as the remote, even for the TV.</p></div>
+    <div class="card"><div class="ic">👪</div><h3>Profiles &amp; kid-safety</h3><p>Kids only see kid-friendly channels, teens see more, grown-ups see everything. PIN, password or controller-combo locks — plus a password-locked private section that stays out of every list.</p></div>
+    <div class="card"><div class="ic">💬</div><h3>Subtitles &amp; dubs, Netflix-style</h3><p>Auto-subtitles when the audio isn't your language, per-show audio and subtitle memory, skip-intro for anime, and live captions generated entirely on your own PC.</p></div>
+    <div class="card"><div class="ic">📡</div><h3>Free live TV &amp; classics</h3><p>Free, publicly available live stations (tested automatically — only ones that play are kept) and public-domain movies and cartoons from the Internet Archive, scheduled like any other channel.</p></div>
+    <div class="card"><div class="ic">🎮</div><h3>Couch-first controls</h3><p>Keyboard, mouse, or Xbox / PS5 controller for everything — plus a pop-out always-on-top mini player, fullscreen TV mode, and four built-in retro arcade games for the ad breaks of life.</p></div>
+  </div>
+</section>
+
+<section class="wrap" id="see-it">
+  <h2>See it move</h2>
+  <p class="sub">Captured from the real app running free, open-licensed demo videos (Blender open movies).</p>
+  <div class="showcase">
+    <figure><img src="docs/media/gifs/channel-surfing.gif" alt="Channel surfing"><figcaption>Flip channels like real cable — branded banners, static, and you join shows in progress.</figcaption></figure>
+    <figure><img src="docs/media/gifs/the-guide.gif" alt="The guide"><figcaption>The guide: browse what's on across every channel and jump in.</figcaption></figure>
+    <figure><img src="docs/media/gifs/stream-demand-binge.gif" alt="Stream Demand"><figcaption>Stream Demand: pick a show, and the next episode plays itself.</figcaption></figure>
+    <figure><img src="docs/media/gifs/bumper-and-wacky-ad.gif" alt="Bumpers and ads"><figcaption>End of show → the channel's own bumper → a wacky ad → back to the toons.</figcaption></figure>
+  </div>
+</section>
+
+<section class="wrap" id="screens">
+  <h2>Screens</h2>
+  <div class="shots">
+    <img src="docs/media/screenshots/05-movies-on-demand.png" alt="Movies On Demand">
+    <img src="docs/media/screenshots/07-show-page.png" alt="Show page">
+    <img src="docs/media/screenshots/04-guide.png" alt="Guide">
+    <img src="docs/media/screenshots/08-channel-manager.png" alt="Channel Manager">
+    <img src="docs/media/screenshots/09-network-logos.png" alt="Network logos">
+    <img src="docs/media/screenshots/10-tags.png" alt="Tags">
+    <img src="docs/media/screenshots/03-wacky-ad-break.png" alt="A wacky ad break">
+    <img src="docs/media/screenshots/13-welcome-tour.png" alt="Welcome tour">
+    <img src="docs/media/screenshots/11-library.png" alt="Library">
+  </div>
+</section>
+
+<section class="wrap" id="platforms">
+  <h2>Platforms</h2>
+  <p class="sub">
+    <span class="pill">✅ Windows 10/11 (64-bit) — the full app</span>
+    <span class="pill">✅ Android phones &amp; tablets — companion APK, pairs to your PC</span>
+    <span class="pill">✅ Chromecast / Google TV — casting</span>
+    <span class="pill">🔜 Fire TV / Android TV app — roadmap</span>
+    <span class="pill">🔮 iOS — future</span>
+  </p>
+  <p class="sub">The PC is the heart of the system: it holds your library, builds the schedules, and serves every phone and TV in the house. Phones pair once with a QR code; nothing is ever opened to the internet.</p>
+</section>
+
+<section class="wrap" id="install">
+  <h2>Install in two minutes</h2>
+  <ol class="road">
+    <li><b>Download</b> <code>HomeCable-Setup-&lt;version&gt;.exe</code> from <a href="https://github.com/OrionVW42/homecable/releases/latest">Releases</a> and run it. Agree to the fair-use terms (it won't install without them).</li>
+    <li><b>First run:</b> pick <i>Set it all up for me</i> — HomeCable finds your media, sorts movies and shows into channels, adds free TV, and walks you through a short welcome tour.</li>
+    <li><b>Phones:</b> Settings → Phone app → pair with the QR code. Updating later? Run the new installer over the old one — channels, people and settings are kept.</li>
+  </ol>
+  <p class="note">Unsigned installer: Windows SmartScreen may warn on first run — choose "More info → Run anyway". Code signing is on the roadmap.</p>
+</section>
+
+<section class="wrap faq" id="faq">
+  <h2>FAQ</h2>
+  <details><summary>Is this for piracy?</summary><p>No. HomeCable is a player: it hosts and provides no media. It plays files you have the right to play, plus free public streams and public-domain archives. The installer requires agreeing to exactly that, and what you play is your responsibility.</p></details>
+  <details><summary>Does it need the internet?</summary><p>Only for optional features — show info and posters (titles only are sent), free live TV, and TV guides. Your library, viewing and settings never leave your PC. No accounts, no telemetry, no tracking, ever.</p></details>
+  <details><summary>What formats does it play?</summary><p>Basically everything — MP4, MKV, AVI, WMV, MOV, MPEG, TS, FLV, HEVC and more. Anything the player can't decode natively is converted on the fly by the bundled FFmpeg.</p></details>
+  <details><summary>Where does my media come from?</summary><p>This PC, USB drives, network shares, NAS boxes, and DLNA media servers (Plex, Jellyfin, Emby and friends). Drop new files in your folders and they just appear.</p></details>
+  <details><summary>How do updates work?</summary><p>Run the newer installer over the old one — everything is kept. In-app updates straight from GitHub Releases are on the roadmap.</p></details>
+  <details><summary>Mac or Linux?</summary><p>Windows-only today. The app is Electron-based, so other desktops are possible later — the phone side already works with any Android device.</p></details>
+</section>
+
+<section class="wrap" id="roadmap">
+  <h2>Roadmap</h2>
+  <ul class="road">
+    <li><b>In-app updates</b> — the app offers new GitHub releases itself and installs them in one click.</li>
+    <li><b>Fire TV / Android TV app</b> — a D-pad-first app for TV sticks, paired to the PC like phones are.</li>
+    <li><b>Phone APK updates from the PC</b> — paired phones get new app versions without visiting anything.</li>
+    <li><b>Code signing</b> — remove the SmartScreen warning.</li>
+    <li><b>iOS</b> — future; not started yet.</li>
+  </ul>
+</section>
+
+<section class="wrap" id="contributing">
+  <h2>Contributing</h2>
+  <p class="sub">Issues, ideas and pull requests are welcome — the <a href="https://github.com/OrionVW42/homecable">repo</a> has build instructions (it's <code>npm install</code> → <code>npm start</code>), unit tests and end-to-end tests that drive the real app. If you make something fun — an ad pack, a channel look — share it.</p>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p><b>HomeCable</b> — free, open-source software under the MIT license. It hosts no media; you are responsible for what you play. Bundled components (FFmpeg and others) keep their own licenses — see NOTICES.md in the repo.</p>
+    <p><a href="https://github.com/OrionVW42/homecable">GitHub</a> · <a href="https://github.com/OrionVW42/homecable/releases">Releases</a> · <a href="https://github.com/OrionVW42/homecable/issues">Support &amp; issues</a></p>
+  </div>
+</footer>
+
+</body>
+</html>

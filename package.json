@@ -1,0 +1,82 @@
+{
+  "name": "homecable",
+  "productName": "HomeCable",
+  "version": "1.4.3",
+  "license": "MIT",
+  "description": "Turn your video library into live cable TV channels.",
+  "main": "src/main/main.js",
+  "author": "HomeCable",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test \"test/*.test.js\"",
+    "e2e": "npx playwright test",
+    "dist": "electron-builder --win"
+  },
+  "build": {
+    "appId": "app.homecable.player",
+    "productName": "HomeCable",
+    "asarUnpack": [
+      "node_modules/ffmpeg-static/**"
+    ],
+    "files": [
+      "src/**",
+      "assets/**",
+      "package.json",
+      "NOTICES.md",
+      "LICENSE",
+      "!assets/ads/**"
+    ],
+    "extraResources": [
+      {
+        "from": "vendor/whisper",
+        "to": "whisper"
+      },
+      {
+        "from": "assets/ads",
+        "to": "ads"
+      }
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "HomeCable",
+      "uninstallDisplayName": "HomeCable",
+      "artifactName": "HomeCable-Setup-${version}.exe",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false,
+      "include": "build/installer.nsh",
+      "license": "build/license.txt"
+    },
+    "compression": "maximum"
+  },
+  "dependencies": {
+    "ffmpeg-static": "^5.3.0",
+    "htm": "^3.1.1",
+    "multicast-dns": "^7.2.5",
+    "preact": "^11.1.1",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "electron": "^45.2.1",
+    "electron-builder": "^26.18.0"
+  }
+}

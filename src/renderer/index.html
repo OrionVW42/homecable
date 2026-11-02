@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>HomeCable</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-DO6M+invriYbnY+cRUCh3mb82cvo62iLlyvVp6Z4Ymo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: http: https:; media-src http://127.0.0.1:*; connect-src 'self'">
+  <link rel="stylesheet" href="styles.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "preact": "../../node_modules/preact/dist/preact.mjs",
+      "preact/hooks": "../../node_modules/preact/hooks/dist/hooks.mjs",
+      "htm": "../../node_modules/htm/dist/htm.module.js",
+      "htm/preact": "../../node_modules/htm/preact/index.module.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
