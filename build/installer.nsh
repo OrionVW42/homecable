@@ -23,6 +23,11 @@
 !macroend
 
 !macro customUnInstall
+  ; App files the updater downloaded (only on a real uninstall — an update's
+  ; own silent uninstall keeps them; the new version tidies them itself).
+  ${ifNot} ${isUpdated}
+    RMDir /r "$LOCALAPPDATA\HomeCable\app-versions"
+  ${endIf}
   IfFileExists "$APPDATA\HomeCable\settings.json" 0 hc_keep_done
     MessageBox MB_YESNO|MB_ICONQUESTION "Also remove your HomeCable channels, people and settings?$\r$\n$\r$\nYes  =  remove them (a new install starts from scratch)$\r$\nNo   =  keep them for next time$\r$\n$\r$\n(Your video files are never touched.)" /SD IDNO IDNO hc_keep_done
       RMDir /r "$APPDATA\HomeCable"

@@ -166,6 +166,6 @@ contextBridge.exposeInMainWorld('tv', {
   updateApply: call('update:apply'),
   updateStatus: call('update:status'),
   onUpdateToast: on('update-toast'),
-  onUpdateInstalling: on('update-installing'),
+  onUpdateStatus: on('update-status'),
   onUpdateDone: on('update-done'),
 });

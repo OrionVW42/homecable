@@ -57,7 +57,7 @@ Captured from the real app running only free, open-licensed films. (Smoother ver
 - **Plays anything.** MP4, MKV, AVI, WMV, MOV, MPEG, TS, FLV, HEVC… converted on the fly by bundled FFmpeg when needed.
 - **Finds your media.** This PC, USB, network shares, NAS boxes and DLNA servers (Plex, Jellyfin, Emby…). New files appear on channels automatically — or wait for your review, your choice.
 - **Couch-first.** Keyboard, mouse, Xbox / PS5 controllers, fullscreen TV mode, pop-out mini player, a one-time welcome tour, and four retro arcade games.
-- **Keeps itself up to date.** New versions come straight from GitHub Releases: downloaded quietly in the background, installed on the next start, channels and settings always kept.
+- **Updates itself, the easy way.** Like Discord: a little updater window at every start checks for a new version, downloads just the app (a few MB) with a progress bar and opens HomeCable on it — no reinstalling. While it runs, updates download quietly and a **Restart to update** button switches over in seconds. Windows' Installed apps shows the new version, and a version that won't start is rolled back by itself.
 
 ## Screens
 
@@ -71,7 +71,7 @@ Captured from the real app running only free, open-licensed films. (Smoother ver
 
 1. Download `HomeCable-Setup-<version>.exe` from [Releases](https://github.com/OrionVW42/homecable/releases/latest) and run it. The installer asks you to agree to the fair-use terms — it won't install without them.
 2. On first launch pick **Set it all up for me** — HomeCable finds your media, builds channels, adds free TV and shows you around. Or **I'll do it myself** and place everything by hand.
-3. From then on HomeCable **updates itself**: it checks these Releases, downloads the new version quietly without interrupting what's playing, and switches over the next time it starts — channels, people and settings are always kept. (Running a newer installer by hand works too.)
+3. From then on HomeCable **updates itself**: each start, the updater window checks these Releases and swaps in the new version in a few seconds (or press **Restart to update** while it's running) — channels, people and settings are always kept. (Running a newer installer by hand works too.)
 
 > **Note:** the installer is not code-signed yet, so Windows SmartScreen may warn on first run — *More info → Run anyway*. Code signing is on the roadmap.
 

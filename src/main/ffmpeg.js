@@ -4,7 +4,12 @@ const { spawn } = require('child_process');
 
 function ffmpegPath() {
   let p = require('ffmpeg-static');
-  // In a packaged build the binary lives next to the asar, not inside it.
+  // In a packaged build the binary lives next to the installed app file, not
+  // inside it — also when an updated app file runs from app-versions\<v>\.
+  if (process.resourcesPath && /\.asar[\\/]/.test(p)) {
+    const shellCopy = require('path').join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'ffmpeg-static', require('path').basename(p));
+    if (require('fs').existsSync(shellCopy)) return shellCopy;
+  }
   return p.replace('app.asar' + require('path').sep, 'app.asar.unpacked' + require('path').sep);
 }
 

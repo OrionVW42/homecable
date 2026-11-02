@@ -293,6 +293,35 @@ function OnDemandFolderRow({ settings, toast, kind = 'movies' }) {
 }
 
 // Start over: wipe HomeCable's channels, people and settings and run first-time setup again.
+// Settings → Updates: live status from the updater (checking, download
+// progress, ready), "Check now", the blue "Update now", and how it checks.
+const ago = (t) => { if (!t) return 'never'; const m = Math.round((Date.now() - t) / 60e3); return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 48 * 60 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`; };
+const mbs = (n) => `${(n / 1e6).toFixed(n < 1e7 ? 1 : 0)} MB`;
+function UpdatesSection({ settings, setSettings, toast, version, Toggle }) {
+  const [st, setSt] = useState(null);
+  const [notes, setNotes] = useState(false);
+  useEffect(() => { tv.updateStatus().then(setSt).catch(() => {}); return tv.onUpdateStatus(setSt); }, []);
+  const ready = st?.ready;
+  const line = !st ? '' : st.phase === 'checking' ? 'Checking GitHub for a new version…'
+    : st.phase === 'downloading' ? `Downloading v${st.latest?.version || ''}${st.total ? ` — ${mbs(st.got)} of ${mbs(st.total)}` : ''} (playback isn’t touched)`
+    : ready ? `v${ready.version} is downloaded and ready. Press Update now — or it switches over next time HomeCable starts.`
+    : st.phase === 'error' ? `Couldn’t check just now (${st.error}). It’ll try again later.`
+    : `You’re up to date. Last checked ${ago(st.lastCheck)}.`;
+  const check = () => { toast('Checking for updates…'); tv.updateCheck().then((r) => toast(r.found ? `⬇ v${r.found} found — downloading in the background` : r.ready ? `v${r.ready.version} is ready — press Update now` : r.error ? `Couldn’t check: ${r.error}` : `You’re on the newest version (${r.current})`)).catch(() => toast('Couldn’t check for updates')); };
+  const apply = () => tv.updateApply().then((r) => { if (!r.ok) toast(r.dev ? 'Running from source — updates install in the real app' : 'The update isn’t fully downloaded yet'); });
+  const whatsNew = ready?.notes || (st?.latest?.version === ready?.version ? st?.latest?.notes : '');
+  return html`
+    <div class="settings-row upd-row"><div class="grow"><b>🔄 Updates</b><span>You're on <strong style="color:var(--text)">v${version}</strong>. ${line}</span>
+        ${st?.phase === 'downloading' && html`<div class="progress upd-progress"><i style=${`width:${Math.round((st.pct || 0) * 100)}%`}></i></div>`}
+        ${whatsNew && html`<button class="linkish" onClick=${() => setNotes(!notes)}>${notes ? 'Hide what’s new' : `What’s new in v${ready.version}`}</button>${notes && html`<pre class="upd-notes">${whatsNew}</pre>`}`}</div>
+      <button class="btn sm" disabled=${st?.phase === 'checking' || st?.phase === 'downloading'} onClick=${check}>Check now</button>
+      <button class=${'btn sm' + (ready ? ' primary' : '')} disabled=${!ready} title=${ready ? `Restart into v${ready.version} now — takes a few seconds` : 'Lights up when an update has finished downloading'} onClick=${apply}>${ready ? `⬆ Update now → v${ready.version}` : '⬆ Update now'}</button></div>
+    <div class="settings-row"><div class="grow"><b>Check when HomeCable starts</b><span>The little updater window at every start: it checks for a new version, puts it in with a progress bar and opens HomeCable — usually a second or two. Turn it off to start instantly; updates then download in the background instead.</span></div><${Toggle} k="updateOnStart" /></div>
+    <div class="settings-row"><div class="grow"><b>Check while it's running</b><span>Leave HomeCable on for days? It still finds new versions and downloads them quietly without touching what's playing.</span></div>
+      <div class="seg">${[['1h', 'Hourly'], ['6h', '6 h'], ['24h', 'Daily'], ['off', 'Never']].map(([k, l]) => html`<button class=${(settings.updateEvery === 'start' ? '24h' : settings.updateEvery || '24h') === k ? 'on' : ''} onClick=${() => setSettings({ updateEvery: k })}>${l}</button>`)}</div></div>
+    <div class="settings-row"><div class="grow"><b>Say when an update is found</b><span>A small note in the top corner when a new version starts downloading, and a “Restart to update” button when it’s ready.</span></div><${Toggle} k="updateNotify" /></div>`;
+}
+
 function StartOverRow() {
   const [ask, setAsk] = useState(false);
   return html`<div class="settings-row"><div class="grow"><b>Start over from scratch</b><span>Removes your channels, people, settings and library list, then runs the first-time setup again. Your video files are never touched.</span></div>
@@ -382,12 +411,7 @@ export function SettingsPanel({ settings, setSettings, onRunSetup, onShowTour, v
       <div class="section-title">About</div>
       <div class="settings-row"><div class="grow"><b>HomeCable ${version}</b><span>Free, open-source software (MIT). No accounts, no telemetry, no tracking. Free TV comes from public lists and public-domain archives — HomeCable doesn't host any streams, and what you play is your responsibility.</span></div>
         <button class="btn sm" onClick=${async () => setNotices(await tv.notices())}>Privacy, content & licenses</button></div>
-      <div class="settings-row"><div class="grow"><b>🔄 Updates</b><span>You're on <b>v${version}</b>. ${settings.pendingUpdate?.version ? `v${settings.pendingUpdate.version} is downloaded and ready — press Update now, or it installs next time HomeCable starts. ` : ''}Checks GitHub for new versions, downloads them quietly without touching what's playing, and switches over on the next start. Updates keep your channels, people and settings.</span></div>
-        <div class="seg">${[['start', 'At start'], ['1h', 'Hourly'], ['6h', '6 h'], ['24h', 'Daily']].map(([k, l]) => html`<button class=${(settings.updateEvery || '24h') === k ? 'on' : ''} onClick=${() => setSettings({ updateEvery: k })}>${l}</button>`)}</div>
-        <button class="btn sm" onClick=${() => { toast('Checking for updates…'); tv.updateCheck().then((st) => toast(st.found ? `⬇ v${st.found} found — downloading in the background` : st.pending ? `v${st.pending.version} is ready — press Update now` : st.error ? `Couldn’t check: ${st.error}` : `You’re on the newest version (${st.current})`)).catch(() => toast('Couldn’t check for updates')); }}>Check now</button>
-        <button class=${'btn sm' + (settings.pendingUpdate?.version ? ' primary' : '')} disabled=${!settings.pendingUpdate?.version} title=${settings.pendingUpdate?.version ? `Install v${settings.pendingUpdate.version} right now` : 'Lights up when an update has finished downloading'}
-          onClick=${() => tv.updateApply().then((r) => { if (!r.ok) toast('The update isn’t fully downloaded yet'); })}>${settings.pendingUpdate?.version ? `⬆ Update now → v${settings.pendingUpdate.version}` : '⬆ Update now'}</button></div>
-      <div class="settings-row"><div class="grow"><b>Say when an update is found</b><span>A small note in the top corner the moment a new version starts downloading. Turn it off and updates are completely invisible.</span></div><${Toggle} k="updateNotify" /></div>
+      <${UpdatesSection} settings=${settings} setSettings=${setSettings} toast=${toast} version=${version} Toggle=${Toggle} />
       ${notices && html`<div class="modal-bg" onClick=${(e) => e.target === e.currentTarget && setNotices(null)}><div class="modal"><div class="modal-head"><h3>Privacy, content & licenses</h3><button class="icon-btn" onClick=${() => setNotices(null)}><${Icon.close} /></button></div>
         <div class="modal-body notices">${renderNotices(notices)}</div></div></div>`}`}
     </div>

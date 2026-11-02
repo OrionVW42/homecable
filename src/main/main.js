@@ -28,18 +28,11 @@ const adsLib = require('./ads');
 const epg = require('./epg');
 const { Profiles, autoRating } = require('./profiles');
 
-// Tests point this at a throwaway profile.
-if (process.env.HOMECABLE_DATA) app.setPath('userData', process.env.HOMECABLE_DATA);
-if (process.env.HOMECABLE_MUTE) app.commandLine.appendSwitch('mute-audio');
-if (!app.requestSingleInstanceLock()) { app.quit(); return; }
-
-// Let HEVC/AV1 use the GPU where the driver supports it.
-app.commandLine.appendSwitch('enable-features', 'PlatformHEVCDecoderSupport');
-app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
-// Windows promotes <video> to a hardware overlay plane that paints ABOVE the
-// page — menus, the guide and the banner ended up buried under the picture
-// (worst in fullscreen). Keep video in the normal compositing stack.
-app.commandLine.appendSwitch('disable-direct-composition-video-overlays');
+// Profile path + Chromium switches (the launcher already did this when it runs us).
+require('./switches').apply(app);
+// The launcher (src/boot/boot.js) holds the single-instance lock already.
+const BOOT = global.__hcBoot || null;
+if (!BOOT && !app.requestSingleInstanceLock()) { app.quit(); return; }
 
 let win, store, lib, sched, media, channels, settings, profiles, updater, sleepBlock = null;
 const logFile = () => path.join(app.getPath('userData'), 'homecable.log');
@@ -64,7 +57,7 @@ const DEFAULT_SETTINGS = { setupDone: false, onlineMeta: true, transitions: true
   bumpersOn: true, bumperSeconds: 5,
   // In-app updates from GitHub Releases: checked quietly, downloaded quietly,
   // installed when the app restarts. 'start' | '1h' | '6h' | '24h'.
-  updateEvery: '24h', updateNotify: true, updateRepo: '', lastUpdateCheck: 0, updateNotified: '', pendingUpdate: null,
+  updateEvery: '24h', updateOnStart: true, updateNotify: true, updateRepo: '', lastUpdateCheck: 0, updateNotified: '', pendingUpdate: null,
   // Free live TV: what to keep the lineup stocked with, and where its numbers start.
   live: null,                // { country, categories, max, sources: ['iptv-org','free-tv'], urls: [] } once set up
   liveStart: 100, lastLiveRefresh: 0,
@@ -898,19 +891,8 @@ function createWindow() {
   });
   win.loadFile(path.join(__dirname, '../renderer/index.html'));
   // Automated checks can run without popping a window up on the screen.
-  if (process.env.HOMECABLE_OFFSCREEN) { win.setPosition(-10000, -10000); win.showInactive(); }
+  if (process.env.HOMECABLE_OFFSCREEN) { win.setPosition(-10000, -10000); win.setSkipTaskbar(true); win.showInactive(); }
   else win.once('ready-to-show', () => { win.show(); if (settings.startFullscreen) win.setFullScreen(true); });
-  // Closing with an update ready: show "Installing…" for a moment instead of
-  // just vanishing and reappearing — people thought the app broke.
-  let closingForUpdate = false;
-  win.on('close', (e) => {
-    if (closingForUpdate || !updater?.hasReady?.()) return;
-    if (!app.isPackaged && !process.env.HOMECABLE_FAKE_PACKAGED) return;
-    closingForUpdate = true;
-    e.preventDefault();
-    send('update-installing', { version: settings.pendingUpdate?.version });
-    setTimeout(() => { try { win.close(); } catch {} }, 2300);
-  });
   win.on('enter-full-screen', () => send('fullscreen', true));
   win.on('leave-full-screen', () => send('fullscreen', false));
   win.on('maximize', () => send('maximized', true));
@@ -1599,7 +1581,9 @@ function handlers() {
   });
 
   // Network
-  h('network:discover', () => network.discoverAll());
+  // HOMECABLE_DEMO (product-page recordings): a neutral PC name and none of the
+  // real network's devices, drives or shares on screen.
+  h('network:discover', () => (process.env.HOMECABLE_DEMO ? { thisPc: { name: 'Living Room PC', drives: [] }, dlna: [], pcs: [] } : network.discoverAll()));
   h('network:shares', (host) => network.listShares(host));
   h('sources:add', async (srcs) => {
     // srcs: [{ type:'folder', path }] or [{ type:'dlna', server }]
@@ -2086,17 +2070,13 @@ function handlers() {
   h('win:close', () => win.close());
   h('openLog', () => shell.openPath(logFile()));
   h('notices', () => fs.readFileSync(path.join(__dirname, '../../NOTICES.md'), 'utf8'));
-  // The Settings button: answer as soon as the check is done — the download
-  // (a couple hundred MB) carries on in the background and installs on restart.
+  // "Check now": answer as soon as the check is done — the download carries on
+  // in the background (Settings shows its progress live).
   h('update:check', async () => { const info = await updater.check(); if (info) updater.run('manual'); return { ...updater.status(), found: info ? info.version : null }; });
   h('update:status', () => updater.status());
-  // The blue "Update now" button: the download is ready, install this instant —
-  // the window shows its goodbye card, closes, and the new version reopens.
-  h('update:apply', () => {
-    if (!updater.hasReady()) return { ok: false };
-    setTimeout(() => { try { win.close(); } catch {} }, 150);
-    return { ok: true };
-  });
+  // "Update now": restart straight into the new version (the updater window
+  // swaps it in and HomeCable reopens by itself).
+  h('update:apply', () => updater.apply(() => win.close()));
 }
 
 // "Start over from scratch" (Settings, or the installer's "start fresh"): clear
@@ -2116,10 +2096,10 @@ app.whenReady().then(async () => {
   store = new Store(app.getPath('userData'));
   channels = store.read('channels', []);
   settings = { ...DEFAULT_SETTINGS, ...store.read('settings', {}) };
-  // An update downloaded last time installs now, before anything opens — the
-  // installer keeps channels, people and settings, then starts the new version.
+  // Background update checks + "Update now" (installing happens in the
+  // launcher's updater window at start — never on close).
   updater = createUpdater({ app, log, send, settings: () => settings, saveSettings });
-  if (updater.applyPending('boot')) { app.quit(); return; }
+  if (settings.updateEvery === 'start') { settings.updateEvery = '24h'; saveSettings(); } // the start-up window does that now
   lib = new Library(store);
   sched = new Scheduler(store, lib);
   profiles = new Profiles(store);
@@ -2206,7 +2186,7 @@ app.whenReady().then(async () => {
     call: async (name, ...a) => handlerFns[name](...a),
     isDenied: (it) => !it || lib.isPrivate(it.path),
     filesRoot: path.join(__dirname, '..', 'phone'), nodeModules: path.join(__dirname, '..', '..', 'node_modules'),
-    pcName: () => os.hostname() });
+    pcName: () => (process.env.HOMECABLE_DEMO ? 'Living Room PC' : os.hostname()) });
   if (settings.phone?.enabled) phone.enable(true).catch((e) => log('phone', e.message));
   captions.setLog(log);
   app.on('will-quit', () => captions.stop());
@@ -2237,16 +2217,22 @@ app.whenReady().then(async () => {
   setInterval(() => { try { sched.ensure(channels); } catch (e) { log('ensure', e.stack); } }, 10 * 60e3);
   // First start after an update: say so, warmly — people should KNOW the
   // delete-and-reinstall they half-saw was the update doing its job.
-  if (settings.lastRunVersion && settings.lastRunVersion !== app.getVersion()) {
+  if (settings.lastRunVersion && updater.newerThan(app.getVersion(), settings.lastRunVersion)) {
     const from = settings.lastRunVersion;
     setTimeout(() => send('update-done', { version: app.getVersion(), from }), 3500);
+  } else if (updater.status().failed && settings.updateFailedSaid !== updater.status().failed) {
+    // A downloaded version wouldn't start, so the launcher went back to this one. Say so once.
+    const bad = updater.status().failed;
+    settings.updateFailedSaid = bad; saveSettings();
+    setTimeout(() => send('toast', `v${bad} didn’t start properly — you’re back on v${app.getVersion()}. It’ll try the next update.`), 3500);
   }
   if (settings.lastRunVersion !== app.getVersion()) { settings.lastRunVersion = app.getVersion(); saveSettings(); }
-  // Updates: the first boot of the day checks GitHub straight away, then the
-  // chosen rhythm. Found ones download silently and install on the next restart.
+  // Updates while running: on the chosen rhythm (the start-up window already
+  // checked if it was on). Found ones download quietly; "Update now" or the
+  // next start switches over.
   if (updater.due()) setTimeout(() => updater.run('boot'), 2500);
   setInterval(() => { if (updater.due()) updater.run('timer'); }, 30 * 60e3);
 });
 
 app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
-app.on('window-all-closed', async () => { if (casting) await Promise.race([stopCasting('quit'), new Promise((r) => setTimeout(r, 2500))]); media?.stopStreams(); lib?.close(); if (sched) store.write('schedule', sched.state); try { updater?.applyPending('quit'); } catch {} app.quit(); });
+app.on('window-all-closed', async () => { if (casting) await Promise.race([stopCasting('quit'), new Promise((r) => setTimeout(r, 2500))]); media?.stopStreams(); lib?.close(); if (sched) store.write('schedule', sched.state); app.quit(); });

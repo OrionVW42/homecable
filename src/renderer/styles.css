@@ -1010,3 +1010,11 @@ body.legend-up .toast { bottom: 76px; }
 .upd-install p { color: var(--dim); margin: 0 0 14px; }
 .upd-install .progress { width: min(380px, 70vw); }
 .btn:disabled { opacity: .45; cursor: default; }
+
+/* ---------- 1.4.8: the updater ---------- */
+.upd-ready { position: absolute; top: 66px; left: 16px; z-index: 70; display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 16px; border-radius: 12px; background: var(--panel-solid); border: 1px solid rgba(108,140,255,.45); box-shadow: 0 16px 40px rgba(0,0,0,.5); animation: updslide .35s ease; font-size: 13.5px; }
+.upd-ready .icon-btn.sm { width: 30px; height: 30px; font-size: 13px; }
+.upd-progress { margin-top: 8px; max-width: 360px; height: 6px; }
+.linkish { background: none; border: 0; padding: 0; margin-top: 6px; display: block; color: var(--accent); font: inherit; font-size: 13px; cursor: pointer; }
+.linkish:hover { text-decoration: underline; }
+.upd-notes { white-space: pre-wrap; font: 12.5px/1.5 var(--font); color: var(--dim); background: var(--raise); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 8px 0 0; max-height: 220px; overflow: auto; }

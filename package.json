@@ -1,23 +1,24 @@
 {
   "name": "homecable",
   "productName": "HomeCable",
-  "version": "1.4.7",
+  "version": "1.4.8",
   "license": "MIT",
   "description": "Turn your video library into live cable TV channels.",
   "homecable": {
     "github": "OrionVW42/homecable"
   },
-  "main": "src/main/main.js",
+  "main": "src/boot/boot.js",
   "author": "HomeCable",
   "scripts": {
     "start": "electron .",
     "test": "node --test \"test/*.test.js\"",
     "e2e": "npx playwright test",
-    "dist": "electron-builder --win"
+    "dist": "electron-builder --win && node tools/make-update.js"
   },
   "build": {
     "appId": "app.homecable.player",
     "productName": "HomeCable",
+    "afterPack": "build/afterPack.js",
     "asarUnpack": [
       "node_modules/ffmpeg-static/**"
     ],

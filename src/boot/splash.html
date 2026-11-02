@@ -1,0 +1,69 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self'">
+<title>HomeCable</title>
+<style>
+  :root { --bg: #07080b; --text: #eef0f6; --dim: #9aa0b2; --faint: #626879; --accent: #6c8cff; --accent-2: #a46cff; --good: #3ddc97; --line: rgba(255,255,255,.09); }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; overflow: hidden; user-select: none; }
+  body { -webkit-app-region: drag; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 28px;
+    background: radial-gradient(ellipse at 50% 18%, rgba(108,140,255,.24), transparent 62%), radial-gradient(ellipse at 80% 100%, rgba(164,108,255,.16), transparent 55%), var(--bg);
+    border: 1px solid var(--line); }
+  .logo { width: 104px; height: 104px; border-radius: 26px; filter: drop-shadow(0 10px 34px rgba(108,140,255,.45)); animation: breathe 2.6s ease-in-out infinite; }
+  .done .logo { animation: none; }
+  @keyframes breathe { 50% { transform: scale(1.045); filter: drop-shadow(0 12px 44px rgba(164,108,255,.6)); } }
+  h1 { font: 700 26px "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif; letter-spacing: -.01em; margin: 18px 0 0; }
+  .status { margin-top: 26px; font-size: 15px; min-height: 22px; display: flex; align-items: center; gap: 8px; justify-content: center; }
+  .sub { margin-top: 6px; font-size: 12.5px; color: var(--dim); min-height: 18px; }
+  .bar { margin-top: 16px; width: 230px; height: 6px; border-radius: 99px; background: rgba(255,255,255,.08); overflow: hidden; visibility: hidden; }
+  .bar i { display: block; height: 100%; width: 0; border-radius: inherit; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .2s ease; }
+  .bar.indet i { width: 35%; animation: slide 1.15s linear infinite; }
+  @keyframes slide { from { transform: translateX(-110%); } to { transform: translateX(330%); } }
+  .spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(255,255,255,.18); border-top-color: var(--accent); animation: rot .8s linear infinite; }
+  @keyframes rot { to { transform: rotate(360deg); } }
+  .tick { color: var(--good); font-weight: 700; }
+  .done .status { color: var(--good); }
+  .skip { -webkit-app-region: no-drag; margin-top: 18px; background: none; border: 1px solid var(--line); color: var(--dim); font: inherit; font-size: 12.5px; padding: 6px 14px; border-radius: 99px; cursor: pointer; visibility: hidden; }
+  .skip:hover { color: var(--text); border-color: rgba(255,255,255,.2); }
+  .ver { position: absolute; bottom: 12px; left: 0; right: 0; font-size: 11px; color: var(--faint); }
+</style>
+</head>
+<body>
+  <img class="logo" src="../../assets/icon.png" alt="">
+  <h1>HomeCable</h1>
+  <div class="status"><span class="spin" id="spin"></span><span id="text">Starting…</span></div>
+  <div class="sub" id="sub"></div>
+  <div class="bar" id="bar"><i id="fill"></i></div>
+  <button class="skip" id="skip">Start now — update later</button>
+  <div class="ver" id="ver"></div>
+<script>
+  const $ = (id) => document.getElementById(id);
+  let skipTimer = null;
+  $('skip').onclick = () => { console.log('hc:skip'); $('text').textContent = 'Starting HomeCable…'; $('sub').textContent = ''; $('bar').style.visibility = 'hidden'; $('skip').style.visibility = 'hidden'; };
+  // The launcher drives this: { state, text, sub, pct, version, skip }
+  window.hc = (o) => {
+    if (o.version) $('ver').textContent = 'v' + o.version;
+    if (o.text != null) $('text').textContent = o.text;
+    if (o.sub != null) $('sub').textContent = o.sub;
+    if (o.state) {
+      document.body.className = o.state === 'done' ? 'done' : '';
+      $('spin').style.display = o.state === 'done' ? 'none' : '';
+      if (o.state === 'done') $('text').innerHTML = '<span class="tick">✓</span> ' + $('text').textContent.replace(/[<>&]/g, '');
+    }
+    if ('pct' in o) {
+      const bar = $('bar');
+      if (o.pct == null) { bar.style.visibility = o.state === 'install' ? 'visible' : 'hidden'; bar.classList.toggle('indet', o.state === 'install'); }
+      else { bar.style.visibility = 'visible'; bar.classList.remove('indet'); $('fill').style.width = Math.round(Math.max(0, Math.min(1, o.pct)) * 100) + '%'; }
+    }
+    if ('skip' in o) {
+      clearTimeout(skipTimer);
+      // Only offer it if the download is taking a while.
+      if (o.skip) skipTimer = setTimeout(() => { $('skip').style.visibility = 'visible'; }, 3500);
+      else $('skip').style.visibility = 'hidden';
+    }
+  };
+</script>
+</body>
+</html>
