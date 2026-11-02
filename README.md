@@ -15,7 +15,9 @@ HomeCable turns the shows, movies and music you already own into **real TV chann
 
 Free and open source (MIT). No accounts, no telemetry, no tracking. It's a player: you bring the media, and what you play is your responsibility — see [License & fair use](#license--fair-use).
 
-![HomeCable playing live TV](docs/media/screenshots/01-live-tv.png)
+[![▶ Watch the whole first-run setup — install to watching TV in two minutes](docs/media/screenshots/01-live-tv.jpg)](https://orionvw42.github.io/homecable/)
+
+<p align="center"><b><a href="https://orionvw42.github.io/homecable/">▶ Watch the full setup video on the HomeCable page</a></b> — the real first run, start to finish.</p>
 
 ## Why
 
@@ -23,22 +25,32 @@ Streaming menus turned watching TV into homework. HomeCable brings back the othe
 
 ## See it move
 
+Captured from the real app running only free, open-licensed films. (Smoother versions play on the [HomeCable page](https://orionvw42.github.io/homecable/).)
+
 | | |
 |---|---|
-| ![Channel surfing](docs/media/gifs/channel-surfing.gif) | ![The guide](docs/media/gifs/the-guide.gif) |
-| *Flip channels — you join shows in progress, like real TV* | *The guide: what's on, everywhere, now* |
-| ![Stream Demand](docs/media/gifs/stream-demand-binge.gif) | ![Bumpers and a wacky ad](docs/media/gifs/bumper-and-wacky-ad.gif) |
-| *Stream Demand: the next episode plays itself* | *Show ends → channel bumper → wacky ad → next show* |
+| ![Flip channels — you join shows in progress, like real TV](docs/media/gifs/channel-surfing.gif) | ![The guide: filter by genre, search channels & shows](docs/media/gifs/guide-search-genres.gif) |
+| *Flip channels — you join shows in progress, like real TV* | *The guide: filter by genre, search channels & shows* |
+| ![Right-click → ❤ Favorite, then show only favorites](docs/media/gifs/guide-favorites.gif) | ![The mini player: pause, mute, volume while you browse](docs/media/gifs/mini-player-volume.gif) |
+| *Right-click → ❤ Favorite, then show only favorites* | *The mini player: pause, mute, volume while you browse* |
+| ![On Demand — and back to the channel you were on](docs/media/gifs/on-demand.gif) | ![Stream Demand: pick a show, episodes play in a row](docs/media/gifs/stream-demand.gif) |
+| *On Demand — and back to the channel you were on* | *Stream Demand: pick a show, episodes play in a row* |
+| ![Show ends → channel bumper → an interdimensional ad](docs/media/gifs/bumper-and-wacky-ad.gif) | ![Free TV stations: your lineup + search the whole index](docs/media/gifs/free-tv-manager.gif) |
+| *Show ends → channel bumper → an interdimensional ad* | *Free TV stations: your lineup + search the whole index* |
+| ![A network look for every channel](docs/media/gifs/network-logos.gif) | |
+| *A network look for every channel* | |
 
 ## What it does
 
 - **Channels that run like cable.** Shows start on the half hour, episodes air in order (or shuffled, or fully random — your pick per channel), and channels keep airing even while the app is closed — open it next week and the schedule has moved on, exactly on time. Time blocks air specific shows at specific times ("Saturday Cartoons 8–11am").
 - **Network logos & channel bumpers.** Every channel gets its own network mark — ready-made looks (fonts, badge shapes, colors; long names become cable-style acronyms) or your own picture. Between shows the channel plays a few seconds of its own animated logo bump, just like real networks.
-- **On Demand & Stream Demand.** A wall of your movie posters (pick one, resume where you stopped) and a Netflix-style shows screen — seasons, episodes, "Continue S2 · E4", with OVAs and specials in true airing order.
+- **On Demand & Stream Demand.** A wall of your movie posters (pick one, resume where you stopped) and a Netflix-style shows screen — seasons, episodes, "Continue S2 · E4", with OVAs and specials in true airing order. Leave either and you land back on the channel you were watching, like a real cable box.
+- **A guide you can search.** Filter by genre, search channels and shows, right-click to ❤ favorite or hide a channel, and a heart button for favorites only. It opens right on the channel you're watching.
+- **Live TV that never gives up.** Dropped or stalled streams reconnect by themselves; a quiet station shows "Hang tight" and keeps trying — nothing ever switches you away or removes a channel behind your back.
 - **Live DVR.** Pause, rewind and fast-forward live channels like a cable box.
 - **The Edit menu.** Manage any channel in one place: add shows and movies (with suggestions that fit what it already plays), name, number, logo, order, timing — with a live cable-strip preview. Plus a Tags page with one-click **auto-tag everything**: posters, genres, corrected names, anime detection (Shounen, Isekai, Mecha…), airing order — titles only are ever sent.
 - **Wacky commercial breaks.** Short, family-friendly interdimensional joke ads ship inside the app and are on out of the box — the setup walks you right past the off switch, and Settings has it too. Add your own **ad packs** — a pack is just a folder of short videos, each with its own switch. Ads only ever play in breaks, never in your library.
-- **Watch all over the house.** Cast to Chromecast / Google TV (mirror everything or send just the picture). Pair phones and tablets with a QR code — watch anywhere on your network, or use one as the remote, even for the TV.
+- **Watch all over the house.** Cast to Chromecast / Google TV. Pair phones with a QR code to watch anywhere in the house or use one as a full remote — with the real guide, search and genres on the phone. Away from the PC, the Android app runs free TV on its own and casts to any TV on the Wi-Fi you're on.
 - **Profiles & a locked section.** Kids see kid-friendly channels only; PIN/password/controller-combo locks; plus a password-locked private section kept out of every list, search and guide.
 - **Subtitles & dubs, Netflix-style.** Auto-subtitles when the audio isn't your language, per-show memory, anime skip-intro, and live captions generated entirely on your PC.
 - **Free TV with a real guide — thousands of stations.** Over 10,000 free, publicly available live stations worldwide from the community-run [iptv-org](https://github.com/iptv-org/iptv) index: pick languages, countries and whole regions, no station limits, every one auto-tested so only working ones are kept — with real programme names and times from free public XMLTV guides. Plus public-domain classics from the Internet Archive.
@@ -51,9 +63,9 @@ Streaming menus turned watching TV into homework. HomeCable brings back the othe
 
 | | | |
 |---|---|---|
-| ![Movies On Demand](docs/media/screenshots/05-movies-on-demand.png) | ![Show page](docs/media/screenshots/07-show-page.png) | ![Guide](docs/media/screenshots/04-guide.png) |
-| ![Channel Manager](docs/media/screenshots/08-channel-manager.png) | ![Network logos](docs/media/screenshots/09-network-logos.png) | ![Tags](docs/media/screenshots/10-tags.png) |
-| ![Wacky ad](docs/media/screenshots/03-wacky-ad-break.png) | ![Welcome tour](docs/media/screenshots/13-welcome-tour.png) | ![Library](docs/media/screenshots/11-library.png) |
+| ![Movies On Demand](docs/media/screenshots/05-movies-on-demand.jpg) | ![Show page](docs/media/screenshots/06-show-page.jpg) | ![Guide](docs/media/screenshots/02-guide.jpg) |
+| ![Free TV stations](docs/media/screenshots/12-free-tv-manager.jpg) | ![Channel Manager](docs/media/screenshots/10-channel-manager.jpg) | ![Network logos](docs/media/screenshots/11-network-logos.jpg) |
+| ![Wacky ad](docs/media/screenshots/09-wacky-ad.jpg) | ![Setup: what it found](docs/media/screenshots/23-setup-found.jpg) | ![Phone app](docs/media/screenshots/15-phone-app.jpg) |
 
 ## Install
 
@@ -128,3 +140,7 @@ HomeCable's free live TV is built on [**iptv-org**](https://github.com/iptv-org/
 ## License & fair use
 
 MIT — see [LICENSE](LICENSE). HomeCable hosts, provides, sells and endorses no media. You are solely responsible for the content you play and for having the right to play it; the app is **not** intended for piracy or any unlawful use, and installing it means agreeing to that. Provided "as is", without warranty. Bundled third-party components (FFmpeg under GPL v3, Electron, whisper.cpp and others) keep their own licenses — see [NOTICES.md](NOTICES.md).
+
+### Demo footage
+
+The videos and screenshots use only free, open-licensed films: *Tears of Steel*, *Cosmos Laundromat*, *Spring*, *Sprite Fright*, *Agent 327: Operation Barbershop*, *Coffee Run*, *Charge*, *Sintel*, *Big Buck Bunny* and *Caminandes* — © Blender Foundation / Blender Studio, [CC BY](https://creativecommons.org/licenses/by/4.0/) ([studio.blender.org](https://studio.blender.org/films/)). Live stations shown are the official free streams of NASA, DW, France 24, Al Jazeera and Euronews.

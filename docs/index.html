@@ -7,10 +7,10 @@
 <meta name="description" content="HomeCable turns the videos you already own into real TV channels — schedules that never stop, a cable guide, On Demand walls, casting, a phone app and more. Free, open source, no accounts, no tracking.">
 <meta property="og:title" content="HomeCable — Your videos. Live, like cable.">
 <meta property="og:description" content="Turn the videos you own into real TV channels, plus thousands of free live stations. Free, open source, no accounts, no tracking.">
-<meta property="og:image" content="https://orionvw42.github.io/homecable/media/icon/icon.png">
+<meta property="og:image" content="https://orionvw42.github.io/homecable/media/screenshots/01-live-tv.jpg">
 <meta property="og:url" content="https://orionvw42.github.io/homecable/">
 <meta property="og:type" content="website">
-<meta name="twitter:card" content="summary">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="media/icon/icon.png">
 <style>
   /* ---- edit the whole look from these tokens ---- */
@@ -57,6 +57,18 @@
   .road li { margin: 8px 0; color: var(--dim); } .road b { color: var(--text); }
   .pill { display: inline-block; padding: 3px 12px; border-radius: 999px; background: var(--raise); border: 1px solid var(--line); font-size: 12.5px; color: var(--dim); margin: 0 6px 8px 0; }
   footer { margin-top: 80px; padding: 36px 0 48px; border-top: 1px solid var(--line); color: var(--dim); font-size: 14px; text-align: center; }
+  .hero-video { display: block; width: 100%; border-radius: 18px; border: 1px solid var(--line); box-shadow: 0 40px 120px -30px rgba(0,0,0,.8); margin: 44px 0 0; background: #000; aspect-ratio: 16 / 9; }
+  .hero-cap { color: var(--dim); font-size: 14px; margin: 12px 0 0; }
+  .showcase video { display: block; width: 100%; aspect-ratio: 16 / 9; background: #000; }
+  .shots figure { margin: 0; }
+  .shots figcaption { color: var(--dim); font-size: 13px; padding: 7px 2px 0; }
+  .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; counter-reset: st; }
+  .steps figure { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+  .steps img { display: block; width: 100%; }
+  .steps figcaption { padding: 10px 12px; font-size: 13.5px; color: var(--dim); }
+  .steps figcaption::before { counter-increment: st; content: counter(st); display: inline-grid; place-items: center; width: 22px; height: 22px; margin-right: 8px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; font-weight: 700; font-size: 12px; }
+  .new { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; color: #140800; background: linear-gradient(135deg, #ffb400, #ff7a18); vertical-align: middle; }
+  .credits { color: var(--dim); font-size: 13.5px; }
   @media (max-width: 560px) { .showcase { grid-template-columns: 1fr; } }
 </style>
 </head>
@@ -67,12 +79,12 @@
   <h1>Your videos.<br><em>Live, like cable.</em></h1>
   <p class="lead">HomeCable turns the shows and movies you already own into real TV channels — schedules that never stop, a cable-style guide, channel surfing, pause &amp; rewind — plus On Demand walls, casting, a phone app, and free live TV. No accounts. No tracking. Open source.</p>
   <div class="cta">
-    <!-- When the first release is up, point this at the Setup exe asset -->
     <a class="btn primary" href="https://github.com/OrionVW42/homecable/releases/latest">⬇ Download for Windows</a>
     <a class="btn" href="https://github.com/OrionVW42/homecable">⭐ View on GitHub</a>
   </div>
   <div class="note">Windows 10/11 (64-bit) · free &amp; MIT-licensed · phone app for Android included</div>
-  <img class="hero-shot" src="media/screenshots/01-live-tv.png" alt="HomeCable playing live TV with the channel banner">
+  <video class="hero-video" src="media/video/homecable-setup.mp4" poster="media/video/homecable-setup.jpg" controls muted playsinline preload="metadata"></video>
+  <p class="hero-cap">▶ The real first run, start to finish: install → <i>Set it all up for me</i> → watching TV in about two minutes. Recorded from the app with free, open-licensed films.</p>
 </header>
 
 <section class="wrap" id="why">
@@ -84,44 +96,72 @@
   <h2>Everything a cable box did — and plenty it didn't</h2>
   <p class="sub">All of it works out of the box after a guided first-run setup that can configure everything for you.</p>
   <div class="grid">
+    <div class="card"><div class="ic">📡</div><h3>Free live TV — thousands of stations<span class="new">NEW</span></h3><p>Over 10,000 free, publicly available stations from the community <a href="https://github.com/iptv-org/iptv">iptv-org</a> index and official Free-TV broadcasters. Pick languages, countries, whole regions, genres and free anime — no limits. Every station is tested before it joins, tagged by genre, and the lineup re-syncs every start. <b>Edit → Free TV stations</b> lets you search the whole index, add one by one, hide or remove any.</p></div>
+    <div class="card"><div class="ic">🛰</div><h3>Live TV that never gives up<span class="new">NEW</span></h3><p>Once a channel is playing, nothing stops it but you. Dropped streams reconnect, stalls are caught and resumed, and a station that goes quiet shows "Hang tight" and keeps trying — it's never switched away from or removed behind your back.</p></div>
+    <div class="card"><div class="ic">🔎</div><h3>A guide you can search<span class="new">NEW</span></h3><p>Search channels and shows, filter by genre, right-click any channel to ❤ favorite or hide it, and tap the heart to see only favorites. The guide opens right on the channel you're watching, and hover the mini player for mute and volume.</p></div>
+    <div class="card"><div class="ic">🔄</div><h3>Updates itself<span class="new">NEW</span></h3><p>New versions come straight from GitHub Releases, download quietly without interrupting the show, and install on the next start — with an "Installing…" card and a "✅ Updated!" hello. Or press <b>Update now</b> the moment one's ready.</p></div>
     <div class="card"><div class="ic">📺</div><h3>Channels that never stop</h3><p>Shows start on the half hour, episodes air in order (or shuffled, or fully random — per channel). Channels keep airing while the app is closed: open it next week and the schedule has moved on, exactly on time.</p></div>
     <div class="card"><div class="ic">🗓</div><h3>A real cable guide</h3><p>A grid guide with what's on now and next across every channel, time blocks ("Saturday Cartoons 8–11am"), and live TV programmes with real titles and times from free public guides.</p></div>
     <div class="card"><div class="ic">⏪</div><h3>Live DVR</h3><p>Pause, rewind and fast-forward live channels like a cable box — back as far as you've been watching, forward to live.</p></div>
-    <div class="card"><div class="ic">🎬</div><h3>On Demand &amp; Stream Demand</h3><p>A wall of your movie posters with resume, and a binge screen for shows — seasons, episodes, "Continue S2 · E4", and the next episode plays itself.</p></div>
+    <div class="card"><div class="ic">🎬</div><h3>On Demand &amp; Stream Demand</h3><p>A wall of your movie posters with resume, and a binge screen for shows — seasons, episodes, "Continue S2 · E4", and the next episode plays itself. Leave either one and you land back on the channel you were watching, like a real cable box.</p></div>
     <div class="card"><div class="ic">🎨</div><h3>Network logos &amp; bumpers</h3><p>Every channel gets its own network mark — ready-made looks, fonts, shapes, colors, or your own picture. Between shows the channel plays a few seconds of its own animated logo bump, just like real networks.</p></div>
     <div class="card"><div class="ic">📣</div><h3>Wacky commercial breaks</h3><p>On out of the box (the setup hands you the off switch): short, family-friendly interdimensional joke ads between shows shipped inside the app. They play between your OWN shows only — live TV streams are never touched. Add your own ad packs — a pack is just a folder of short videos, each with its own switch.</p></div>
     <div class="card"><div class="ic">🏷</div><h3>Tags &amp; info, done for you</h3><p>One click looks everything up by name (titles only): posters, genres, correct names, anime detection with the tags fans sort by, and true airing order so OVAs land between the right seasons.</p></div>
-    <div class="card"><div class="ic">📱</div><h3>Watch all over the house</h3><p>Cast to Chromecast / Google TV (mirror everything or send just the picture). Pair phones and tablets with a QR code to watch anywhere on your network — or use one as the remote, even for the TV.</p></div>
+    <div class="card"><div class="ic">📱</div><h3>Watch all over the house</h3><p>Cast to Chromecast / Google TV. Pair phones with a QR code to watch anywhere in the house, or use one as a full remote — with the real guide, search and genres right on the phone. No PC around? The Android app runs free TV by itself and casts to any TV on the Wi-Fi you're on.</p></div>
     <div class="card"><div class="ic">👪</div><h3>Profiles &amp; kid-safety</h3><p>Kids only see kid-friendly channels, teens see more, grown-ups see everything. PIN, password or controller-combo locks — plus a password-locked private section that stays out of every list.</p></div>
     <div class="card"><div class="ic">💬</div><h3>Subtitles &amp; dubs, Netflix-style</h3><p>Auto-subtitles when the audio isn't your language, per-show audio and subtitle memory, skip-intro for anime, and live captions generated entirely on your own PC.</p></div>
-    <div class="card"><div class="ic">📡</div><h3>Free live TV — thousands of stations</h3><p>Over 10,000 free, publicly available live stations worldwide from the community-run <a href="https://github.com/iptv-org/iptv">iptv-org</a> index — pick languages, countries and whole regions, no limits. Every station is tested automatically and only ones that play are kept, with a real TV guide. Plus public-domain movies and cartoons from the Internet Archive, scheduled like any other channel.</p></div>
     <div class="card"><div class="ic">🎮</div><h3>Couch-first controls</h3><p>Keyboard, mouse, or Xbox / PS5 controller for everything — plus a pop-out always-on-top mini player, fullscreen TV mode, and four built-in retro arcade games for the ad breaks of life.</p></div>
   </div>
 </section>
 
 <section class="wrap" id="see-it">
   <h2>See it move</h2>
-  <p class="sub">Captured from the real app running free, open-licensed demo videos (Blender open movies).</p>
+  <p class="sub">Short clips captured from the real app, running only free, open-licensed films.</p>
   <div class="showcase">
-    <figure><img src="media/gifs/channel-surfing.gif" alt="Channel surfing"><figcaption>Flip channels like real cable — branded banners, static, and you join shows in progress.</figcaption></figure>
-    <figure><img src="media/gifs/the-guide.gif" alt="The guide"><figcaption>The guide: browse what's on across every channel and jump in.</figcaption></figure>
-    <figure><img src="media/gifs/stream-demand-binge.gif" alt="Stream Demand"><figcaption>Stream Demand: pick a show, and the next episode plays itself.</figcaption></figure>
-    <figure><img src="media/gifs/bumper-and-wacky-ad.gif" alt="Bumpers and ads"><figcaption>End of show → the channel's own bumper → a wacky ad → back to the toons.</figcaption></figure>
+    <figure><video src="media/video/channel-surfing.mp4" poster="media/video/channel-surfing.jpg" autoplay muted loop playsinline preload="metadata"></video><figcaption>Flip channels like real cable — static, the channel banner, and you join shows already in progress.</figcaption></figure>
+    <figure><video src="media/video/guide-search-genres.mp4" poster="media/video/guide-search-genres.jpg" autoplay muted loop playsinline preload="metadata"></video><figcaption>The guide: filter by genre, search channels and shows.</figcaption></figure>
+    <figure><video src="media/video/guide-favorites.mp4" poster="media/video/guide-favorites.jpg" autoplay muted loop playsinline preload="metadata"></video><figcaption>Right-click → ❤ Favorite, then the heart shows just your favorites.</figcaption></figure>
+    <figure><video src="media/video/mini-player-volume.mp4" poster="media/video/mini-player-volume.jpg" autoplay muted loop playsinline preload="metadata"></video><figcaption>Hover the mini player while you browse: pause, mute, volume.</figcaption></figure>
+    <figure><video src="media/video/on-demand.mp4" poster="media/video/on-demand.jpg" autoplay muted loop playsinline preload="metadata"></video><figcaption>On Demand: your movie wall — and back to the channel you were on.</figcaption></figure>
+    <figure><video src="media/video/stream-demand.mp4" poster="media/video/stream-demand.jpg" autoplay muted loop playsinline preload="metadata"></video><figcaption>Stream Demand: pick a show, and the episodes play one after another.</figcaption></figure>
+    <figure><video src="media/video/bumper-and-wacky-ad.mp4" poster="media/video/bumper-and-wacky-ad.jpg" autoplay muted loop playsinline preload="metadata"></video><figcaption>End of a show → the channel's own bumper → an interdimensional ad.</figcaption></figure>
+    <figure><video src="media/video/free-tv-manager.mp4" poster="media/video/free-tv-manager.jpg" autoplay muted loop playsinline preload="metadata"></video><figcaption>Edit → Free TV stations: your live lineup, plus a search across the whole free index.</figcaption></figure>
+    <figure><video src="media/video/network-logos.mp4" poster="media/video/network-logos.jpg" autoplay muted loop playsinline preload="metadata"></video><figcaption>Give every channel its own network look in one click.</figcaption></figure>
   </div>
 </section>
 
 <section class="wrap" id="screens">
   <h2>Screens</h2>
   <div class="shots">
-    <img src="media/screenshots/05-movies-on-demand.png" alt="Movies On Demand">
-    <img src="media/screenshots/07-show-page.png" alt="Show page">
-    <img src="media/screenshots/04-guide.png" alt="Guide">
-    <img src="media/screenshots/08-channel-manager.png" alt="Channel Manager">
-    <img src="media/screenshots/09-network-logos.png" alt="Network logos">
-    <img src="media/screenshots/10-tags.png" alt="Tags">
-    <img src="media/screenshots/03-wacky-ad-break.png" alt="A wacky ad break">
-    <img src="media/screenshots/13-welcome-tour.png" alt="Welcome tour">
-    <img src="media/screenshots/11-library.png" alt="Library">
+    <figure><img src="media/screenshots/01-live-tv.jpg" alt="On the air — the channel banner" loading="lazy"><figcaption>On the air — the channel banner</figcaption></figure>
+    <figure><img src="media/screenshots/02-guide.jpg" alt="The cable guide" loading="lazy"><figcaption>The cable guide</figcaption></figure>
+    <figure><img src="media/screenshots/03-guide-right-click.jpg" alt="Right-click a channel" loading="lazy"><figcaption>Right-click a channel</figcaption></figure>
+    <figure><img src="media/screenshots/05-movies-on-demand.jpg" alt="Movies On Demand" loading="lazy"><figcaption>Movies On Demand</figcaption></figure>
+    <figure><img src="media/screenshots/06-show-page.jpg" alt="A show in Stream Demand" loading="lazy"><figcaption>A show in Stream Demand</figcaption></figure>
+    <figure><img src="media/screenshots/07-stream-demand.jpg" alt="Your shows" loading="lazy"><figcaption>Your shows</figcaption></figure>
+    <figure><img src="media/screenshots/08-channel-bumper.jpg" alt="A channel bumper between shows" loading="lazy"><figcaption>A channel bumper between shows</figcaption></figure>
+    <figure><img src="media/screenshots/09-wacky-ad.jpg" alt="An interdimensional ad break" loading="lazy"><figcaption>An interdimensional ad break</figcaption></figure>
+    <figure><img src="media/screenshots/10-channel-manager.jpg" alt="Manage any channel" loading="lazy"><figcaption>Manage any channel</figcaption></figure>
+    <figure><img src="media/screenshots/11-network-logos.jpg" alt="Network logos & colors" loading="lazy"><figcaption>Network logos & colors</figcaption></figure>
+    <figure><img src="media/screenshots/12-free-tv-manager.jpg" alt="Free TV stations" loading="lazy"><figcaption>Free TV stations</figcaption></figure>
+    <figure><img src="media/screenshots/13-tags.jpg" alt="Tags & info" loading="lazy"><figcaption>Tags & info</figcaption></figure>
+    <figure><img src="media/screenshots/14-updates.jpg" alt="Updates, built in" loading="lazy"><figcaption>Updates, built in</figcaption></figure>
+    <figure><img src="media/screenshots/15-phone-app.jpg" alt="The phone app: watch, or use it as the remote" loading="lazy"><figcaption>The phone app: watch, or use it as the remote</figcaption></figure>
+  </div>
+</section>
+
+<section class="wrap" id="setup">
+  <h2>Setup, step by step</h2>
+  <p class="sub">Every choice in plain words before anything happens — or let it do everything for you.</p>
+  <div class="steps">
+    <figure><img src="media/screenshots/20-setup-welcome.jpg" alt="Do it for me — or do it yourself" loading="lazy"><figcaption>Do it for me — or do it yourself</figcaption></figure>
+    <figure><img src="media/screenshots/21-setup-sources.jpg" alt="It finds your video folders (and stays out of program & code folders)" loading="lazy"><figcaption>It finds your video folders (and stays out of program & code folders)</figcaption></figure>
+    <figure><img src="media/screenshots/22-setup-scanning.jpg" alt="Scanning, with commentary from another dimension" loading="lazy"><figcaption>Scanning, with commentary from another dimension</figcaption></figure>
+    <figure><img src="media/screenshots/23-setup-found.jpg" alt="Everything it found, sorted into channels" loading="lazy"><figcaption>Everything it found, sorted into channels</figcaption></figure>
+    <figure><img src="media/screenshots/24-setup-free-tv.jpg" alt="Free TV: languages, countries, regions, anime" loading="lazy"><figcaption>Free TV: languages, countries, regions, anime</figcaption></figure>
+    <figure><img src="media/screenshots/25-setup-showtime.jpg" alt="Showtime: bumpers and the wacky ads" loading="lazy"><figcaption>Showtime: bumpers and the wacky ads</figcaption></figure>
+    <figure><img src="media/screenshots/26-setup-done.jpg" alt="On the air" loading="lazy"><figcaption>On the air</figcaption></figure>
+    <figure><img src="media/screenshots/27-welcome-tour.jpg" alt="A quick welcome tour" loading="lazy"><figcaption>A quick welcome tour</figcaption></figure>
   </div>
 </section>
 
@@ -129,7 +169,7 @@
   <h2>Platforms</h2>
   <p class="sub">
     <span class="pill">✅ Windows 10/11 (64-bit) — the full app</span>
-    <span class="pill">✅ Android phones &amp; tablets — companion APK, pairs to your PC</span>
+    <span class="pill">✅ Android phones &amp; tablets — remote + player for your PC, and free TV on its own</span>
     <span class="pill">✅ Chromecast / Google TV — casting</span>
     <span class="pill">🔜 Fire TV / Android TV app — roadmap</span>
     <span class="pill">🔮 iOS — future</span>
@@ -142,7 +182,7 @@
   <ol class="road">
     <li><b>Download</b> <code>HomeCable-Setup-&lt;version&gt;.exe</code> from <a href="https://github.com/OrionVW42/homecable/releases/latest">Releases</a> and run it. Agree to the fair-use terms (it won't install without them).</li>
     <li><b>First run:</b> pick <i>Set it all up for me</i> — HomeCable finds your media, sorts movies and shows into channels, adds free TV, and walks you through a short welcome tour.</li>
-    <li><b>Phones:</b> Settings → Phone app → pair with the QR code. Updating later? Run the new installer over the old one — channels, people and settings are kept.</li>
+    <li><b>Phones:</b> Settings → Phone app → pair with the QR code. Updates install themselves after that — channels, people and settings are always kept.</li>
   </ol>
   <p class="note">Unsigned installer: Windows SmartScreen may warn on first run — choose "More info → Run anyway". Code signing is on the roadmap.</p>
 </section>
@@ -154,6 +194,7 @@
   <details><summary>What formats does it play?</summary><p>Basically everything — MP4, MKV, AVI, WMV, MOV, MPEG, TS, FLV, HEVC and more. Anything the player can't decode natively is converted on the fly by the bundled FFmpeg.</p></details>
   <details><summary>Where does my media come from?</summary><p>This PC, USB drives, network shares, NAS boxes, and DLNA media servers (Plex, Jellyfin, Emby and friends). Drop new files in your folders and they just appear.</p></details>
   <details><summary>How do updates work?</summary><p>HomeCable updates itself: it checks GitHub Releases, downloads the new version quietly without interrupting what’s playing, and switches over the next time it starts — channels, people and settings are always kept. Settings → Updates sets how often it looks.</p></details>
+  <details><summary>What if a free station stops working?</summary><p>It keeps trying while you watch, and the lineup re-checks itself every start: stations that answer stay, new ones join, and ones that stay silent get a 💤 mark. Removing them is your call — one button in Edit → Free TV stations (or turn on auto-remove).</p></details>
   <details><summary>Mac or Linux?</summary><p>Windows-only today. The app is Electron-based, so other desktops are possible later — the phone side already works with any Android device.</p></details>
 </section>
 
@@ -175,6 +216,7 @@
 <section class="wrap" id="thanks">
   <h2>Thanks</h2>
   <p class="sub">HomeCable's free live TV stands on the shoulders of <a href="https://github.com/iptv-org/iptv"><b>iptv-org</b></a> — a community-run, always-updating index of thousands of publicly available IPTV stations, kept fresh by its maintainers and hundreds of contributors. Thank you for keeping free TV free. Thanks also to the free public guide sources (<a href="https://epg.pw">epg.pw</a>, <a href="https://i.mjh.nz">i.mjh.nz</a>), the <a href="https://archive.org">Internet Archive</a> for the public-domain classics, and <a href="https://www.tvmaze.com">TVmaze</a> &amp; <a href="https://www.wikipedia.org">Wikipedia</a> for show &amp; movie info.</p>
+  <p class="credits"><b>Demo footage</b> on this page: <i>Tears of Steel</i>, <i>Cosmos Laundromat</i>, <i>Spring</i>, <i>Sprite Fright</i>, <i>Agent 327: Operation Barbershop</i>, <i>Coffee Run</i>, <i>Charge</i>, <i>Sintel</i>, <i>Big Buck Bunny</i> and <i>Caminandes</i> — © Blender Foundation / Blender Studio, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY</a> (<a href="https://studio.blender.org/films/">studio.blender.org</a>). Live stations shown: official free streams from NASA, DW, France 24, Al Jazeera and Euronews. No one's personal media was used.</p>
 </section>
 
 <footer>
