@@ -37,6 +37,7 @@ function App() {
   const [progress, setProgress] = useState(null);
   const [enrichProgress, setEnrichProgress] = useState(null);
   const [toastMsg, setToastMsg] = useState(null);
+  const [updMsg, setUpdMsg] = useState(null); // top-left, once, when an update is found
   const [bgAdd, setBgAdd] = useState(null); // the slim strip: free TV being added in the background
   const [clock, setClock] = useState(Date.now());
   const [cast, setCast] = useState({ on: false });
@@ -129,6 +130,9 @@ function App() {
       tv.onEnrichProgress((p) => setEnrichProgress(p.n >= p.total ? null : p)),
       tv.onFullscreen(setFullscreen),
       tv.onToast((m) => toast(m)),
+      // An update was found: a quiet note top-left for a moment. It downloads by
+      // itself without touching what's playing, and installs on the next restart.
+      tv.onUpdateToast(({ version }) => { setUpdMsg(version); clearTimeout(timers.current.upd); timers.current.upd = setTimeout(() => setUpdMsg(null), 8000); }),
       // "Cast everything": the TV asked for the mirrored screen — record this window.
       tv.onMirror(({ on }) => { if (on) startMirror().catch((e) => { console.error('mirror', e); toast('Couldn’t capture the screen for the TV'); }); else stopMirror(); }),
       tv.onCastDevices(setTvs),
@@ -601,6 +605,7 @@ function App() {
     ${tour && html`<${Tour} onClose=${() => { setTour(false); setSettings({ tourDone: true }); }} />`}
     ${bgAdd && !setup && html`<div class="bgjob"><div class="bgjob-bar"><i style=${bgAdd.pct != null ? `width:${Math.round(bgAdd.pct * 100)}%` : 'width:30%;animation:bgslide 1.2s linear infinite'}></i></div><span>${bgAdd.text}</span></div>`}
     ${toastMsg && html`<div class="toast">${toastMsg}</div>`}
+    ${updMsg && html`<div class="upd-toast">⬇ HomeCable v${updMsg} is here — it'll install itself next time you start</div>`}
   </div>`;
 }
 

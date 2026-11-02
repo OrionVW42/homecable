@@ -41,10 +41,11 @@ Streaming menus turned watching TV into homework. HomeCable brings back the othe
 - **Watch all over the house.** Cast to Chromecast / Google TV (mirror everything or send just the picture). Pair phones and tablets with a QR code — watch anywhere on your network, or use one as the remote, even for the TV.
 - **Profiles & a locked section.** Kids see kid-friendly channels only; PIN/password/controller-combo locks; plus a password-locked private section kept out of every list, search and guide.
 - **Subtitles & dubs, Netflix-style.** Auto-subtitles when the audio isn't your language, per-show memory, anime skip-intro, and live captions generated entirely on your PC.
-- **Free TV with a real guide.** Free, publicly available live stations (auto-tested; only working ones are kept) and public-domain classics from the Internet Archive — with real programme names and times from free public XMLTV guides.
+- **Free TV with a real guide — thousands of stations.** Over 10,000 free, publicly available live stations worldwide from the community-run [iptv-org](https://github.com/iptv-org/iptv) index: pick languages, countries and whole regions, no station limits, every one auto-tested so only working ones are kept — with real programme names and times from free public XMLTV guides. Plus public-domain classics from the Internet Archive.
 - **Plays anything.** MP4, MKV, AVI, WMV, MOV, MPEG, TS, FLV, HEVC… converted on the fly by bundled FFmpeg when needed.
 - **Finds your media.** This PC, USB, network shares, NAS boxes and DLNA servers (Plex, Jellyfin, Emby…). New files appear on channels automatically — or wait for your review, your choice.
 - **Couch-first.** Keyboard, mouse, Xbox / PS5 controllers, fullscreen TV mode, pop-out mini player, a one-time welcome tour, and four retro arcade games.
+- **Keeps itself up to date.** New versions come straight from GitHub Releases: downloaded quietly in the background, installed on the next start, channels and settings always kept.
 
 ## Screens
 
@@ -56,9 +57,9 @@ Streaming menus turned watching TV into homework. HomeCable brings back the othe
 
 ## Install
 
-1. Download `HomeCable-Setup-<version>.exe` from [Releases](https://github.com/OrionVW42/homecable/releases/latest) *(coming soon)* and run it. The installer asks you to agree to the fair-use terms — it won't install without them.
+1. Download `HomeCable-Setup-<version>.exe` from [Releases](https://github.com/OrionVW42/homecable/releases/latest) and run it. The installer asks you to agree to the fair-use terms — it won't install without them.
 2. On first launch pick **Set it all up for me** — HomeCable finds your media, builds channels, adds free TV and shows you around. Or **I'll do it myself** and place everything by hand.
-3. Updating? Run the newer installer over the old one — channels, people and settings are kept (it asks).
+3. From then on HomeCable **updates itself**: it checks these Releases, downloads the new version quietly without interrupting what's playing, and switches over the next time it starts — channels, people and settings are always kept. (Running a newer installer by hand works too.)
 
 > **Note:** the installer is not code-signed yet, so Windows SmartScreen may warn on first run — *More info → Run anyway*. Code signing is on the roadmap.
 
@@ -76,7 +77,6 @@ Streaming menus turned watching TV into homework. HomeCable brings back the othe
 
 ## Roadmap
 
-- **In-app updates** — the app offers new GitHub releases itself, one click to install.
 - **Fire TV / Android TV app** — D-pad-first, paired to the PC like phones.
 - **Phone APK updates served from the paired PC.**
 - **Code signing** — no more SmartScreen warning.
@@ -120,6 +120,10 @@ No accounts, no telemetry, no tracking. HomeCable only goes online for optional 
 ## Contributing
 
 Issues, ideas and pull requests welcome. If you build something fun — an ad pack, a great channel look, a theme of channels — share it in Discussions.
+
+## Thanks
+
+HomeCable's free live TV is built on [**iptv-org**](https://github.com/iptv-org/iptv) — a community-run, always-updating index of thousands of publicly available IPTV stations, kept alive by its maintainers and hundreds of contributors. Thank you for keeping free TV free. Thanks also to the free public XMLTV guide sources ([epg.pw](https://epg.pw), [i.mjh.nz](https://i.mjh.nz)), the [Internet Archive](https://archive.org) for the public-domain classics, and [TVmaze](https://www.tvmaze.com) & [Wikipedia](https://www.wikipedia.org) for show & movie info.
 
 ## License & fair use
 

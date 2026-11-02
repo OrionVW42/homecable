@@ -6,6 +6,7 @@ const os = require('os');
 const { Store } = require('./store');
 const { Library, quickScanRoots, deepScanRoots } = require('./library');
 const { Scheduler } = require('./scheduler');
+const { createUpdater } = require('./updater');
 const { suggestChannels, PALETTE } = require('./suggest');
 const { startServer } = require('./server');
 const cast = require('./cast');
@@ -40,7 +41,7 @@ app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 // (worst in fullscreen). Keep video in the normal compositing stack.
 app.commandLine.appendSwitch('disable-direct-composition-video-overlays');
 
-let win, store, lib, sched, media, channels, settings, profiles, sleepBlock = null;
+let win, store, lib, sched, media, channels, settings, profiles, updater, sleepBlock = null;
 const logFile = () => path.join(app.getPath('userData'), 'homecable.log');
 function log(...a) {
   const line = `[${new Date().toISOString()}] ${a.join(' ')}\n`;
@@ -60,6 +61,9 @@ const DEFAULT_SETTINGS = { setupDone: false, onlineMeta: true, transitions: true
   // Channel bumpers: a few seconds of the channel's own logo between shows (like
   // a real network), and in/out of commercial breaks when those are on.
   bumpersOn: true, bumperSeconds: 5,
+  // In-app updates from GitHub Releases: checked quietly, downloaded quietly,
+  // installed when the app restarts. 'start' | '1h' | '6h' | '24h'.
+  updateEvery: '24h', updateNotify: true, updateRepo: '', lastUpdateCheck: 0, updateNotified: '', pendingUpdate: null,
   // Free live TV: what to keep the lineup stocked with, and where its numbers start.
   live: null,                // { country, categories, max, sources: ['iptv-org','free-tv'], urls: [] } once set up
   liveStart: 100, lastLiveRefresh: 0,
@@ -1921,6 +1925,10 @@ function handlers() {
   h('win:close', () => win.close());
   h('openLog', () => shell.openPath(logFile()));
   h('notices', () => fs.readFileSync(path.join(__dirname, '../../NOTICES.md'), 'utf8'));
+  // The Settings button: answer as soon as the check is done — the download
+  // (a couple hundred MB) carries on in the background and installs on restart.
+  h('update:check', async () => { const info = await updater.check(); if (info) updater.run('manual'); return { ...updater.status(), found: info ? info.version : null }; });
+  h('update:status', () => updater.status());
 }
 
 // "Start over from scratch" (Settings, or the installer's "start fresh"): clear
@@ -1940,6 +1948,10 @@ app.whenReady().then(async () => {
   store = new Store(app.getPath('userData'));
   channels = store.read('channels', []);
   settings = { ...DEFAULT_SETTINGS, ...store.read('settings', {}) };
+  // An update downloaded last time installs now, before anything opens — the
+  // installer keeps channels, people and settings, then starts the new version.
+  updater = createUpdater({ app, log, send, settings: () => settings, saveSettings });
+  if (updater.applyPending('boot')) { app.quit(); return; }
   lib = new Library(store);
   sched = new Scheduler(store, lib);
   profiles = new Profiles(store);
@@ -2048,7 +2060,11 @@ app.whenReady().then(async () => {
   }, 30 * 60e3);
   // Keep every channel's timeline topped up.
   setInterval(() => { try { sched.ensure(channels); } catch (e) { log('ensure', e.stack); } }, 10 * 60e3);
+  // Updates: the first boot of the day checks GitHub straight away, then the
+  // chosen rhythm. Found ones download silently and install on the next restart.
+  if (updater.due()) setTimeout(() => updater.run('boot'), 2500);
+  setInterval(() => { if (updater.due()) updater.run('timer'); }, 30 * 60e3);
 });
 
 app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
-app.on('window-all-closed', async () => { if (casting) await Promise.race([stopCasting('quit'), new Promise((r) => setTimeout(r, 2500))]); media?.stopStreams(); lib?.close(); if (sched) store.write('schedule', sched.state); app.quit(); });
+app.on('window-all-closed', async () => { if (casting) await Promise.race([stopCasting('quit'), new Promise((r) => setTimeout(r, 2500))]); media?.stopStreams(); lib?.close(); if (sched) store.write('schedule', sched.state); try { updater?.applyPending('quit'); } catch {} app.quit(); });

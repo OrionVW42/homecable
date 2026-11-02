@@ -1,9 +1,12 @@
 {
   "name": "homecable",
   "productName": "HomeCable",
-  "version": "1.4.3",
+  "version": "1.4.4",
   "license": "MIT",
   "description": "Turn your video library into live cable TV channels.",
+  "homecable": {
+    "github": "OrionVW42/homecable"
+  },
   "main": "src/main/main.js",
   "author": "HomeCable",
   "scripts": {

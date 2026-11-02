@@ -972,3 +972,7 @@ body.legend-up .toast { bottom: 76px; }
 .mini-ident .mi-kicker { font: 600 9px var(--font); letter-spacing: .3em; color: rgba(255,255,255,.6); animation: id-fade .7s ease-out .35s both; }
 .mini-ident .mi-badge { display: grid; place-items: center; width: 54px; height: 54px; border-radius: 50%; background: linear-gradient(135deg, #7b61ff, #1d1348); color: #fff; font: 400 20px Impact, 'Arial Black', sans-serif; box-shadow: 0 10px 30px -8px rgba(123,97,255,.7); animation: id-rise 2.6s cubic-bezier(.2,1.4,.3,1) infinite; }
 .mini-ident .mi-name { font: 400 16px Impact, 'Arial Black', sans-serif; color: #fff; animation: id-fade .7s ease-out .35s both; }
+
+/* ---------- 1.4.4: the quiet update note (top-left, brief) ---------- */
+.upd-toast { position: absolute; top: 66px; left: 16px; z-index: 70; padding: 10px 16px; border-radius: 12px; background: var(--panel-solid); border: 1px solid var(--line); box-shadow: 0 16px 40px rgba(0,0,0,.5); animation: updslide .35s ease, rise .2s; font-size: 13.5px; max-width: 46vw; pointer-events: none; }
+@keyframes updslide { from { opacity: 0; transform: translateX(-14px); } to { opacity: 1; transform: none; } }

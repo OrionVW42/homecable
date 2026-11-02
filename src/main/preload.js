@@ -155,4 +155,7 @@ contextBridge.exposeInMainWorld('tv', {
   onIptvProgress: on('iptv-progress'),
   onFreeProgress: on('free-progress'),
   onMaximized: on('maximized'),
+  updateCheck: call('update:check'),
+  updateStatus: call('update:status'),
+  onUpdateToast: on('update-toast'),
 });

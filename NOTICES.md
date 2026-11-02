@@ -34,6 +34,7 @@ It only goes online for features you turn on:
 | Free live TV (optional) | iptv-org.github.io, then each station's own server | Requests for playlists and streams |
 | TV guide for free live stations (with free TV on) | epg.pw; i.mjh.nz (only for stations you have from Pluto TV, Samsung TV Plus, Plex, Stirr or Roku); any guide a playlist itself names | Plain requests for public XMLTV guide files — nothing about you or your library is sent |
 | Commercial breaks with an ad pack (optional, off by default) | The ad pack's host | A plain request for the ad list and new ad videos — no cookies, IDs or tracking |
+| App updates | api.github.com, github.com (the HomeCable releases page) | A plain request for the newest version's name, and the installer download itself — no accounts, cookies, IDs or tracking. New versions install only when HomeCable restarts; Settings → Updates sets how often to look |
 | Network sources | Devices on your own network only | Discovery messages (DLNA/SSDP, WS-Discovery, mDNS) |
 | Phone app (only while on) | Your paired phones, on your home network or your own VPN | Channels, your library lists and video streams — only to phones paired with a code shown on this PC |
 | Live captions | Nothing — speech is turned into text on this PC | — |
