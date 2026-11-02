@@ -1,6 +1,6 @@
 import { html } from 'htm/preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import { tv, fmtTime, fmtClock, entryText, ChannelLogo } from './util.js';
+import { tv, fmtTime, fmtClock, entryText, ChannelLogo, providerOf } from './util.js';
 import { IdentCard } from './identcard.js';
 import { CastMedia } from './castmedia.js';
 import { elementAudio, setLevel } from './audio.js';
@@ -129,7 +129,7 @@ export function Banner({ tuned, show, live, getBehind, getPos, paused, raised })
     <div class="num"><b>${channel.number}</b><span>${channel.name}</span></div>
     ${entry?.poster && html`<img class="poster" src=${entry.poster} onError=${(e) => { e.target.style.display = 'none'; }} />`}
     <div class="info">
-      <div class="row" style="gap:10px"><span class=${'live-dot' + (live ? '' : ' behind')}>${tuned.vod ? 'ON DEMAND' : paused ? 'PAUSED' : live ? 'LIVE' : 'REPLAY'}</span>${!live && behind > 1 && html`<span class="muted small">${fmtClock(behind)} behind live</span>`}</div>
+      <div class="row" style="gap:10px"><span class=${'live-dot' + (live ? '' : ' behind')}>${tuned.vod ? 'ON DEMAND' : paused ? 'PAUSED' : live ? 'LIVE' : 'REPLAY'}</span>${!live && behind > 1 && html`<span class="muted small">${fmtClock(behind)} behind live</span>`}${!tuned.vod && providerOf(channel) && html`<span class="via-chip" title=${`This is ${providerOf(channel)}’s free channel — its shows, ad breaks and times come from ${providerOf(channel)}, not HomeCable.`}>via ${providerOf(channel)}</span>`}</div>
       <div class="now">${t.title}</div>
       <div class="ep">${t.sub || ' '}</div>
       ${entry && html`<div class="bar"><i style=${'width:' + pct + '%'}></i></div>
@@ -144,7 +144,7 @@ const fmtDur = (s) => { s = Math.max(0, Math.round(s / 60)); return s >= 60 ? `$
 // Plays whatever `tuned` says is on air. Calls onEnded when the program is over
 // (the app then re-tunes to whatever is live now) and onFailed when a file
 // won't decode (the app asks main for a transcode and re-tunes).
-export function Player({ tuned, settings, transitions, pip, quiet, covered, bufferStart = 0, apiRef, onEnded, onFailed, onShift, onStalled, cast, children, onCaptionsError, onVolume }) {
+export function Player({ tuned, settings, transitions, pip, quiet, covered, bufferStart = 0, apiRef, onEnded, onFailed, onShift, onStalled, onHiccup, cast, children, onCaptionsError, onVolume }) {
   // While casting, everything below talks to a CastMedia stand-in instead of the
   // <video> element — same API, but the picture plays on the TV.
   const realVid = useRef();
@@ -410,15 +410,19 @@ export function Player({ tuned, settings, transitions, pip, quiet, covered, buff
       if (!v || error) { still = 0; loadStuck = 0; return; }
       // Stuck CONNECTING is a drop too: a reconnect that answers but never
       // sends a byte used to spin forever until someone re-clicked the channel.
-      if (loading) { if (++loadStuck >= 5) kick(); return; }
+      if (loading) { ++loadStuck; if (isLive && loadStuck === 2) onHiccup?.(tuned); if (loadStuck >= 5) kick(); return; }
       loadStuck = 0;
       if (v.paused || v.seeking) { still = 0; return; }
       if (v.currentTime > 0 && v.currentTime === last) {
-        if (++still >= 4) kick(); // ~20s frozen (a touch patient — live TV re-buffers)
+        ++still;
+        // Live: say what's happening after ~5s, reconnect after ~10s (a frozen
+        // picture for 20s looked broken). Files stay patient (~20s).
+        if (isLive && still === 1) onHiccup?.(tuned);
+        if (still >= (isLive ? 2 : 4)) kick();
       } else { still = 0; last = v.currentTime; }
     }, 5000);
     return () => clearInterval(t);
-  }, [tuned, casting, loading, error, onEnded, onStalled]);
+  }, [tuned, casting, loading, error, onEnded, onStalled, onHiccup]);
 
   // ---- DVR: pause, rewind, fast-forward — like a cable box ----
   // The buffer starts when you tune to the channel: rewind as far back as you've

@@ -803,27 +803,65 @@ const iptvCatalog = new Map();
 // Free guide files for the big free streamers (i.mjh.nz, see NOTICES.md) — only
 // fetched when the lineup actually has stations from that service, so "what's on"
 // shows the real programme names and times instead of hour-long "Live" slots.
+// Stations from a free TV service (Pluto TV, Samsung TV Plus…) use that
+// service's OWN schedule first: exact to the second, with episode names —
+// generic guide files round everything to the half hour, so the guide said
+// shows ended when they hadn't. (Pluto links arrive as jmp2.uk/plu-<id>; the
+// old check looked for "pluto.tv" and never matched them.)
 function providerGuides(stations, cc) {
-  const urls = [];
-  const has = (re) => stations.some((s) => re.test(s.url || ''));
-  if (has(/pluto\.tv/i)) urls.push(`https://i.mjh.nz/PlutoTV/${cc}.xml.gz`, 'https://i.mjh.nz/PlutoTV/all.xml.gz');
-  if (has(/samsung/i)) urls.push(`https://i.mjh.nz/SamsungTVPlus/${cc}.xml.gz`, 'https://i.mjh.nz/SamsungTVPlus/all.xml.gz');
-  if (has(/plex\.tv/i)) urls.push('https://i.mjh.nz/Plex/us.xml.gz');
-  if (has(/stirr/i)) urls.push('https://i.mjh.nz/Stirr/all.xml.gz');
-  if (has(/roku/i)) urls.push('https://i.mjh.nz/Roku/all.xml.gz');
-  return urls;
+  // Your own country's schedule first (the streams play that region's
+  // lineup), then the worldwide file for stations it doesn't have.
+  const all = [...new Set(stations.map((s) => iptv.providerOf(s.url)?.guide).filter(Boolean))];
+  return all.flatMap((u) => (/\/all\.xml\.gz$/.test(u) ? [u.replace(/all\.xml\.gz$/, `${cc}.xml.gz`), u] : [u]));
 }
+// Provider schedules only run ~16 hours ahead, so with any in the lineup the
+// guide refreshes every 6 hours instead of 12.
+const guideMaxAge = () => (channels.some((c) => c.iptv && iptv.providerOf(c.iptv.url)) ? 6 * 3600e3 : 12 * 3600e3);
 async function refreshGuides() {
-  const stations = channels.filter((c) => c.iptv).map((c) => ({ id: c.id, name: c.name, tvgId: c.iptv.tvgId, url: c.iptv.url }));
+  if (guideRefreshing) return guideRefreshing; // one at a time
+  guideRefreshing = refreshGuidesNow().finally(() => { guideRefreshing = null; });
+  return guideRefreshing;
+}
+async function refreshGuidesNow() {
+  const stations = channels.filter((c) => c.iptv).map((c) => ({ id: c.id, name: c.name, tvgId: c.iptv.tvgId, url: c.iptv.url, altId: iptv.providerOf(c.iptv.url)?.id || null, service: iptv.providerOf(c.iptv.url)?.service || null }));
   if (!stations.length) return 0;
   const cc = settings.live?.country || 'us';
-  const urls = [...new Set([...providerGuides(stations, cc), ...epg.COUNTRY_GUIDES(cc).slice(1), ...playlistGuides, ...(settings.live?.guideUrls || [])])];
-  const g = await epg.buildGuide(stations, urls, { log });
+  // A guide for every country the lineup has stations from (most stations
+  // first), not just the home country — Swedish, German… stations get theirs too.
+  const tally = {};
+  for (const s of stations) { const c = epg.countryOf(s.tvgId); if (c && !iptv.providerOf(s.url)) tally[c] = (tally[c] || 0) + 1; }
+  const countries = [cc, ...Object.keys(tally).sort((a, b) => tally[b] - tally[a])].filter((c, i, a) => a.indexOf(c) === i).slice(0, 12);
+  const urls = [...new Set([...providerGuides(stations, cc), ...countries.map((c) => epg.COUNTRY_GUIDES(c)[1]), ...playlistGuides, ...(settings.live?.guideUrls || []), epg.COUNTRY_GUIDES(cc)[0]])];
+  const sources = {};
+  const g = await epg.buildGuide(stations, urls, { log, sources });
   guides = g;
-  store.write('guides', { at: Date.now(), guides });
+  const withGuide = stations.filter((s) => g[s.id]?.length).length;
+  log(`guides: ${withGuide} of ${stations.length} stations have a schedule`);
+  store.write('guides', { at: Date.now(), guides, sources, stations: stations.length, withGuide });
   send('schedule-changed');
   return Object.keys(g).length;
 }
+// "As it needs": if the stations you watch are about to run past the end of
+// their schedule (provider guides only reach ~16 h ahead), fetch fresh ones
+// now instead of waiting for the timer. At most every 2 hours.
+function guidesRunningOut() {
+  const g = store.read('guides', {});
+  if (!g.at || Date.now() - g.at < 2 * 3600e3) return false;
+  const soon = Date.now() + 3 * 3600e3;
+  const lasts = Object.values(g.guides || {}).map((list) => list[list.length - 1]?.end || 0).filter(Boolean);
+  if (!lasts.length) return false;
+  return lasts.filter((t) => t < soon).length > lasts.length * 0.25;
+}
+function guideStatus() {
+  const g = store.read('guides', {});
+  const live = channels.filter((c) => c.iptv);
+  const has = live.filter((c) => (g.guides || {})[c.id]?.length);
+  const by = {};
+  for (const c of has) { const k = (g.sources || {})[c.id] || 'guide'; by[k] = (by[k] || 0) + 1; }
+  const ends = has.map((c) => g.guides[c.id].at(-1).end);
+  return { at: g.at || 0, stations: live.length, withGuide: has.length, bySource: by, until: ends.length ? Math.min(...ends) : 0, refreshing: !!guideRefreshing };
+}
+let guideRefreshing = null;
 
 // Once a day: re-test stations, drop ones that stayed off the air, top the lineup up, refresh guides.
 async function refreshLive() {
@@ -1646,10 +1684,11 @@ function handlers() {
     return sortedChannels();
   });
   // ---- The Free TV manager (Edit → Free TV stations) ----
-  h('iptv:list', () => channels.filter((c) => c.iptv).sort((a, b) => a.number - b.number)
-    .map((c) => ({ id: c.id, number: c.number, name: c.name, group: c.iptv.genre || c.iptv.group || '', country: c.iptv.country || '', logo: c.iptv.logo || '', hidden: !!c.hidden, dead: !!c.iptv.dead })));
+  h('iptv:list', () => { const gd = guides || {}; return channels.filter((c) => c.iptv).sort((a, b) => a.number - b.number)
+    .map((c) => ({ id: c.id, number: c.number, name: c.name, group: c.iptv.genre || c.iptv.group || '', country: c.iptv.country || '', logo: c.iptv.logo || '', hidden: !!c.hidden, dead: !!c.iptv.dead,
+      provider: iptv.providerOf(c.iptv.url)?.name || null, guide: !!gd[c.id]?.length })); });
   h('iptv:genres', () => {
-    const have = [...new Set(channels.filter((c) => c.iptv).map((c) => c.iptv.genre || stationGenre(c.name, c.iptv.group)))].sort();
+    const have = [...new Set(channels.filter((c) => c.iptv).map((c) => c.iptv.genre || stationGenre(c.name, c.iptv.group)))].sort((a, b) => String(a).localeCompare(String(b), undefined, { sensitivity: 'base' }));
     return { have, all: iptv.CATEGORIES };
   });
   // Search the iptv-org index by name / genre / country. Lists are cached for the
@@ -1733,7 +1772,8 @@ function handlers() {
     send('channels-changed');
     return r.ok;
   });
-  h('guides:refresh', () => refreshGuides());
+  h('guides:refresh', async () => { await refreshGuides(); return guideStatus(); });
+  h('guides:status', () => guideStatus());
   h('live:stations', () => channels.filter((c) => c.iptv && !c.iptv.dead).map((c) => ({ id: c.id, number: c.number, name: c.name, logo: c.iptv.logo, group: c.iptv.group, dead: !!c.iptv.dead, now: liveEntry(c, Date.now()).program || null })));
   // "Mix into a channel": put a live programme (or a whole time slot) into one of your channels.
   h('live:mix', ({ channelId, stationId, start, end, repeat, name }) => {
@@ -2203,7 +2243,7 @@ app.whenReady().then(async () => {
   }, 5 * 60e3);
   // Live TV: last guides from disk, then keep guides fresh (12 h) and the lineup checked (daily).
   guides = store.read('guides', { guides: {} }).guides || {};
-  setTimeout(() => { if (settings.live && Date.now() - (store.read('guides', {}).at || 0) > 12 * 3600e3) refreshGuides().catch((e) => log('guides', e.message)); }, 15000);
+  setTimeout(() => { if (settings.live && (Date.now() - (store.read('guides', {}).at || 0) > guideMaxAge() || !store.read('guides', {}).sources)) refreshGuides().catch((e) => log('guides', e.message)); }, 15000);
   // Every start: scan the lineup against the iptv database in the background —
   // stations that work come back, three-strikes-dead ones go, new ones that fit
   // your saved languages/countries/regions are added, and the guide refreshes.
@@ -2211,7 +2251,7 @@ app.whenReady().then(async () => {
   setInterval(() => {
     if (!settings.live) return;
     if (Date.now() - settings.lastLiveRefresh > 24 * 3600e3) refreshLive().catch((e) => log('live refresh', e.message));
-    else if (Date.now() - (store.read('guides', {}).at || 0) > 12 * 3600e3) refreshGuides().catch((e) => log('guides', e.message));
+    else if (Date.now() - (store.read('guides', {}).at || 0) > guideMaxAge() || guidesRunningOut()) refreshGuides().catch((e) => log('guides', e.message));
   }, 30 * 60e3);
   // Keep every channel's timeline topped up.
   setInterval(() => { try { sched.ensure(channels); } catch (e) { log('ensure', e.stack); } }, 10 * 60e3);

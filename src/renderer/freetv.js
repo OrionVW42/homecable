@@ -7,6 +7,8 @@ import { useEffect, useMemo, useState } from 'preact/hooks';
 import { tv, Icon } from './util.js';
 import { FreeTvDialog } from './libraryview.js';
 
+const agoText = (t) => { const m = Math.round((Date.now() - t) / 60e3); return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : `${Math.round(m / 60)} h ago`; };
+
 export function FreeTvPanel({ isAdult, setChannels, toast, onTune }) {
   const [list, setList] = useState(null);     // your stations
   const [genres, setGenres] = useState({ have: [], all: [] });
@@ -22,7 +24,9 @@ export function FreeTvPanel({ isAdult, setChannels, toast, onTune }) {
   const [bulk, setBulk] = useState(false);
   const [auto, setAuto] = useState(false);    // auto-remove dead (user's call, off by default)
 
-  const load = () => { tv.iptvList().then(setList); tv.iptvGenres().then(setGenres); tv.state().then((s) => setAuto(!!s.settings.live?.autoRemove)).catch(() => {}); };
+  const [gs, setGs] = useState(null);        // program guide report
+  const [gBusy, setGBusy] = useState(false);
+  const load = () => { tv.iptvList().then(setList); tv.guidesStatus().then(setGs).catch(() => {}); tv.iptvGenres().then(setGenres); tv.state().then((s) => setAuto(!!s.settings.live?.autoRemove)).catch(() => {}); };
   useEffect(load, []);
 
   const mine = useMemo(() => (list || []).filter((c) =>
@@ -65,7 +69,7 @@ export function FreeTvPanel({ isAdult, setChannels, toast, onTune }) {
   const Row = (c) => html`<div class=${'ftv-row' + (c.hidden ? ' off' : '')} key=${c.id}>
     ${c.logo ? html`<img class="ftv-logo" src=${c.logo} loading="lazy" onError=${(e) => { e.target.style.visibility = 'hidden'; }} />` : html`<span class="ftv-logo">📺</span>`}
     <b class="ftv-num">${c.number}</b>
-    <div class="grow"><b>${c.name}</b><span class="faint small"> ${[c.group, c.country && c.country.toUpperCase()].filter(Boolean).join(' · ')}${c.dead ? ' · 💤 off the air lately' : ''}${c.hidden ? ' · hidden from the guide' : ''}</span></div>
+    <div class="grow"><b>${c.name}</b><span class="faint small"> ${[c.provider && `via ${c.provider}`, c.group, c.country && c.country.toUpperCase()].filter(Boolean).join(' · ')}${c.guide === false ? ' · no schedule yet' : ''}${c.dead ? ' · 💤 off the air lately' : ''}${c.hidden ? ' · hidden from the guide' : ''}</span></div>
     ${!c.hidden && html`<button class="btn sm" title="Watch" onClick=${() => onTune(c.id)}>▶</button>`}
     <button class="btn sm" title=${c.hidden ? 'Show it again' : 'Hide from the guide (keeps it here)'} onClick=${() => hide(c, !c.hidden)}>${c.hidden ? '👁 Show' : '🙈'}</button>
     <button class="btn sm" title="Remove completely" onClick=${() => remove(c)}>✕</button>
@@ -79,6 +83,11 @@ export function FreeTvPanel({ isAdult, setChannels, toast, onTune }) {
       <button class="btn sm" onClick=${() => setBulk(true)}>📡 Add in bulk (languages, countries, regions)…</button></div>
     <div class="overlay-body" style="max-width:980px">
 
+      ${gs && gs.stations > 0 && html`<div class="guide-report">
+        <div class="grow"><b>🗓 Program guide: ${gs.withGuide.toLocaleString()} of ${gs.stations.toLocaleString()} stations have a real schedule</b>
+          <div class="faint small">${Object.entries(gs.bySource || {}).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${n.toLocaleString()} from ${k}`).join(' · ')}${gs.at ? ` · updated ${agoText(gs.at)}` : ''}${gs.until ? ` · good until about ${new Date(gs.until).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''}</div>
+          <div class="faint small">Pluto TV stations use Pluto’s own schedule, exact to the minute. Others come from free public guides; stations with no schedule show “Live”. It refreshes by itself before it runs out.</div></div>
+        <button class="btn sm" disabled=${gBusy || gs.refreshing} onClick=${async () => { setGBusy(true); toast('🗓 Refreshing the program guide — this takes a minute or two'); try { setGs(await tv.refreshGuides()); load(); toast('🗓 Program guide updated'); } catch { toast('Couldn’t refresh the guide — are you online?'); } setGBusy(false); }}>${gBusy || gs.refreshing ? 'Refreshing…' : '↻ Refresh guide now'}</button></div>`}
       <div class="row" style="gap:8px;margin-bottom:10px">
         <input class="input grow" placeholder="Search your stations…" value=${q} onInput=${(e) => setQ(e.target.value)} />
         <select class="select" value=${genre} onChange=${(e) => setGenre(e.target.value)}>

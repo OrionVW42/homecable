@@ -10,7 +10,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 const { ffmpegPath, pickEncoder, streamArgs } = require('./ffmpeg');
-const { liveArgs } = require('./iptv');
+const { liveArgs, resolveHls } = require('./iptv');
 
 const MIME = {
   mp4: 'video/mp4', m4v: 'video/mp4', mov: 'video/mp4', webm: 'video/webm', mkv: 'video/webm', mk3d: 'video/webm',
@@ -70,8 +70,10 @@ function startServer(lib, log = () => {}, { liveFor = () => null, thumbDir = nul
     if (route === 'live') {
       const st = liveFor(id, who);
       if (!st) { res.writeHead(404); return res.end(); }
-      log(`live ${st.mode || 'copy'} ${st.url}${who.group ? ' → ' + who.group : ''}`);
-      return spawnTo(liveArgs(st, st.mode || 'copy'), res, req, st.audioOnly ? 'audio/mp4' : 'video/mp4', 'live', group);
+      const hls = st.audioOnly ? null : await resolveHls(st);
+      log(`live ${st.mode || 'copy'}${hls ? ' (picture+sound split)' : ''} ${st.url}${who.group ? ' → ' + who.group : ''}`);
+      if (req.destroyed) return; // they changed channel while we looked it up
+      return spawnTo(liveArgs(st, st.mode || 'copy', hls), res, req, st.audioOnly ? 'audio/mp4' : 'video/mp4', 'live', group);
     }
     if (route === 'art') {
       // Movie posters (cached JPEGs made by artwork.js).

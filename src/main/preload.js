@@ -127,6 +127,7 @@ contextBridge.exposeInMainWorld('tv', {
   iptvLanguages: call('iptv:languages'),
   iptvRecheck: call('iptv:recheck'),
   refreshGuides: call('guides:refresh'),
+  guidesStatus: call('guides:status'),
   liveStations: call('live:stations'),
   liveMix: call('live:mix'),
   liveRenumber: call('live:renumber'),

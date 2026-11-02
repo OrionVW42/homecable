@@ -735,9 +735,11 @@ body.legend-up .toast { bottom: 76px; }
 .topbar .od-nav { flex: 0 1 auto; min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
 .topbar .od-nav::-webkit-scrollbar { display: none; }
 .topbar .nav { flex: none; }
-@media (max-width: 1500px) { .topbar .cast-btn .l { display: none; } }
-@media (max-width: 1350px) { .topbar .nav button .l { display: none; } .topbar .nav button { padding: 0 11px; } }
-@media (max-width: 1150px) { .topbar .od-nav-btn .l { display: none; } .topbar .od-nav-btn { padding: 0 12px; } .topbar .who-chip .l { display: none; } }
+/* Narrower windows fold labels into icons, most-optional first, so every
+   button stays visible (the On Demand strip used to clip "Collection"). */
+@media (max-width: 1750px) { .topbar .cast-btn .l { display: none; } }
+@media (max-width: 1620px) { .topbar .nav button .l { display: none; } .topbar .nav button { padding: 0 11px; } }
+@media (max-width: 1350px) { .topbar .od-nav-btn .l { display: none; } .topbar .od-nav-btn { padding: 0 12px; } .topbar .who-chip .l { display: none; } }
 
 /* Mini player: just the picture, tiny controls on hover, drag the top edge to move */
 .app.mini .topbar, .app.mini .controls, .app.mini .scrub, .app.mini .skip-btn, .app.mini .clock, .app.mini .mute-badge, .app.mini .banner, .app.mini .number-entry { display: none !important; }
@@ -1018,3 +1020,35 @@ body.legend-up .toast { bottom: 76px; }
 .linkish { background: none; border: 0; padding: 0; margin-top: 6px; display: block; color: var(--accent); font: inherit; font-size: 13px; cursor: pointer; }
 .linkish:hover { text-decoration: underline; }
 .upd-notes { white-space: pre-wrap; font: 12.5px/1.5 var(--font); color: var(--dim); background: var(--raise); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 8px 0 0; max-height: 220px; overflow: auto; }
+
+/* 1.4.9: the guide's buttons wrap onto another line instead of sliding under
+   the mini player when the window gets narrower; the header grows to fit. */
+.guide-top { height: auto; min-height: calc(min(38vw, 560px) * 9 / 16 + 84px); padding-bottom: 14px; }
+.guide-top .row { flex-wrap: wrap; row-gap: 8px; }
+.guide-top .guide-search { width: min(300px, 100%); min-width: 170px; }
+.guide-report { display: flex; gap: 14px; align-items: center; padding: 12px 14px; margin: 0 0 12px; border-radius: 12px; background: var(--raise); border: 1px solid var(--line); }
+.guide-report .faint { margin-top: 3px; }
+.via-chip { font-size: 11px; font-weight: 700; letter-spacing: .04em; padding: 2px 8px; border-radius: 99px; background: rgba(255,214,0,.14); color: #ffd84a; border: 1px solid rgba(255,214,0,.35); white-space: nowrap; }
+.via-note { display: flex; align-items: center; gap: 8px; color: var(--dim); font-size: 12.5px; }
+.via-tag { display: block; font-style: normal; font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: #ffd84a; opacity: .85; margin-top: 1px; }
+.live-note { position: absolute; top: 66px; left: 50%; transform: translateX(-50%); z-index: 69; max-width: min(640px, 86vw); padding: 10px 16px; border-radius: 12px; background: var(--panel-solid); border: 1px solid rgba(255,181,71,.4); box-shadow: 0 16px 40px rgba(0,0,0,.5); font-size: 13.5px; line-height: 1.45; text-align: center; pointer-events: none; animation: rise .25s; }
+/* 1.4.9 pop-out: mute up top, a volume bar along the bottom (on hover); the big
+   middle buttons stay the only play / seek / full-window controls. */
+.mini-mute { width: 46px; font-size: 16px; }
+.mini-vol { position: absolute; left: 0; right: 0; bottom: 0; z-index: 60; display: none; align-items: center; gap: 10px; padding: 10px 14px 12px; background: linear-gradient(0deg, rgba(0,0,0,.7), transparent); opacity: 0; transition: opacity .2s; }
+.app.mini .mini-vol { display: flex; }
+.app.mini:hover .mini-vol { opacity: 1; }
+.mini-vol input { flex: 1; accent-color: var(--accent); min-width: 0; }
+.mini-vol span { font-size: 14px; }
+.mini-vol b { font-size: 12px; width: 26px; text-align: right; color: #fff; }
+.next-ep { position: absolute; right: 36px; bottom: 140px; z-index: 42; display: grid; grid-template-columns: auto auto; align-items: center; column-gap: 10px; padding: 10px 18px; border-radius: 10px; border: 1px solid rgba(255,255,255,.6); background: rgba(14,15,20,.78); color: #fff; font: 700 16px var(--font); cursor: pointer; backdrop-filter: blur(6px); box-shadow: 0 10px 30px rgba(0,0,0,.45); animation: rise .25s; text-align: left; }
+.next-ep:hover { background: rgba(108,140,255,.6); }
+.next-ep small { grid-column: 1 / -1; font: 500 12px var(--font); color: rgba(255,255,255,.75); max-width: 280px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.next-ep.mini { right: 10px; bottom: 46px; padding: 7px 12px; font-size: 13px; z-index: 61; }
+.app:has(.banner.show) .next-ep:not(.mini) { bottom: 200px; }
+.app:has(.skip-btn) .next-ep:not(.mini) { bottom: 200px; }
+.app.mini .next-ep { display: none; }
+.app.mini:hover .next-ep { display: grid; }
+/* The smallest windows: the wordmark goes (the logo stays) so every button fits. */
+@media (max-width: 1000px) { .topbar .brand span, .topbar .brand b { display: none; } .topbar .brand { margin-right: 6px; } }
+

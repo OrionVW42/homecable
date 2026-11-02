@@ -1,6 +1,6 @@
 import { html, render } from 'htm/preact';
 import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
-import { tv, Icon, Logo, ChannelLogo, entryText, fmtClock } from './util.js';
+import { tv, Icon, Logo, ChannelLogo, entryText, fmtClock, providerOf } from './util.js';
 import { Player, Banner } from './player.js';
 import { Guide, guideFilter, guideFilterReset } from './guide.js';
 import { ChannelsPanel, ChannelEditor, SettingsPanel } from './panels.js';
@@ -254,6 +254,23 @@ function App() {
     return () => clearInterval(t);
   }, []);
 
+  // A live station froze: say why, briefly, up top — free stations come from
+  // servers all over the world (Pluto TV stitches its own breaks), so a short
+  // drop is normal and HomeCable is already reconnecting. Once per 3 min per channel.
+  const [liveNote, setLiveNote] = useState(null);
+  const noteSaid = useRef({});
+  const onHiccup = useCallback((t) => {
+    if (t !== tunedRef.current || !t?.channel?.iptv) return;
+    const k = t.channel.id;
+    if (Date.now() - (noteSaid.current[k] || 0) < 180e3) return;
+    noteSaid.current[k] = Date.now();
+    const prov = providerOf(t.channel);
+    setLiveNote(prov
+      ? `📡 ${prov}’s stream hiccuped — reconnecting. ${prov} stitches its shows and ad breaks together on its own servers, so the picture can stutter at a break.`
+      : `📡 The signal dropped — reconnecting. Free stations stream from servers around the world, and far-away ones can lose the connection for a moment.`);
+    clearTimeout(timers.current.liveNote);
+    timers.current.liveNote = setTimeout(() => setLiveNote(null), 9000);
+  }, []);
   // Live stations that keep dropping get spaced-out retries (never abandoned).
   const liveDrops = useRef({});
   const signalToast = useRef({}); // "lost its signal" said at most every 5 min per channel
@@ -572,7 +589,7 @@ function App() {
   const live = player.current.isLive ? player.current.isLive() : true;
   const now = entryText(tuned?.entry);
   return html`<div class=${'app' + (idle ? ' idle' : '') + (mini ? ' mini' : '')} onMouseMove=${poke} onMouseDown=${poke} onWheel=${onWheel}>
-    ${(channels.length > 0 || vod) && html`<${Player} tuned=${vod || tuned} settings=${settings} transitions=${settings.transitions} pip=${overlay === 'guide'} quiet=${overlay === 'arcade'} covered=${(!!overlay && overlay !== 'guide' && overlay !== 'help') || setup} bufferStart=${bufferStart.current} apiRef=${player} cast=${cast.mode === 'media' ? cast : null} onEnded=${onEnded} onFailed=${onFailed} onShift=${onShift} onCaptionsError=${() => { toast('💬 Live captions couldn’t start on this PC'); setSettings({ liveCaptions: false }); }} onVolume=${(p) => setSettings(p)} onStalled=${onStalled}>
+    ${(channels.length > 0 || vod) && html`<${Player} tuned=${vod || tuned} settings=${settings} transitions=${settings.transitions} pip=${overlay === 'guide'} quiet=${overlay === 'arcade'} covered=${(!!overlay && overlay !== 'guide' && overlay !== 'help') || setup} bufferStart=${bufferStart.current} apiRef=${player} cast=${cast.mode === 'media' ? cast : null} onEnded=${onEnded} onFailed=${onFailed} onShift=${onShift} onCaptionsError=${() => { toast('💬 Live captions couldn’t start on this PC'); setSettings({ liveCaptions: false }); }} onVolume=${(p) => setSettings(p)} onStalled=${onStalled} onHiccup=${onHiccup}>
       <${Banner} tuned=${vod || tuned} show=${banner && !overlay} live=${live} getBehind=${() => player.current.behind?.() || 0} getPos=${() => player.current.position?.() || 0} paused=${player.current.paused} raised=${chrome} />
       ${digits && html`<div class="number-entry">${digits.padEnd(2, '–')}<small>${channels.find((c) => c.number === +digits)?.name || ''}</small></div>`}
       ${volFlash === 'volume' && html`<div class="osd-level">${settings.muted ? html`<${Icon.mute} />` : html`<${Icon.vol} />`}<div class="meter"><i style=${`width:${settings.muted ? 0 : (settings.volume ?? 0.9) * 100}%`}></i></div><span>${settings.muted ? 'Muted' : Math.round((settings.volume ?? 0.9) * 100)}</span></div>`}
@@ -582,8 +599,12 @@ function App() {
     <div style="position:absolute;inset:0;z-index:2" onDblClick=${() => !overlay && (mini ? tv.miniMode(false) : tv.fullscreen().then(setFullscreen))} onClick=${() => !overlay && showBanner(settings.bannerSeconds)}></div>
     ${mini && html`<div class="mini-top">
       <div class="mini-drag" title="Drag to move"></div>
-      <button class="mini-btn" title="Pause / play" onClick=${() => { player.current.togglePause?.(); poke(); }}>${player.current.paused ? '▶' : '❚❚'}</button>
-      <button class="mini-btn" title="Back to the full window (P)" onClick=${() => tv.miniMode(false)}><${Icon.exitFull} /></button>
+      <button class="mini-btn mini-mute" title=${settings.muted ? 'Unmute (M)' : 'Mute (M)'} onClick=${() => { setSettings({ muted: !settings.muted }); poke(); }}>${settings.muted ? '🔇' : '🔊'}</button>
+    </div>
+    <div class="mini-vol" onClick=${(e) => e.stopPropagation()} onDblClick=${(e) => e.stopPropagation()}>
+      <span>${settings.muted || (settings.volume ?? 0.9) === 0 ? '🔇' : '🔊'}</span>
+      <input type="range" min="0" max="1" step="0.05" value=${settings.muted ? 0 : settings.volume ?? 0.9} title="Volume" onInput=${(e) => { setSettings({ volume: +e.target.value, muted: false }); poke(); }} />
+      <b>${settings.muted ? 0 : Math.round((settings.volume ?? 0.9) * 100)}</b>
     </div>
     <div class="mini-mid">
       <button class="mini-ctl" title="Back 10 seconds" onClick=${() => { player.current.seekBy?.(-10); poke(); }}>⟲10</button>
@@ -614,7 +635,7 @@ function App() {
     ${editing && html`<${ChannelEditor} channel=${editing} onSave=${saveChannel} onDelete=${deleteChannel} onClose=${() => setEditing(null)} />`}
 
     <div class=${'topbar' + (idle || setup ? ' hide' : '')}>
-      <div class="brand"><${Logo} size=${24} />HomeCable</div>
+      <div class="brand"><${Logo} size=${24} /><span>HomeCable</span></div>
       <div class="nav">
         ${[['guide', 'Guide', Icon.guide, 'G'], ['library', 'Library', Icon.library, 'L']].map(([k, l, I, key]) => html`
           <button class=${overlay === k ? 'on' : ''} title=${`${l} (${key})`} onClick=${() => setOverlay((o) => (o === k ? null : k))}><${I} /><span class="l">${l}</span></button>`)}
@@ -652,6 +673,7 @@ function App() {
     </div>
 
     ${vod && !overlay && !setup && html`<${Scrub} player=${player} hide=${idle} />`}
+    ${vod && !overlay && !setup && html`<${NextEpisode} vod=${vod} player=${player} hide=${idle} mini=${mini} onNext=${() => onEnded(vodRef.current)} />`}
     ${avMenu && !overlay && !setup && html`<${AvMenu} player=${player} toast=${toast} onClose=${() => setAvMenu(false)} live=${ccAvail} liveOn=${!!settings.liveCaptions} setLive=${(on) => setSettings({ liveCaptions: on })} />`}
     ${vod && !overlay && !setup && html`<${SkipButtons} key=${vod.entry.itemId} player=${player} vod=${vod} hasNext=${hasNext(vod)} onNext=${nextEpisode} />`}
     ${ch && !overlay && !setup && html`<div class=${'controls' + (idle ? ' hide' : '')}>
@@ -680,6 +702,7 @@ function App() {
     ${tour && html`<${Tour} onClose=${() => { setTour(false); setSettings({ tourDone: true }); }} />`}
     ${bgAdd && !setup && html`<div class="bgjob"><div class="bgjob-bar"><i style=${bgAdd.pct != null ? `width:${Math.round(bgAdd.pct * 100)}%` : 'width:30%;animation:bgslide 1.2s linear infinite'}></i></div><span>${bgAdd.text}</span></div>`}
     ${toastMsg && html`<div class="toast">${toastMsg}</div>`}
+    ${liveNote && !overlay && html`<div class="live-note">${liveNote}</div>`}
     ${updMsg && !updReady && html`<div class="upd-toast">⬇ HomeCable v${updMsg} is here — downloading in the background</div>`}
     ${updReady && updHidden !== updReady && settings.updateNotify !== false && !updDone && overlay !== 'settings' && html`<div class="upd-ready">
       <span>⬆ HomeCable v${updReady} is ready</span>
@@ -691,6 +714,21 @@ function App() {
 }
 
 render(html`<${App} />`, document.getElementById('app'));
+
+// "Next episode ▶" near the end of an episode (On Demand / Stream Demand), shown
+// when you move the mouse — in the full window and the pop-out. Plays what
+// would play next anyway (the binge queue, or the show's next episode).
+function NextEpisode({ vod, player, hide, mini, onNext }) {
+  const [, tick] = useState(0);
+  useEffect(() => { const i = setInterval(() => tick((n) => n + 1), 1000); return () => clearInterval(i); }, []);
+  const nx = vod.from === 'ondemand' ? (vod.queue?.[0] || vod.next) : vod.next;
+  if (!nx || hide) return null;
+  const len = player.current.duration?.() || 0, pos = player.current.position?.() || 0;
+  // The last two minutes (credits), or the last 10% of something short.
+  if (!len || len - pos > Math.max(25, Math.min(120, len * 0.1))) return null;
+  const label = nx.label || [nx.season != null && `S${nx.season} · E${nx.episode}`, nx.title].filter(Boolean).join(' · ') || 'Next episode';
+  return html`<button class=${'next-ep' + (mini ? ' mini' : '')} title=${label} onClick=${(e) => { e.stopPropagation(); onNext(); }}><span>Next episode</span><b>▶</b>${!mini && html`<small>${label}</small>`}</button>`;
+}
 
 // Mouse scrub bar for on-demand videos: click or drag anywhere to jump there.
 function Scrub({ player, hide }) {

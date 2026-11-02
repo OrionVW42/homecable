@@ -130,3 +130,13 @@ export const Icon = {
 
 // The HomeCable mark (same artwork as the app icon).
 export const Logo = ({ size = 24 }) => html`<img src="../../assets/icon.svg" width=${size} height=${size} alt="" />`;
+
+// Which free TV service a live station comes from (Pluto TV, Samsung TV Plus…),
+// so the banner and guide can say "via Pluto TV". Mirrors providerOf in src/main/iptv.js.
+const PROVIDER_RE = [['Pluto TV', /jmp2\.uk\/plu-|pluto\.tv/i], ['Samsung TV Plus', /jmp2\.uk\/sam-|samsungtvplus|samsung\.wurl/i], ['Plex', /jmp2\.uk\/plex-|plex\.tv/i], ['The Roku Channel', /jmp2\.uk\/rok-|\.roku\.com/i], ['Stirr', /jmp2\.uk\/stirr-|stirr\.com/i]];
+export function providerOf(ch) {
+  const url = ch?.iptv?.url;
+  if (!url) return null;
+  for (const [name, re] of PROVIDER_RE) if (re.test(url)) return name;
+  return null;
+}

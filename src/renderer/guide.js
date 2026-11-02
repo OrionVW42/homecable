@@ -1,6 +1,6 @@
 import { html } from 'htm/preact';
 import { useEffect, useRef, useState, useCallback } from 'preact/hooks';
-import { tv, fmtTime, entryText, ChannelLogo, Icon } from './util.js';
+import { tv, fmtTime, entryText, ChannelLogo, Icon, providerOf } from './util.js';
 
 const SLOT = 30 * 60e3;
 const SPAN = 2.5 * 3600e3; // visible window
@@ -65,9 +65,17 @@ export function Guide({ channels, tunedId, onTune, onClose, mixTargets = [], toa
   const allGenres = (() => {
     const count = new Map();
     for (const c of channels) for (const g of gmap[c.id] || []) count.set(g, (count.get(g) || 0) + 1);
-    return [...count.entries()].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(b[0]));
+    // A to Z (the count still shows beside each one).
+    return [...count.entries()].sort((a, b) => String(a[0]).localeCompare(String(b[0]), undefined, { sensitivity: 'base' }));
   })();
-  useEffect(() => { setSel((s) => ({ ...s, ch: 0 })); }, [ql, genre]);
+  // A new search or genre goes back to the top row — but NOT when the guide
+  // first opens: then it selects the channel you're watching (counted in the
+  // rows actually shown, so ♥/genre filters can't land it on the wrong one).
+  const opened = useRef(false);
+  useEffect(() => {
+    if (!opened.current) { opened.current = true; const i = chans.findIndex((c) => c.id === tunedId); if (i >= 0) setSel((s) => ({ ...s, ch: i })); return; }
+    setSel((s) => ({ ...s, ch: 0 }));
+  }, [ql, genre]);
   // The mouse wheel scrolls the channel rows, pop-out or fullscreen alike.
   useEffect(() => {
     const el = rowsRef.current;
@@ -138,6 +146,7 @@ export function Guide({ channels, tunedId, onTune, onClose, mixTargets = [], toa
       <div class="time">${selCh ? `${selCh.number} · ${selCh.name}` : ''}${selEntry ? (selEntry.type === 'ondemand' ? ' · Any time' : ` · ${fmtTime(selEntry.start)} – ${fmtTime(selEntry.end)}`) : ''}</div>
       <h2>${t.title}</h2>
       <div class="muted">${t.sub}${selEntry?.block ? ` · ${selEntry.block} block` : ''}</div>
+      ${providerOf(selCh) && html`<div class="via-note"><span class="via-chip">via ${providerOf(selCh)}</span> A free channel from ${providerOf(selCh)} — its shows, ad breaks and times are ${providerOf(selCh)}’s, not HomeCable’s.</div>`}
       ${selEntry?.summary && html`<p>${selEntry.summary}</p>`}
       <div class="row" style="margin-top:10px">
         <button class="btn primary sm" onClick=${() => selCh && onTune(selCh.id)}>Watch channel ${selCh?.number ?? ''}</button>
@@ -168,7 +177,7 @@ export function Guide({ channels, tunedId, onTune, onClose, mixTargets = [], toa
         onPointerCancel=${() => { mdrag.current = null; }}>
         ${favOnly && !chans.length && html`<div class="guide-empty">No favorites yet — right-click any channel and tap ❤, then the heart up top shows just those.</div>`}
         ${chans.map((ch, i) => html`<div class=${'grid-row' + (ch.id === tunedId ? ' tuned' : '')} key=${ch.id}>
-          <div class="ch" onClick=${() => onTune(ch.id)} onContextMenu=${(e) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, ch }); }} title="Watch"><b>${ch.number}</b><${ChannelLogo} ch=${ch} size=${32} /><span>${ch.fav ? '❤ ' : ''}${ch.name}</span></div>
+          <div class="ch" onClick=${() => onTune(ch.id)} onContextMenu=${(e) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, ch }); }} title="Watch"><b>${ch.number}</b><${ChannelLogo} ch=${ch} size=${32} /><span>${ch.fav ? '❤ ' : ''}${ch.name}${providerOf(ch) && html`<i class="via-tag">${providerOf(ch)}</i>`}</span></div>
           <div class="cells">
             ${now >= start && now < start + SPAN && html`<div class="nowline" style=${`left:${pos(now)}%`}></div>`}
             ${entriesFor(i).filter((e) => e.end > start && e.start < start + SPAN).map((e) => {
