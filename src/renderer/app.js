@@ -54,6 +54,7 @@ function App() {
   const player = useRef({});
   const bufferStart = useRef(Date.now());
   const prevChannel = useRef(null); // for Backspace / L3
+  const lastLive = useRef(null); // the last REAL channel — On Demand hands back to it, like a cable box
   const tuneSeq = useRef(0);
   const timers = useRef({});
   const tunedRef = useRef(null);
@@ -84,6 +85,9 @@ function App() {
     const seq = ++tuneSeq.current;
     const r = await tv.tune(id, at && Math.max(at, bufferStart.current));
     if (!r || seq !== tuneSeq.current) return; // a newer tune already happened
+    // Remember the last REAL channel (from the tune result — the channels list
+    // may not be loaded yet at boot): On Demand hands back to it, like cable.
+    if (r.channel && !r.channel.ondemand) lastLive.current = r.channel.id;
     setTuned(r);
     if (!quiet) showBanner(settingsRef.current.bannerSeconds);
   }, []);
@@ -100,6 +104,9 @@ function App() {
     if (!list.length) return;
     lastDir.current = dir;
     const i = list.findIndex((c) => c.id === tunedRef.current?.channel?.id);
+    // Surfing out of On Demand / Stream Demand: back to the channel you were
+    // on, like a real cable box — not to the top of the dial.
+    if (i < 0 && lastLive.current && list.some((c) => c.id === lastLive.current)) { tune(lastLive.current); return; }
     const next = list[(i + dir + list.length) % list.length];
     tune(next.id);
   }, []);
@@ -444,7 +451,13 @@ function App() {
       if (e.target.closest?.('input, textarea, select')) return;
       if (e.ctrlKey || e.altKey || e.metaKey) return;
       const k = e.key;
-      if (k === 'BackToTV') { setEditing(null); setOverlay(null); ui.current.editing = null; ui.current.overlay = null; if (vodRef.current) exitVod(); return; }
+      if (k === 'BackToTV') {
+        setEditing(null); setOverlay(null); ui.current.editing = null; ui.current.overlay = null;
+        if (vodRef.current) exitVod();
+        // From an On Demand / Stream Demand wall, "TV" means the channel you were watching.
+        else if (tunedRef.current?.channel?.ondemand && lastLive.current) tune(lastLive.current);
+        return;
+      }
       if (vodRef.current && !overlay && !editing && (k === 'Escape' || k === 'Backspace')) {
         const fromWall = vodRef.current.from === 'ondemand';
         exitVod();
