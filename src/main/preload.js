@@ -164,6 +164,9 @@ contextBridge.exposeInMainWorld('tv', {
   onFreeProgress: on('free-progress'),
   onMaximized: on('maximized'),
   updateCheck: call('update:check'),
+  updateApply: call('update:apply'),
   updateStatus: call('update:status'),
   onUpdateToast: on('update-toast'),
+  onUpdateInstalling: on('update-installing'),
+  onUpdateDone: on('update-done'),
 });

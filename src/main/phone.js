@@ -121,9 +121,10 @@ function createPhone({ settings, saveSettings, media, call, send, log, profiles,
         return out(g.filter((row) => ok.has(row.id)));
       }
       case 'genres': {
-        // Every genre the guide knows, for the remote's dropdown.
+        // Every genre the guide knows (for the remote's dropdown) and which
+        // channels carry each one (for the phone's own guide filter).
         const map = await call('channels:genres');
-        return out([...new Set(Object.values(map).flat())].sort());
+        return out({ all: [...new Set(Object.values(map).flat())].sort(), map });
       }
       case 'tune': {
         const ch = (await call('state')).channels.find((c) => c.id === q('id'));

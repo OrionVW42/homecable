@@ -155,3 +155,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .g-search input { flex: 1; min-width: 0; background: var(--raise, rgba(255,255,255,.07)); border: 1px solid var(--line, rgba(255,255,255,.12)); border-radius: 12px; color: inherit; font: inherit; padding: 10px 12px; }
 .g-search select { max-width: 34%; background: var(--raise, rgba(255,255,255,.07)); border: 1px solid var(--line, rgba(255,255,255,.12)); border-radius: 12px; color: inherit; font: inherit; padding: 10px 8px; }
 .g-search .g-clear { border: 1px solid var(--line, rgba(255,255,255,.12)); background: none; color: inherit; border-radius: 10px; padding: 8px 11px; font: inherit; }
+/* 1.21: the proper guide on the phone */
+.g-q { width: 100%; background: var(--raise, rgba(255,255,255,.07)); border: 1px solid var(--line, rgba(255,255,255,.12)); border-radius: 12px; color: inherit; font: inherit; padding: 10px 12px; margin: 2px 0 8px; }
+.g-chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 6px; -webkit-overflow-scrolling: touch; }
+.g-chips .chip { flex: none; background: var(--raise, rgba(255,255,255,.08)); border: 1px solid var(--line, rgba(255,255,255,.14)); border-radius: 999px; color: inherit; font-size: 13px; padding: 7px 13px; }
+.g-chips .chip.on { background: rgba(108,140,255,.25); border-color: #6c8cff; }
+.g-now { color: #cfd6ff; }

@@ -39,6 +39,8 @@ function App() {
   const [enrichProgress, setEnrichProgress] = useState(null);
   const [toastMsg, setToastMsg] = useState(null);
   const [updMsg, setUpdMsg] = useState(null); // top-left, once, when an update is found
+  const [updDone, setUpdDone] = useState(null); // first start on a new version: "✅ Updated"
+  const [updInstall, setUpdInstall] = useState(null); // the goodbye card while the update installs
   const [bgAdd, setBgAdd] = useState(null); // the slim strip: free TV being added in the background
   const [clock, setClock] = useState(Date.now());
   const [cast, setCast] = useState({ on: false });
@@ -137,6 +139,10 @@ function App() {
       // An update was found: a quiet note top-left for a moment. It downloads by
       // itself without touching what's playing, and installs on the next restart.
       tv.onUpdateToast(({ version }) => { setUpdMsg(version); clearTimeout(timers.current.upd); timers.current.upd = setTimeout(() => setUpdMsg(null), 8000); }),
+      // Goodbye card: the window is about to close so the new version can install.
+      tv.onUpdateInstalling(({ version }) => setUpdInstall(version || '')),
+      // Hello again: the first start on a freshly installed version.
+      tv.onUpdateDone(({ version }) => { setUpdDone(version); clearTimeout(timers.current.updDone); timers.current.updDone = setTimeout(() => setUpdDone(null), 9000); }),
       // "Cast everything": the TV asked for the mirrored screen — record this window.
       tv.onMirror(({ on }) => { if (on) startMirror().catch((e) => { console.error('mirror', e); toast('Couldn’t capture the screen for the TV'); }); else stopMirror(); }),
       tv.onCastDevices(setTvs),
@@ -674,6 +680,13 @@ function App() {
     ${bgAdd && !setup && html`<div class="bgjob"><div class="bgjob-bar"><i style=${bgAdd.pct != null ? `width:${Math.round(bgAdd.pct * 100)}%` : 'width:30%;animation:bgslide 1.2s linear infinite'}></i></div><span>${bgAdd.text}</span></div>`}
     ${toastMsg && html`<div class="toast">${toastMsg}</div>`}
     ${updMsg && html`<div class="upd-toast">⬇ HomeCable v${updMsg} is here — it'll install itself next time you start</div>`}
+    ${updDone && html`<div class="upd-toast done">✅ Updated! You're on HomeCable v${updDone} now.</div>`}
+    ${updInstall != null && html`<div class="upd-install">
+      <${Logo} size=${64} />
+      <h1>Installing HomeCable${updInstall ? ` v${updInstall}` : ''}…</h1>
+      <p>The app closes for a few seconds and <b>reopens by itself</b> — nothing to do.</p>
+      <div class="progress indeterminate"><i></i></div>
+    </div>`}
     ${liveAd && !overlay && !setup && html`<div class="live-ad">
       <video src=${liveAd.url} autoplay playsinline ref=${(v) => { if (v) { v.volume = settings.muted ? 0 : settings.volume ?? 0.9; } }} onEnded=${() => setLiveAd(null)} onError=${() => setLiveAd(null)}></video>
       <span class="live-ad-tag">COMMERCIAL BREAK</span>

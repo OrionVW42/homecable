@@ -534,7 +534,7 @@ function GuideSearch({ send, where }) {
   const [genres, setGenres] = useState([]);
   const [genre, setGenre] = useState('');
   const t = useRef(null);
-  useEffect(() => { api('genres').then(setGenres).catch(() => {}); }, []);
+  useEffect(() => { api('genres').then((g) => setGenres(g.all || g)).catch(() => {}); }, []);
   const push = (patch) => send({ guide: patch });
   const type = (v) => { setQ(v); clearTimeout(t.current); t.current = setTimeout(() => push({ q: v }), 350); };
   const clearAll = () => { setQ(''); setGenre(''); push({ q: '', genre: '' }); };
@@ -558,17 +558,37 @@ function GuidePick({ state, where, onBack, onPick }) {
     api(`guide?from=${t0}&to=${t0 + 2 * 3600e3}`).then((g) => setRows(Object.fromEntries(g.map((r) => [r.id, r.entries || []])))).catch(() => setRows({}));
   }, []);
   const when = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  // A proper channel list, like the PC's guide: real programmes with times,
+  // searched and genre-filtered right here.
+  const [q, setQ] = useState('');
+  const [genre, setGenre] = useState('');
+  const [gm, setGm] = useState({ all: [], map: {} });
+  useEffect(() => { api('genres').then((g) => setGm(g.map ? g : { all: g, map: {} })).catch(() => {}); }, []);
+  const ql = q.trim().toLowerCase();
+  const list = state.channels.filter((c) => !c.ondemand)
+    .filter((c) => !genre || (gm.map[c.id] || []).includes(genre))
+    .filter((c) => {
+      if (!ql) return true;
+      if (c.name.toLowerCase().includes(ql)) return true;
+      return (rows?.[c.id] || []).some((e) => String(e.title || '').toLowerCase().includes(ql) || String(e.sub || '').toLowerCase().includes(ql));
+    });
   return html`<div class="guidepick">
-    <div class="g-head"><button class="icon" onClick=${onBack}>←</button><div class="grow"><b>TV Guide</b><small class="muted">Tap a channel — it plays on ${where}</small></div></div>
-    ${!rows ? html`<div class="center-text"><div class="spin" style="margin:0 auto"></div></div>` : state.channels.filter((c) => !c.ondemand).map((c) => {
+    <div class="g-head"><button class="icon" onClick=${onBack}>←</button><div class="grow"><b>TV Guide</b><small class="muted">Tap a programme — it plays on ${where}</small></div></div>
+    <input class="g-q" type="search" placeholder="🔍 Channels & shows…" value=${q} onInput=${(e) => setQ(e.target.value)} />
+    ${gm.all.length > 0 && html`<div class="g-chips">
+      <button class=${'chip' + (!genre ? ' on' : '')} onClick=${() => setGenre('')}>All</button>
+      ${gm.all.map((g) => html`<button class=${'chip' + (genre === g ? ' on' : '')} onClick=${() => setGenre(genre === g ? '' : g)}>${g}</button>`)}
+    </div>`}
+    ${!rows ? html`<div class="center-text"><div class="spin" style="margin:0 auto"></div></div>` : list.map((c) => {
       const [e, nx] = rows[c.id] || [];
       return html`<button class="ch-row" onClick=${() => onPick(c)}>
         <span class="ch-num" style=${`--c:${c.color || '#556'}`}>${c.number}</span>
         <div class="grow"><b>${c.name}</b>
-          <small>${e ? [e.title, e.sub].filter(Boolean).join(' · ') : '—'}</small>
+          ${e ? html`<small><b class="g-now">${e.title || ''}</b>${e.sub ? ` · ${e.sub}` : ''}${e.start ? html` <span class="muted">${when(e.start)} – ${when(e.end)}</span>` : ''}</small>` : html`<small>—</small>`}
           ${nx && html`<small class="muted">Next · ${when(nx.start)} — ${nx.title || ''}</small>`}</div>
       </button>`;
     })}
+    ${rows && !list.length && html`<p class="muted center-text">Nothing matches${ql ? ` “${q}”` : ''}${genre ? ` in ${genre}` : ''}.</p>`}
   </div>`;
 }
 

@@ -127,17 +127,18 @@ function createUpdater({ app, log, send, settings, saveSettings }) {
     if (!app.isPackaged) { log('update ready (dev build — not installing):', p.version); return false; }
     if ((p.tries || 0) >= 2) return drop('installer ran twice without updating');
     p.tries = (p.tries || 0) + 1; saveSettings();
-    // A tiny batch: wait for the app to close, install silently (keeps channels,
-    // people and settings — the installer's silent default), then start the new one.
-    const bat = path.join(dir(), 'apply-update.cmd');
-    fs.writeFileSync(bat, [
-      '@echo off',
-      'ping -n 4 127.0.0.1 >nul',
-      `"${p.file}" /S`,
-      `start "" "${process.execPath}"`,
+    // A windowless helper (wscript, not cmd — a console box full of ping output
+    // scared people): wait for the app to close, install silently (keeps
+    // channels, people and settings), then start the new version.
+    const vbs = path.join(dir(), 'apply-update.vbs');
+    fs.writeFileSync(vbs, [
+      'WScript.Sleep 3000',
+      'Set sh = CreateObject("WScript.Shell")',
+      `sh.Run """${p.file}"" /S", 0, True`,
+      `sh.Run """${process.execPath}""", 1, False`,
     ].join('\r\n'));
     try {
-      spawn('cmd.exe', ['/c', bat], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+      spawn('wscript.exe', ['//B', '//Nologo', vbs], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
       log('update installing on exit:', p.version, `(${when})`);
       return true;
     } catch (e) { log('update spawn failed:', e.message); return false; }
@@ -152,8 +153,14 @@ function createUpdater({ app, log, send, settings, saveSettings }) {
     return since >= (every || EVERY_MS['24h']);
   }
 
+  // A downloaded, newer, intact update is sitting ready to install on close.
+  function hasReady() {
+    const p = settings().pendingUpdate;
+    return !!(p && p.file && newer(p.version, app.getVersion()) && fs.existsSync(p.file) && (!p.size || fs.statSync(p.file).size === p.size));
+  }
+
   const status = () => ({ current: app.getVersion(), repo: repo(), ...state, pending: settings().pendingUpdate || null });
-  return { check, download, run, applyPending, due, status };
+  return { check, download, run, applyPending, due, status, hasReady };
 }
 
 module.exports = { createUpdater, newer };

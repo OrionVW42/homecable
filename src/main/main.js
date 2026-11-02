@@ -874,6 +874,17 @@ function createWindow() {
   // Automated checks can run without popping a window up on the screen.
   if (process.env.HOMECABLE_OFFSCREEN) { win.setPosition(-10000, -10000); win.showInactive(); }
   else win.once('ready-to-show', () => { win.show(); if (settings.startFullscreen) win.setFullScreen(true); });
+  // Closing with an update ready: show "Installing…" for a moment instead of
+  // just vanishing and reappearing — people thought the app broke.
+  let closingForUpdate = false;
+  win.on('close', (e) => {
+    if (closingForUpdate || !updater?.hasReady?.()) return;
+    if (!app.isPackaged && !process.env.HOMECABLE_FAKE_PACKAGED) return;
+    closingForUpdate = true;
+    e.preventDefault();
+    send('update-installing', { version: settings.pendingUpdate?.version });
+    setTimeout(() => { try { win.close(); } catch {} }, 2300);
+  });
   win.on('enter-full-screen', () => send('fullscreen', true));
   win.on('leave-full-screen', () => send('fullscreen', false));
   win.on('maximize', () => send('maximized', true));
@@ -2061,6 +2072,13 @@ function handlers() {
   // (a couple hundred MB) carries on in the background and installs on restart.
   h('update:check', async () => { const info = await updater.check(); if (info) updater.run('manual'); return { ...updater.status(), found: info ? info.version : null }; });
   h('update:status', () => updater.status());
+  // The blue "Update now" button: the download is ready, install this instant —
+  // the window shows its goodbye card, closes, and the new version reopens.
+  h('update:apply', () => {
+    if (!updater.hasReady()) return { ok: false };
+    setTimeout(() => { try { win.close(); } catch {} }, 150);
+    return { ok: true };
+  });
 }
 
 // "Start over from scratch" (Settings, or the installer's "start fresh"): clear
@@ -2196,6 +2214,13 @@ app.whenReady().then(async () => {
   }, 30 * 60e3);
   // Keep every channel's timeline topped up.
   setInterval(() => { try { sched.ensure(channels); } catch (e) { log('ensure', e.stack); } }, 10 * 60e3);
+  // First start after an update: say so, warmly — people should KNOW the
+  // delete-and-reinstall they half-saw was the update doing its job.
+  if (settings.lastRunVersion && settings.lastRunVersion !== app.getVersion()) {
+    const from = settings.lastRunVersion;
+    setTimeout(() => send('update-done', { version: app.getVersion(), from }), 3500);
+  }
+  if (settings.lastRunVersion !== app.getVersion()) { settings.lastRunVersion = app.getVersion(); saveSettings(); }
   // Updates: the first boot of the day checks GitHub straight away, then the
   // chosen rhythm. Found ones download silently and install on the next restart.
   if (updater.due()) setTimeout(() => updater.run('boot'), 2500);
