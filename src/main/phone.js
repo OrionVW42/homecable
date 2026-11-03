@@ -79,6 +79,7 @@ function createPhone({ settings, saveSettings, media, call, send, log, profiles,
   };
   // What this phone may see: its profile's channels, never the locked section.
   const { ALLOWS } = require('./profiles');
+  const { providerOf } = require('./iptv');
   const okChannel = (dev, c) => c && !c.locked && (ALLOWS[dev.level] || ALLOWS.adults).includes(c.rating || 'all');
 
   async function api(req, res, url) {
@@ -112,8 +113,8 @@ function createPhone({ settings, saveSettings, media, call, send, log, profiles,
         const st = await call('state');
         const chans = st.channels.filter((c) => okChannel(dev, c) && !c.iptv?.dead);
         const vinfo = dev.level === 'adults' ? await call('vault:phoneInfo') : null;
-        return out({ pc: pcName(), device: { id: dev.id, name: dev.name }, vault: vinfo ? { name: vinfo.name, open: vaultOpenFor(dev) } : null, cast: st.cast || { on: false }, channels: chans.map(({ id, number, name, logo, color, ondemand, odStyle, iptv }) => ({ id, number, name, logo, color, ondemand: !!ondemand, odStyle: odStyle || null, live: !!iptv })),
-          settings: { subLang: settings.subLang || 'eng', subMode: settings.subMode || 'auto', audioPref: settings.audioPref || 'orig' }, now });
+        return out({ pc: pcName(), device: { id: dev.id, name: dev.name }, vault: vinfo ? { name: vinfo.name, open: vaultOpenFor(dev) } : null, cast: st.cast || { on: false }, channels: chans.map(({ id, number, name, logo, color, ondemand, odStyle, iptv, fav }) => ({ id, number, name, logo: typeof logo === 'string' ? logo : (iptv && iptv.logo) || null, color, ondemand: !!ondemand, odStyle: odStyle || null, live: !!iptv, fav: !!fav, provider: (iptv && providerOf(iptv.url)?.name) || null })),
+          settings: { subLang: settings.subLang || 'eng', subMode: settings.subMode || 'auto', audioPref: settings.audioPref || 'orig', fit: settings.fit || 'fit' }, version: st.version || null, now });
       }
       case 'guide': {
         const ok = new Set((await call('state')).channels.filter((c) => okChannel(dev, c)).map((c) => c.id));
@@ -125,6 +126,29 @@ function createPhone({ settings, saveSettings, media, call, send, log, profiles,
         // channels carry each one (for the phone's own guide filter).
         const map = await call('channels:genres');
         return out({ all: [...new Set(Object.values(map).flat())].sort((a, b) => String(a).localeCompare(String(b), undefined, { sensitivity: 'base' })), map });
+      }
+      case 'pcsettings': {
+        // The few PC choices a phone may change from its ⚙ Settings: subtitles, dub/original, picture size.
+        if (req.method !== 'POST') break;
+        const b = await body(req);
+        const patch = {};
+        if (['auto', 'on', 'off'].includes(b.subMode)) patch.subMode = b.subMode;
+        if (/^[a-z]{3}$/.test(b.subLang || '')) patch.subLang = b.subLang;
+        if (['orig', 'dub'].includes(b.audioPref)) patch.audioPref = b.audioPref;
+        if (['fit', 'fill', 'stretch'].includes(b.fit)) patch.fit = b.fit;
+        if (!Object.keys(patch).length) return json(res, 400, { error: 'Nothing to change' });
+        await call('settings:set', patch);
+        send('remote', { settings: patch, from: dev.name });
+        return json(res, 200, { ok: true, settings: patch });
+      }
+      case 'fav': {
+        // ❤ a channel from the phone's guide (press and hold its name) — the PC's favorites, shared.
+        if (req.method !== 'POST') break;
+        const b = await body(req);
+        const ch = (await call('state')).channels.find((c) => c.id === b.id);
+        if (!okChannel(dev, ch)) return json(res, 404, { error: 'No such channel' });
+        await call('channels:fav', ch.id, !!b.on);
+        return json(res, 200, { ok: true });
       }
       case 'tune': {
         const ch = (await call('state')).channels.find((c) => c.id === q('id'));

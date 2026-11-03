@@ -1,0 +1,81 @@
+/* The HomeCable grid guide on phones and tablets — the PC guide's look. */
+.hg {
+  --hg-accent: var(--accent, #6c8cff); --hg-accent2: var(--accent-2, #a46cff);
+  --hg-line: var(--line, rgba(255,255,255,.09)); --hg-dim: var(--dim, #9aa0b2); --hg-faint: var(--faint, #626879);
+  --hg-raise: var(--raise, rgba(255,255,255,.06)); --hg-bad: var(--bad, #ff5d6c);
+  display: flex; flex-direction: column; min-height: 0; height: 100%; color: var(--text, #eef0f6);
+  font-family: var(--font, "Segoe UI", Roboto, system-ui, sans-serif);
+}
+.hg button { font: inherit; color: inherit; cursor: pointer; }
+.hg [hidden] { display: none !important; }
+.hg-hero { flex: none; display: flex; flex-direction: row-reverse; gap: 22px; align-items: center; padding: 16px 20px 12px; }
+.hg-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.hg-preview { flex: none; width: min(40%, 560px); aspect-ratio: 16 / 9; border-radius: 16px; overflow: hidden; background: #000; box-shadow: 0 18px 50px -18px rgba(0,0,0,.9), 0 0 0 1px rgba(255,255,255,.08); position: relative; }
+.hg-preview:empty { display: none; }
+.hg-back { align-self: flex-start; border: 1px solid var(--hg-line); background: var(--hg-raise); border-radius: 10px; padding: 7px 13px; font-weight: 600; font-size: 14px; margin-bottom: 4px; }
+.hg-time { color: var(--hg-accent); font-weight: 700; font-size: 12.5px; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hg-title { margin: 0; font: 700 clamp(21px, 3.4vw, 34px)/1.15 var(--display, "Segoe UI", Roboto, sans-serif); letter-spacing: -.02em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.hg-sub { color: var(--hg-dim); font-size: 14.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hg-sum { margin: 2px 0 0; color: var(--hg-dim); font-size: 13.5px; max-width: 75ch; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.hg-via { display: flex; align-items: center; gap: 8px; color: var(--hg-dim); font-size: 12.5px; flex-wrap: wrap; }
+.hg-chip { font-size: 11px; font-weight: 700; letter-spacing: .04em; padding: 2px 8px; border-radius: 99px; background: rgba(255,214,0,.14); color: #ffd84a; border: 1px solid rgba(255,214,0,.35); white-space: nowrap; }
+.hg-note { color: var(--hg-faint); font-size: 12.5px; margin-top: 2px; }
+.hg-bar { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; align-items: center; }
+.hg-acts { display: contents; }
+.hg-btn { height: 40px; padding: 0 16px; border-radius: 11px; border: 1px solid var(--hg-line); background: var(--hg-raise); font-weight: 600; font-size: 14px; white-space: nowrap; transition: background .12s, transform .1s; }
+.hg-btn:active { transform: scale(.97); background: rgba(255,255,255,.12); }
+.hg-btn.primary { background: linear-gradient(135deg, var(--hg-accent), var(--hg-accent2)); border-color: transparent; color: #fff; box-shadow: 0 6px 24px -8px rgba(108,140,255,.65); }
+.hg-btn.on, .hg-fav.on { color: #ff5a7a; border-color: #ff5a7a; }
+.hg-filters { flex: none; display: flex; gap: 8px; padding: 0 20px 12px; align-items: center; }
+.hg-q { flex: 1; min-width: 0; height: 40px; padding: 0 13px; border-radius: 11px; border: 1px solid var(--hg-line); background: rgba(10,12,18,.6); color: inherit; font: inherit; font-size: 14.5px; outline: none; }
+.hg-q:focus { border-color: var(--hg-accent); }
+.hg-genre { height: 40px; max-width: 44%; padding: 0 8px; border-radius: 11px; border: 1px solid var(--hg-line); background: rgba(10,12,18,.6); color: inherit; font: inherit; font-size: 14px; }
+.hg-fav { width: 44px; padding: 0; font-size: 17px; flex: none; }
+.hg-grid { flex: 1; min-height: 0; display: flex; flex-direction: column; border-top: 1px solid var(--hg-line); }
+.hg-times { flex: none; display: flex; height: 40px; border-bottom: 1px solid var(--hg-line); background: rgba(7,8,11,.5); }
+.hg-corner { width: var(--hg-chw); flex: none; display: flex; align-items: center; gap: 2px; padding-left: 6px; border-right: 1px solid var(--hg-line); }
+.hg-ic { width: 32px; height: 32px; border-radius: 9px; border: 0; background: none; font-size: 22px; line-height: 1; color: var(--hg-dim); }
+.hg-ic:disabled { opacity: .3; }
+.hg-ic:active { background: var(--hg-raise); }
+.hg-date { font-size: 11.5px; color: var(--hg-faint); white-space: nowrap; overflow: hidden; }
+.hg-slots { flex: 1; position: relative; overflow: hidden; }
+.hg-slots span { position: absolute; top: 0; bottom: 0; display: flex; align-items: center; padding-left: 9px; color: var(--hg-dim); font-weight: 600; font-size: 12.5px; border-left: 1px solid var(--hg-line); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.hg-rows { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; position: relative; touch-action: pan-y; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+.hg-space { width: 1px; }
+.hg-empty { position: absolute; left: 0; right: 0; top: 0; padding: 30px 20px; text-align: center; color: var(--hg-dim); }
+.hg-row { position: absolute; left: 0; right: 0; height: var(--hg-rh); display: flex; border-bottom: 1px solid rgba(255,255,255,.05); }
+.hg-ch { width: var(--hg-chw); flex: none; display: flex; align-items: center; gap: 9px; padding: 0 10px 0 10px; border: 0; border-right: 1px solid var(--hg-line); background: none; text-align: left; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.hg-ch:active { background: var(--hg-raise); }
+.hg-num { flex: none; min-width: 30px; font: 800 16px var(--display, sans-serif); font-variant-numeric: tabular-nums; color: var(--hg-dim); text-align: right; }
+.hg-row.tuned .hg-num { color: var(--hg-accent); }
+.hg-logo { flex: none; width: 32px; height: 32px; border-radius: 8px; object-fit: contain; background: rgba(255,255,255,.92); padding: 2px; }
+.hg-emoji { display: grid; place-items: center; background: color-mix(in srgb, var(--c) 40%, #000); font-size: 17px; }
+.hg-name { min-width: 0; flex: 1; line-height: 1.2; }
+.hg-name em { display: block; font-style: normal; font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hg-name i { display: block; font-style: normal; font-size: 9.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: #ffd84a; opacity: .85; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hg-cells { flex: 1; position: relative; overflow: hidden; }
+.hg-cell { position: absolute; top: 5px; bottom: 5px; border-radius: 10px; padding: 5px 10px; background: rgba(255,255,255,.055); border: 1px solid transparent; overflow: hidden; display: flex; flex-direction: column; justify-content: center; min-width: 8px; transition: background .12s, border-color .12s; }
+.hg-cell:active { background: rgba(255,255,255,.11); }
+.hg-cell.now { background: rgba(108,140,255,.13); }
+.hg-cell.past { opacity: .55; }
+.hg-cell.noguide { background: rgba(255,255,255,.035); }
+.hg-cell.sel { border-color: var(--hg-accent); background: rgba(108,140,255,.24); box-shadow: 0 0 0 3px rgba(108,140,255,.2); opacity: 1; }
+.hg-cell b { font-weight: 600; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hg-cell small { font-size: 11.5px; color: var(--hg-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hg-nowline { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--hg-bad); box-shadow: 0 0 12px var(--hg-bad); z-index: 2; pointer-events: none; }
+/* Phones (and narrow windows): the picture sits on top, everything stacks. */
+.hg.hg-narrow .hg-hero { flex-direction: column; align-items: stretch; gap: 10px; padding: 12px 14px 8px; }
+.hg.hg-narrow .hg-preview { width: 100%; max-height: 32vh; border-radius: 14px; }
+.hg.hg-narrow .hg-filters { padding: 0 14px 10px; }
+.hg.hg-narrow .hg-title { font-size: 21px; }
+.hg.hg-narrow .hg-sum { -webkit-line-clamp: 2; font-size: 13px; }
+.hg.hg-narrow .hg-btn { height: 38px; padding: 0 13px; font-size: 13.5px; }
+.hg.hg-narrow .hg-logo { width: 26px; height: 26px; }
+.hg.hg-narrow .hg-num { min-width: 24px; font-size: 14px; }
+.hg.hg-narrow .hg-name em { font-size: 12.5px; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.15; }
+/* A short landscape phone: keep the grid tall. */
+@media (max-height: 520px) and (orientation: landscape) {
+  .hg-hero { padding-top: 8px; padding-bottom: 6px; }
+  .hg-sum, .hg-note { display: none; }
+  .hg-preview { width: min(34%, 360px); }
+}

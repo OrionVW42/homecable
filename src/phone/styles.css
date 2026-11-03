@@ -161,3 +161,46 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .g-chips .chip { flex: none; background: var(--raise, rgba(255,255,255,.08)); border: 1px solid var(--line, rgba(255,255,255,.14)); border-radius: 999px; color: inherit; font-size: 13px; padding: 7px 13px; }
 .g-chips .chip.on { background: rgba(108,140,255,.25); border-color: #6c8cff; }
 .g-now { color: #cfd6ff; }
+
+/* 1.4.0 (phone): the PC-style guide, settings, keypad, a "now playing" strip */
+.app { height: 100vh; height: 100dvh; min-height: 0; display: flex; flex-direction: column; }
+.top { flex: none; }
+.main { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; }
+.watch { min-height: 100%; display: flex; flex-direction: column; }
+.watch > .chips { flex: none; }
+.watch-guide { flex: 1; min-height: 0; display: flex; flex-direction: column; height: calc(100dvh - 140px); }
+.watch-guide .gg { flex: 1; min-height: 0; }
+.gg { min-height: 0; }
+.view-flip { display: flex; justify-content: flex-end; padding: 6px 14px 0; }
+.list .view-flip { padding: 0 0 6px; }
+.view-flip .seg button { padding: 6px 12px; font-size: 13px; }
+.guide-full { position: fixed; inset: 0; z-index: 45; background: var(--bg); padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); display: flex; flex-direction: column; }
+.guide-full .gg { flex: 1; min-height: 0; }
+.top-ic { flex: none; width: 40px; height: 40px; font-size: 18px; }
+.mini-now { position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 30; display: flex; align-items: center; gap: 12px; padding: 9px 14px; border-radius: 14px; border: 1px solid var(--line); background: rgba(18, 20, 28, 0.94); backdrop-filter: blur(12px); box-shadow: 0 18px 40px -12px rgba(0, 0, 0, 0.8); text-align: left; max-width: 560px; margin: 0 auto; }
+.mini-now small { display: block; color: var(--dim); font-size: 11.5px; }
+.mini-now b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14px; }
+.mini-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--bad); box-shadow: 0 0 10px var(--bad); flex: none; }
+.mini-go { font-size: 18px; }
+.sheet.settings { max-height: 88vh; max-width: 620px; margin: 0 auto; }
+.seg.full { width: 100%; }
+.seg.full button { flex: 1; }
+.opt.sw { display: flex !important; align-items: center; gap: 12px; }
+.opt.sw span { flex: 1; }
+.opt.sw i { flex: none; width: 44px; height: 26px; border-radius: 99px; background: var(--raise-2); position: relative; transition: background 0.15s; }
+.opt.sw i::after { content: ''; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: left 0.15s; }
+.opt.sw.on { background: none !important; }
+.opt.sw.on i { background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+.opt.sw.on i::after { left: 21px; }
+.kv { display: flex; justify-content: space-between; gap: 12px; padding: 8px 12px; font-size: 14px; }
+.kv span { color: var(--dim); }
+.upd { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; background: var(--raise); border: 1px solid var(--line); }
+.upd b { display: block; }
+.upd small { display: block; }
+.pad-show { text-align: center; font: 800 34px var(--display); letter-spacing: 0.1em; padding: 4px 0 10px; min-height: 52px; }
+.pad-show .muted { font: 600 15px var(--font); letter-spacing: 0; }
+.pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; max-width: 360px; margin: 0 auto; }
+.pad .r { height: 58px; font-size: 20px; }
+/* tablets: the remote gets two columns of room */
+@media (min-width: 900px) { .remote { max-width: 620px; } }
+@media (max-width: 420px) { .seg .lbl { display: none; } }

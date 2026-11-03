@@ -22,6 +22,11 @@ async function api(path, body) {
 const clock = (s) => { s = Math.max(0, Math.floor(s || 0)); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); };
 const mins = (s) => { const m = Math.round((s || 0) / 60); return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`; };
 const epLabel = (e) => e.label || (e.season != null && e.episode != null ? `S${e.season} · E${e.episode}` : '');
+// This phone's own preferences (Settings ⚙ in the top bar).
+const PREF_DEFAULTS = { haptic: true, chView: 'guide', remoteGuide: 'phone' };
+const prefs = (() => { try { return { ...PREF_DEFAULTS, ...JSON.parse(localStorage.getItem('hc-prefs') || '{}') }; } catch { return { ...PREF_DEFAULTS }; } })();
+const setPref = (k, v) => { prefs[k] = v; try { localStorage.setItem('hc-prefs', JSON.stringify(prefs)); } catch {} };
+const buzz = (ms = 15) => { if (prefs.haptic) navigator.vibrate?.(ms); };
 const backStack = []; // Android Back: closes the top-most thing
 window.hcBack = () => { const f = backStack.pop(); if (f) { f(); return true; } return false; };
 const useBack = (on, fn) => useEffect(() => { if (!on) return; backStack.push(fn); return () => { const i = backStack.lastIndexOf(fn); if (i >= 0) backStack.splice(i, 1); }; }, [on]);
@@ -32,6 +37,7 @@ function App() {
   const [tab, setTab] = useState(() => { try { return localStorage.getItem('hc-tab') || 'watch'; } catch { return 'watch'; } });
   const [playing, setPlaying] = useState(null); // what plays on the phone
   const [toastMsg, setToast] = useState(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const toast = (m) => { setToast(m); clearTimeout(toast.t); toast.t = setTimeout(() => setToast(null), 3000); };
   const load = () => api('state').then((s) => { setState(s); setErr(null); }).catch((e) => setErr(e));
   useEffect(() => { if (!KEY) setErr(new Unpaired()); else load(); }, []);
@@ -57,51 +63,157 @@ function App() {
   </div>`;
   if (!state) return html`<div class="center"><div class="spin"></div></div>`;
 
+  const now = live.now || state.now;
   return html`<div class="app">
     <header class="top">
-      <div class="brand"><img class="logo" src="icon.svg" alt="" /><div class="grow"><b>HomeCable</b><span>${state.pc}</span></div></div>
+      <div class="brand"><img class="logo" src="icon.svg" alt="" /><div class="grow"><b>HomeCable</b><span>${cast?.on ? `📡 ${cast.device} · ` : ''}${state.pc}</span></div></div>
       <div class="seg">
-        <button class=${tab === 'watch' ? 'on' : ''} onClick=${() => go('watch')}>📱 Watch</button>
-        <button class=${tab === 'remote' ? 'on' : ''} onClick=${() => go('remote')}>🎮 Remote</button>
+        <button class=${tab === 'watch' ? 'on' : ''} onClick=${() => go('watch')}>📱<span class="lbl"> Watch</span></button>
+        <button class=${tab === 'remote' ? 'on' : ''} onClick=${() => go('remote')}>🎮<span class="lbl"> Remote</span></button>
       </div>
+      <button class="icon top-ic" title="Settings" onClick=${() => setSettingsOpen(true)}>⚙</button>
     </header>
-    ${tab === 'watch' ? html`<${Watch} state=${state} cast=${cast} onPlay=${setPlaying} toast=${toast} onPc=${() => go('remote')} />` : html`<${Remote} state=${state} now=${live.now || state.now} cast=${cast} toast=${toast} goWatch=${() => go('watch')} />`}
+    <main class="main">
+      ${tab === 'watch' ? html`<${Watch} state=${state} now=${now} cast=${cast} onPlay=${setPlaying} toast=${toast} onPc=${() => go('remote')} />` : html`<${Remote} state=${state} now=${now} cast=${cast} toast=${toast} onPlay=${setPlaying} goWatch=${() => go('watch')} />`}
+    </main>
+    ${now && !playing && tab === 'watch' && now.title && Date.now() - (now.at || 0) < 8000 && html`<button class="mini-now" onClick=${() => go('remote')}>
+      <span class="mini-dot"></span><div class="grow"><small>${cast?.on ? `On ${cast.device}` : 'On the PC'}${now.channel ? ` · ${now.channel.number}` : ''}</small><b>${now.title}</b></div><span class="mini-go">🎮</span></button>`}
     ${playing && html`<${Player} what=${playing} cast=${cast} onClose=${() => setPlaying(null)} toast=${toast} onPc=${() => { setPlaying(null); go('remote'); }} />`}
+    ${settingsOpen && html`<${PhoneSettings} state=${state} onClose=${() => setSettingsOpen(false)} />`}
     ${toastMsg && html`<div class="toast">${toastMsg}</div>`}
   </div>`;
 }
 
+// ---------- ⚙ Settings: this phone's own choices ----------
+function PhoneSettings({ state, onClose }) {
+  const [, re] = useState(0);
+  useBack(true, onClose);
+  const toggle = (k) => { setPref(k, !prefs[k]); re((n) => n + 1); };
+  const pick = (k, v) => { setPref(k, v); re((n) => n + 1); };
+  const ver = bridge?.version ? bridge.version() : '';
+  // The PC's playback choices (saved on the PC, so the PC and every phone agree).
+  const [pc, setPc] = useState(state.settings || {});
+  const pcSet = (patch) => { setPc((s) => ({ ...s, ...patch })); api('pcsettings', patch).catch(() => {}); };
+  return html`<div class="sheet-bg" onClick=${onClose}><div class="sheet settings" onClick=${(e) => e.stopPropagation()}>
+    <h3>⚙ Settings</h3>
+    <${UpdateBox} />
+    <h4>💬 Subtitles (on the PC and here)</h4>
+    <div class="seg full">${[['auto', 'Auto'], ['on', 'Always'], ['off', 'Off']].map(([k, l]) => html`<button class=${(pc.subMode || 'auto') === k ? 'on' : ''} onClick=${() => pcSet({ subMode: k })}>${l}</button>`)}</div>
+    <select class="search" value=${pc.subLang || 'eng'} onChange=${(e) => pcSet({ subLang: e.target.value })}>
+      ${[['eng', 'English'], ['spa', 'Spanish'], ['fra', 'French'], ['deu', 'German'], ['por', 'Portuguese'], ['ita', 'Italian'], ['jpn', 'Japanese'], ['kor', 'Korean'], ['zho', 'Chinese'], ['rus', 'Russian'], ['ara', 'Arabic'], ['nld', 'Dutch']].map(([k, l]) => html`<option value=${k}>${l}</option>`)}
+    </select>
+    <h4>🔊 Audio for videos with two languages</h4>
+    <div class="seg full">${[['orig', 'Original'], ['dub', 'Prefer dub']].map(([k, l]) => html`<button class=${(pc.audioPref || 'orig') === k ? 'on' : ''} onClick=${() => pcSet({ audioPref: k })}>${l}</button>`)}</div>
+    <h4>📐 Picture size on the PC / TV</h4>
+    <div class="seg full">${[['fit', 'Fit'], ['fill', 'Fill'], ['stretch', 'Stretch']].map(([k, l]) => html`<button class=${(pc.fit || 'fit') === k ? 'on' : ''} onClick=${() => pcSet({ fit: k })}>${l}</button>`)}</div>
+    <h4>Channels on the phone</h4>
+    <div class="seg full">${[['guide', '▦ Guide grid'], ['list', '☰ Simple list']].map(([k, l]) => html`<button class=${prefs.chView === k ? 'on' : ''} onClick=${() => pick('chView', k)}>${l}</button>`)}</div>
+    <h4>Remote’s ☰ Guide button</h4>
+    <div class="seg full">${[['phone', '📱 Opens here'], ['pc', '💻 Opens on the PC']].map(([k, l]) => html`<button class=${prefs.remoteGuide === k ? 'on' : ''} onClick=${() => pick('remoteGuide', k)}>${l}</button>`)}</div>
+    <p class="muted small" style="margin:4px 2px 0">While casting to a TV the guide always opens here — the TV only has the picture.</p>
+    <h4>Feel</h4>
+    <button class=${'opt sw' + (prefs.haptic ? ' on' : '')} onClick=${() => toggle('haptic')}><span>Vibrate on button presses</span><i></i></button>
+    <h4>This phone</h4>
+    <div class="kv"><span>Paired with</span><b>${state.pc}</b></div>
+    <div class="kv"><span>Named</span><b>${state.device?.name || 'Phone'}</b></div>
+    ${ver && html`<div class="kv"><span>App version</span><b>${ver}</b></div>`}
+    ${bridge && html`<button class="btn wide" onClick=${() => bridge.home()}>🏠 HomeCable home (Free TV, other PCs, updates)</button>`}
+    <button class="btn ghost wide" onClick=${onClose}>Done</button>
+  </div></div>`;
+}
+
+// App updates (the phone app itself, from HomeCable's GitHub releases) — only
+// inside the HomeCable app, which does the downloading and asks Android to install.
+function UpdateBox() {
+  const has = !!bridge?.updCheck;
+  const [info, setInfo] = useState(null); // { current, latest, newer, size, notes } | { error }
+  const [pct, setPct] = useState(null);
+  const [auto, setAuto] = useState(() => (has && bridge.getPref ? bridge.getPref('autoUpdate') !== '0' : true));
+  const native = (fn, ...a) => new Promise((ok) => { const id = 'u' + Math.random().toString(36).slice(2); (window.__hcCalls ||= {})[id] = ok; bridge[fn](id, ...a); });
+  useEffect(() => {
+    if (!has) return;
+    const prev = window.hcDone;
+    window.hcDone = (id, text) => { const f = window.__hcCalls?.[id]; if (f) { delete window.__hcCalls[id]; f(text); } else prev?.(id, text); };
+    window.hcUpdProgress = (p) => setPct(p);
+    return () => { window.hcUpdProgress = null; };
+  }, []);
+  if (!has) return null;
+  const check = async () => { setInfo({ checking: true }); try { setInfo(JSON.parse(await native('updCheck'))); } catch { setInfo({ error: 'No answer from GitHub' }); } };
+  const install = async () => { setPct(0); const r = JSON.parse(await native('updInstall', info.url, info.latest).catch(() => '{}') || '{}'); if (!r.ok) { setPct(null); setInfo({ ...info, error: r.error || 'The download didn’t finish' }); } };
+  return html`<h4>⬆ App updates</h4>
+    <div class="upd">
+      <div class="grow"><b>HomeCable for phones ${bridge.version?.() || ''}</b>
+        <small class="muted">${info?.checking ? 'Checking GitHub…' : info?.error ? info.error : info?.newer ? `Version ${info.latest} is out${info.size ? ` · ${(info.size / 1048576).toFixed(1)} MB` : ''}` : info ? 'You’re up to date ✓' : 'Updates come from HomeCable’s releases on GitHub.'}</small>
+        ${pct != null && html`<div class="now-bar"><i style=${`width:${pct}%`}></i></div>`}</div>
+      ${info?.newer ? html`<button class="btn sm primary" disabled=${pct != null} onClick=${install}>${pct != null ? `${pct}%` : 'Update'}</button>` : html`<button class="btn sm" onClick=${check}>Check now</button>`}
+    </div>
+    <button class=${'opt sw' + (auto ? ' on' : '')} onClick=${() => { const v = !auto; setAuto(v); bridge.setPref?.('autoUpdate', v ? '1' : '0'); }}><span>Update automatically when the app opens</span><i></i></button>`;
+}
+
+// The PC-style grid guide (src/phone/guidegrid.js), as a Preact component.
+function GridGuide({ channels, tunedId, note, onWatch, watchLabel, actions, onBack, backLabel, storeKey }) {
+  const el = useRef(null);
+  const g = useRef(null);
+  const cb = useRef({});
+  cb.current = { onWatch, watchLabel, actions };
+  const [genres, setGenres] = useState(null);
+  useEffect(() => { api('genres').then((x) => setGenres(x.map || {})).catch(() => setGenres({})); }, []);
+  useEffect(() => {
+    g.current = window.HCGuide.mount(el.current, {
+      channels, tunedId, note, storeKey, onBack, backLabel,
+      load: (f, t) => api(`guide?from=${Math.round(f)}&to=${Math.round(t)}`),
+      onWatch: (c, e) => { buzz(); cb.current.onWatch(c, e); },
+      watchLabel: (c, e) => (cb.current.watchLabel ? cb.current.watchLabel(c, e) : `▶ Watch channel ${c.number}`),
+      actions: (c, e) => (cb.current.actions ? cb.current.actions(c, e) : []),
+      onFav: (c, on) => api('fav', { id: c.id, on }),
+    });
+    return () => g.current?.destroy();
+  }, []);
+  useEffect(() => { g.current?.update({ channels, tunedId, ...(genres ? { genres } : {}) }); }, [channels, tunedId, genres]);
+  return html`<div class="gg" ref=${el}></div>`;
+}
+
 // ---------- Watch: channels, On Demand, Stream Demand ----------
-function Watch({ state, cast, onPlay, toast, onPc }) {
+function Watch({ state, now, cast, onPlay, toast, onPc }) {
   const od = state.channels.filter((c) => c.ondemand);
   const sections = [['live', '📺 Channels'], ...od.map((c) => [c.id, c.odStyle === 'series' ? '🍿 Stream Demand' : '🎬 On Demand']), ...(state.vault ? [['vault', '🗂 ' + state.vault.name]] : [])];
   const [sec, setSec] = useState(() => { try { const s = localStorage.getItem('hc-sec'); return sections.some(([k]) => k === s) ? s : 'live'; } catch { return 'live'; } });
   const pick = (k) => { setSec(k); try { localStorage.setItem('hc-sec', k); } catch {} };
   return html`<div class="watch">
     <nav class="chips">${sections.map(([k, l]) => html`<button class=${'chip' + (sec === k ? ' on' : '')} onClick=${() => pick(k)}>${l}</button>`)}</nav>
-    ${sec === 'live' ? html`<${Channels} state=${state} cast=${cast} onPlay=${onPlay} toast=${toast} onPc=${onPc} />`
+    ${sec === 'live' ? html`<${Channels} state=${state} now=${now} cast=${cast} onPlay=${onPlay} toast=${toast} onPc=${onPc} />`
       : sec === 'vault' ? html`<${Vault} name=${state.vault.name} onPlay=${onPlay} toast=${toast} />`
       : html`<${Library} key=${sec} channel=${od.find((c) => c.id === sec)} cast=${cast} onPlay=${onPlay} toast=${toast} onPc=${onPc} />`}
   </div>`;
 }
 
-function Channels({ state, cast, onPlay, toast, onPc }) {
+function Channels({ state, now, cast, onPlay, toast, onPc }) {
   const [guide, setGuide] = useState({});
   const [sheet, setSheet] = useState(null);
+  const [view, setView] = useState(prefs.chView);
   useBack(!!sheet, () => setSheet(null));
+  const list = useMemo(() => state.channels.filter((c) => !c.ondemand), [state]);
   useEffect(() => {
-    const now = Date.now();
-    api(`guide?from=${now}&to=${now + 60e3}`).then((rows) => setGuide(Object.fromEntries(rows.map((r) => [r.id, r.entries?.[0]])))).catch(() => {});
-  }, []);
-  const list = state.channels.filter((c) => !c.ondemand);
-  return html`<div class="list">
+    if (view !== 'list') return;
+    const t0 = Date.now();
+    api(`guide?from=${t0}&to=${t0 + 60e3}`).then((rows) => setGuide(Object.fromEntries(rows.map((r) => [r.id, r.entries?.[0]])))).catch(() => {});
+  }, [view]);
+  const putOn = (c) => api('remote', { play: { channelId: c.id } }).then(() => { toast(cast?.on ? `📡 ${c.name} is on ${cast.device}` : `📺 ${c.name} is on the PC`); onPc(); }).catch((e) => toast(e.message));
+  const flip = html`<div class="view-flip"><div class="seg">${[['guide', '▦ Guide'], ['list', '☰ List']].map(([k, l]) => html`<button class=${view === k ? 'on' : ''} onClick=${() => { setView(k); setPref('chView', k); }}>${l}</button>`)}</div></div>`;
+  if (view === 'guide') return html`<div class="watch-guide">${flip}
+    <${GridGuide} channels=${list} tunedId=${now?.channel?.id} storeKey="paired-watch"
+      note=${'Tap a programme to see it, tap again (or ▶) to watch. Swipe the grid sideways for later. Hold a channel name to ❤ it.'}
+      watchLabel=${() => '▶ Watch on this phone'}
+      onWatch=${(c) => onPlay({ channel: c })}
+      actions=${(c) => [{ label: cast?.on ? `📡 Put it on ${cast.device}` : '📺 Put it on the PC', run: () => putOn(c) }]} /></div>`;
+  return html`<div class="list">${flip}
     ${list.map((c) => { const e = guide[c.id]; return html`<button class="ch-row" onClick=${() => setSheet(c)}>
       <span class="ch-num" style=${`--c:${c.color || '#556'}`}>${c.number}</span>
       <div class="grow"><b>${c.name}</b><small>${c.live ? '● Live' : ''}${e ? (c.live ? ' · ' : '') + (e.title || '') : ''}</small></div>
     </button>`; })}
     ${sheet && html`<${Sheet} title=${`${sheet.number} · ${sheet.name}`} onClose=${() => setSheet(null)}>
       <button class="btn primary wide" onClick=${() => { onPlay({ channel: sheet }); setSheet(null); }}>▶ Watch on this phone</button>
-      <button class="btn wide" onClick=${() => api('remote', { play: { channelId: sheet.id } }).then(() => { toast(cast?.on ? `📡 ${sheet.name} is on ${cast.device}` : `📺 ${sheet.name} is on the PC`); setSheet(null); onPc(); })}>${cast?.on ? `📡 Put it on ${cast.device}` : '📺 Put it on the PC'}</button>
+      <button class="btn wide" onClick=${() => { putOn(sheet); setSheet(null); }}>${cast?.on ? `📡 Put it on ${cast.device}` : '📺 Put it on the PC'}</button>
     <//>`}
   </div>`;
 }
@@ -416,7 +528,7 @@ function Player({ what, cast, onClose, toast, onPc }) {
 }
 
 // ---------- Remote: for the TV you're casting to, or for the PC itself ----------
-function Remote({ state, now, cast, toast, goWatch }) {
+function Remote({ state, now, cast, toast, goWatch, onPlay }) {
   const [pcMode, setPcMode] = useState(false); // while casting: control the PC's own screen instead
   const [screen, setScreen] = useState(null); // 'guide' — opens here, on this device
   const [sheet, setSheet] = useState(null); // 'av' (audio & subtitles) | 'pick' (channel list)
@@ -428,16 +540,27 @@ function Remote({ state, now, cast, toast, goWatch }) {
   const tvMode = castOn && !pcMode && !mirror;
   useEffect(() => { if (!castOn) { setPcMode(false); setScreen(null); setSheet((s) => (s === 'av' ? null : s)); } }, [castOn]);
   useBack(!!sheet, () => setSheet(null));
-  const send = (b) => { navigator.vibrate?.(15); api('remote', b).catch((e) => toast(e.message)); };
+  const send = (b) => { buzz(); api('remote', b).catch((e) => toast(e.message)); };
   const btn = (button) => () => send({ button });
   const key = (k) => () => send({ key: k });
   const stopCast = () => api('cast/stop', {}).then(() => toast('⏹ Casting stopped — back on the PC')).catch((e) => toast(e.message));
   const stale = !now || Date.now() - (now.at || 0) > 8000;
   const av = now?.av;
+  useBack(screen === 'guide', () => setScreen(null));
+  // Typing a channel number: the digits go to the PC one by one, like a cable remote's keypad.
+  const [digits, setDigits] = useState('');
+  const dT = useRef(null);
+  const digit = (d) => { setDigits((s) => (s + d).slice(-4)); send({ key: d }); clearTimeout(dT.current); dT.current = setTimeout(() => setDigits(''), 2200); };
+  const live = useMemo(() => state.channels.filter((c) => !c.ondemand), [state]);
+  const where = tvMode || mirror ? cast.device : 'the PC';
+  const openGuide = () => (tvMode || prefs.remoteGuide === 'phone' ? setScreen('guide') : send({ key: 'g' }));
 
-  if (screen === 'guide') return html`<${GuidePick} state=${state} where=${tvMode ? cast.device : 'the PC'}
-    onBack=${() => setScreen(null)}
-    onPick=${(c) => { send({ play: { channelId: c.id } }); toast(tvMode ? `📡 ${c.name} is on ${cast.device}` : `📺 ${c.name} is on the PC`); setScreen(null); }} />`;
+  if (screen === 'guide') return html`<div class="guide-full">
+    <${GridGuide} channels=${live} tunedId=${now?.channel?.id} storeKey="paired-remote" onBack=${() => setScreen(null)} backLabel="← Remote"
+      note=${`Everything here plays on ${where}. Tap a programme to read about it, tap again (or the big button) to put it on.`}
+      watchLabel=${(c) => (tvMode || mirror ? `📡 Watch ${c.number} on ${cast.device}` : `📺 Watch ${c.number} on the PC`)}
+      onWatch=${(c) => { send({ play: { channelId: c.id } }); toast(`${tvMode || mirror ? '📡' : '📺'} ${c.name} is on ${where}`); setScreen(null); }}
+      actions=${(c) => [{ label: '📱 Watch on this phone', run: () => onPlay({ channel: c }) }]} /></div>`;
 
   // Search + genres up top: they open and filter the GUIDE on the screen being
   // watched; picking something there puts the guide back to normal.
@@ -455,7 +578,7 @@ function Remote({ state, now, cast, toast, goWatch }) {
     <div class="now">${stale ? html`<small class="muted">Waiting for the PC…</small>` : html`
       ${now.art && (now.art.startsWith('/') || now.art.startsWith('https:')) && html`<img class="now-art" src=${now.art} alt="" />`}
       <div class="grow now-info">
-        <small class="muted">${castOn ? `📡 On ${cast.device}` : now.channel ? `${now.channel.number} · ${now.channel.name}` : 'On the PC'}${now.paused ? ' · paused' : ''}${now.muted ? ' · muted' : ''}</small>
+        <small class="muted">${castOn ? `📡 On ${cast.device}${now.channel ? ` · ${now.channel.number}` : ''}` : now.channel ? `${now.channel.number} · ${now.channel.name}` : 'On the PC'}${now.paused ? ' · paused' : ''}${now.muted ? ' · muted' : typeof now.volume === 'number' ? ` · 🔊 ${Math.round(now.volume * 100)}%` : ''}</small>
         <b>${now.title || '—'}</b>${now.sub && html`<small class="muted">${now.sub}</small>`}
         ${now.len > 0 && html`<div class="now-bar"><i style=${`width:${Math.min(100, (now.pos / now.len) * 100)}%`}></i></div><small class="muted">${clock(now.pos)} / ${clock(now.len)}</small>`}
       </div>`}</div>
@@ -473,7 +596,8 @@ function Remote({ state, now, cast, toast, goWatch }) {
         <button class="r" onClick=${btn('RT')}>10 ⟳</button>
       </div>
       <div class="r-row">
-        <button class="r" onClick=${() => setScreen('guide')}>☰ Guide</button>
+        <button class="r" onClick=${() => setScreen('guide')}>▦ Guide</button>
+        <button class="r" onClick=${() => setSheet('pad')}>🔢 ${digits || '123'}</button>
         <button class="r" onClick=${goWatch}>🎬 Shows & movies</button>
       </div>
       <div class="r-row">
@@ -492,9 +616,13 @@ function Remote({ state, now, cast, toast, goWatch }) {
       </div>
       <div class="r-row">
         <button class="r" onClick=${btn('B')}>↩ Back</button>
-        <button class="r" onClick=${key('g')}>☰ Guide</button>
+        <button class="r" onClick=${openGuide}>☰ Guide</button>
         <button class="r" onClick=${btn('Y')}>⚙ Menu</button>
         <button class="r" onClick=${key('BackToTV')}>📺 TV</button>
+      </div>
+      <div class="r-row">
+        <button class="r" onClick=${() => (prefs.remoteGuide === 'phone' ? send({ key: 'g' }) : setScreen('guide'))}>${prefs.remoteGuide === 'phone' ? '💻 Guide on the PC' : '📱 Guide on the phone'}</button>
+        <button class="r" onClick=${() => setSheet('pad')}>🔢 ${digits || '123'}</button>
       </div>
       ${(od || sd) && html`<div class="r-row">
         ${od && html`<button class="r" onClick=${() => { send({ play: { channelId: od.id } }); toast(`🎬 On Demand is on ${screenName}`); }}>🎬 On Demand</button>`}
@@ -511,12 +639,14 @@ function Remote({ state, now, cast, toast, goWatch }) {
         <button class="r" onClick=${key('i')}>ⓘ Info</button>
         <button class="r" onClick=${key('f')}>⛶</button>
       </div>
-      <button class="btn wide" onClick=${() => setSheet('pick')}>📺 Choose a channel for the PC</button>
+      <button class="btn wide" onClick=${() => setScreen('guide')}>▦ Choose a channel for ${screenName} from the guide</button>
       ${castOn && html`<button class="btn wide stop" onClick=${stopCast}>⏹ Stop casting on ${cast.device}</button>`}
     `}
-    ${sheet === 'pick' && html`<${Sheet} title="Put on the PC" onClose=${() => setSheet(null)}>
-      <div class="pick-list">${state.channels.map((c) => html`<button class="ch-row" onClick=${() => { send({ play: { channelId: c.id } }); setSheet(null); }}>
-        <span class="ch-num" style=${`--c:${c.color || '#556'}`}>${c.number}</span><div class="grow"><b>${c.name}</b></div></button>`)}</div>
+    ${sheet === 'pad' && html`<${Sheet} title=${`Channel number — on ${where}`} onClose=${() => setSheet(null)}>
+      <div class="pad-show">${digits || html`<span class="muted">Type a channel</span>`}</div>
+      <div class="pad">${['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((d) => html`<button class="r" onClick=${() => digit(d)}>${d}</button>`)}
+        <button class="r" onClick=${key('ChannelDown')}>CH ▼</button><button class="r" onClick=${() => digit('0')}>0</button><button class="r" onClick=${key('ChannelUp')}>CH ▲</button></div>
+      <p class="muted small center-text" style="padding:8px 0 0">It tunes a moment after the last digit, just like a cable box.</p>
     <//>`}
     ${sheet === 'av' && av && html`<${Sheet} title=${`Audio & subtitles${tvMode ? ` — ${cast.device}` : ''}`} onClose=${() => setSheet(null)}>
       ${av.audio?.length > 1 && html`<h4>Audio</h4>${av.audio.map((a) => html`<button class=${'opt' + (av.audioOn === a.n ? ' on' : '')} onClick=${() => send({ av: { audio: a.n } })}>${av.audioOn === a.n ? '✓ ' : ''}${a.label}</button>`)}`}
@@ -546,49 +676,6 @@ function GuideSearch({ send, where }) {
       ${genres.map((g) => html`<option value=${g}>${g}</option>`)}
     </select>`}
     ${(q || genre) && html`<button class="g-clear" onClick=${clearAll}>✕</button>`}
-  </div>`;
-}
-
-// The TV guide, on this device: what's on now (and next) on every channel — tap to play it.
-function GuidePick({ state, where, onBack, onPick }) {
-  const [rows, setRows] = useState(null);
-  useBack(true, onBack);
-  useEffect(() => {
-    const t0 = Date.now();
-    api(`guide?from=${t0}&to=${t0 + 2 * 3600e3}`).then((g) => setRows(Object.fromEntries(g.map((r) => [r.id, r.entries || []])))).catch(() => setRows({}));
-  }, []);
-  const when = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  // A proper channel list, like the PC's guide: real programmes with times,
-  // searched and genre-filtered right here.
-  const [q, setQ] = useState('');
-  const [genre, setGenre] = useState('');
-  const [gm, setGm] = useState({ all: [], map: {} });
-  useEffect(() => { api('genres').then((g) => setGm(g.map ? g : { all: g, map: {} })).catch(() => {}); }, []);
-  const ql = q.trim().toLowerCase();
-  const list = state.channels.filter((c) => !c.ondemand)
-    .filter((c) => !genre || (gm.map[c.id] || []).includes(genre))
-    .filter((c) => {
-      if (!ql) return true;
-      if (c.name.toLowerCase().includes(ql)) return true;
-      return (rows?.[c.id] || []).some((e) => String(e.title || '').toLowerCase().includes(ql) || String(e.sub || '').toLowerCase().includes(ql));
-    });
-  return html`<div class="guidepick">
-    <div class="g-head"><button class="icon" onClick=${onBack}>←</button><div class="grow"><b>TV Guide</b><small class="muted">Tap a programme — it plays on ${where}</small></div></div>
-    <input class="g-q" type="search" placeholder="🔍 Channels & shows…" value=${q} onInput=${(e) => setQ(e.target.value)} />
-    ${gm.all.length > 0 && html`<div class="g-chips">
-      <button class=${'chip' + (!genre ? ' on' : '')} onClick=${() => setGenre('')}>All</button>
-      ${gm.all.map((g) => html`<button class=${'chip' + (genre === g ? ' on' : '')} onClick=${() => setGenre(genre === g ? '' : g)}>${g}</button>`)}
-    </div>`}
-    ${!rows ? html`<div class="center-text"><div class="spin" style="margin:0 auto"></div></div>` : list.map((c) => {
-      const [e, nx] = rows[c.id] || [];
-      return html`<button class="ch-row" onClick=${() => onPick(c)}>
-        <span class="ch-num" style=${`--c:${c.color || '#556'}`}>${c.number}</span>
-        <div class="grow"><b>${c.name}</b>
-          ${e ? html`<small><b class="g-now">${e.title || ''}</b>${e.sub ? ` · ${e.sub}` : ''}${e.start ? html` <span class="muted">${when(e.start)} – ${when(e.end)}</span>` : ''}</small>` : html`<small>—</small>`}
-          ${nx && html`<small class="muted">Next · ${when(nx.start)} — ${nx.title || ''}</small>`}</div>
-      </button>`;
-    })}
-    ${rows && !list.length && html`<p class="muted center-text">Nothing matches${ql ? ` “${q}”` : ''}${genre ? ` in ${genre}` : ''}.</p>`}
   </div>`;
 }
 

@@ -175,6 +175,7 @@ function App() {
       tv.onRemote(async (r) => {
         if (r.button) pressButton(r.button);
         else if (r.key) window.dispatchEvent(new KeyboardEvent('keydown', { key: r.key, bubbles: true, cancelable: true }));
+        else if (r.settings) setSettingsState((s) => ({ ...s, ...r.settings })); // changed from the phone's ⚙ (already saved by the PC)
         else if (r.av) { if ('audio' in r.av) player.current.setAudio?.(r.av.audio); if ('sub' in r.av) player.current.setSubtitle?.(r.av.sub); }
         else if (r.guide) {
           // Search / genre from the phone remote: open the guide right here (on
