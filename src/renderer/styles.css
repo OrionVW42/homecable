@@ -1067,15 +1067,8 @@ body.legend-up .toast { bottom: 76px; }
 .mini-grip { color: rgba(255,255,255,.55); font-size: 12px; letter-spacing: 2px; pointer-events: none; user-select: none; }
 .mini-top.on-overlay { opacity: 1; background: rgba(7,8,11,.85); }
 .app.mini.has-overlay .mini-mid, .app.mini.has-overlay .mini-vol, .app.mini.has-overlay .next-ep { display: none !important; }
-.app.mini .overlay.guide { top: 30px; }
-.app.mini .guide-top { min-height: 0; height: auto; padding: 8px 12px 6px; gap: 4px; }
-.app.mini .guide-top h2 { font-size: 18px; }
-.app.mini .guide-top p, .app.mini .guide-top .via-note { display: none; }
-.app.mini .guide-top .row { flex-wrap: wrap; gap: 6px; margin-top: 4px !important; }
-.app.mini .guide-top .row .btn { height: 28px; padding: 0 9px; font-size: 12px; }
-.app.mini .guide-top .guide-search { width: 100%; min-width: 0; order: 9; }
-.app.mini .grid-wrap { margin-top: 4px; }
-.app.mini .grid-times .corner, .app.mini .grid-row .ch { width: 132px; padding-left: 8px; }
-.app.mini .grid-row { height: 48px; }
-.app.mini .grid-row .ch b { width: 28px; font-size: 14px; }
-.app.mini .stage.pip { display: none; }
+
+
+/* Pop-out grown to guide size (a menu is open): the normal look, with the grab strip on top. */
+.app.mini-big .mini-top { height: 30px; }
+

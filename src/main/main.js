@@ -1321,6 +1321,7 @@ function handlers() {
       else win.setBounds({ x: wa.x + wa.width - 540, y: wa.y + wa.height - 320, width: 520, height: 300 });
       if (!process.env.HOMECABLE_OFFSCREEN) win.setAlwaysOnTop(true, 'floating');
     } else if (!on && miniBack) {
+      miniSmall = null; // leaving the pop-out: the full window comes back, whatever size the pop-out was
       win.setAlwaysOnTop(false);
       win.setMinimumSize(860, 440);
       win.setBounds(miniBack.bounds);
@@ -1331,7 +1332,25 @@ function handlers() {
     send('mini', !!miniBack);
     return !!miniBack;
   });
-  h('ondemand:openFolder', (kind) => { const f = settings[odKind(kind).setting]; return f && shell.openPath(f); });
+  // The pop-out grows into a proper guide-sized window while the guide (or any menu) is
+  // open — the live picture at the top, readable channels — and shrinks back after.
+  let miniSmall = null;
+  h('win:miniGuide', (on) => {
+    if (!win || !miniBack) return false;
+    if (on && !miniSmall) {
+      miniSmall = win.getBounds();
+      const wa = screen.getDisplayMatching(miniSmall).workArea;
+      const w = Math.min(1080, wa.width - 40), hh = Math.min(640, wa.height - 40);
+      // grow from the corner it sits in, staying on the screen
+      const x = Math.max(wa.x + 10, Math.min(miniSmall.x + miniSmall.width - w, wa.x + wa.width - w - 10));
+      const y = Math.max(wa.y + 10, Math.min(miniSmall.y + miniSmall.height - hh, wa.y + wa.height - hh - 10));
+      win.setBounds(process.env.HOMECABLE_OFFSCREEN ? { x: -10000, y: -10000, width: w, height: hh } : { x, y, width: w, height: hh });
+    } else if (!on && miniSmall) {
+      win.setBounds(miniSmall);
+      miniSmall = null;
+    }
+    return !!miniSmall;
+  });  h('ondemand:openFolder', (kind) => { const f = settings[odKind(kind).setting]; return f && shell.openPath(f); });
 
   // On-demand channels: the movies to pick from (posters, resume points).
   h('ondemand:list', (channelId) => {

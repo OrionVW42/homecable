@@ -118,6 +118,11 @@ function App() {
   const [avMenu, setAvMenu] = useState(false); // Audio & subtitles picker while watching
   const [mini, setMini] = useState(false); // pop-out always-on-top mini player
   const miniDrag = useRef(null); // dragging the pop-out by its top edge
+  const [miniBig, setMiniBig] = useState(false); // the pop-out grown to guide size while a menu is open
+  useEffect(() => {
+    if (!mini) { setMiniBig(false); return; }
+    tv.miniGuide?.(!!overlay).then((r) => setMiniBig(!!r)).catch(() => {});
+  }, [mini, !!overlay]);
   useEffect(() => tv.onMini(setMini), []);
   const [ccAvail, setCcAvail] = useState(false); // the live-captions engine is installed
   useEffect(() => { tv.captionsAvailable().then(setCcAvail).catch(() => {}); }, []);
@@ -617,7 +622,7 @@ function App() {
     d.raf = requestAnimationFrame(() => { d.raf = 0; tv.winMoveTo(x, y); });
   };
   const miniDragEnd = (e) => { miniDrag.current = null; e.currentTarget.classList.remove('dragging'); };
-  return html`<div class=${'app' + (idle ? ' idle' : '') + (mini ? ' mini' : '') + (overlay ? ' has-overlay' : '')} onMouseMove=${poke} onMouseDown=${poke} onWheel=${onWheel}>
+  return html`<div class=${'app' + (idle ? ' idle' : '') + (mini ? ' mini' : '') + (miniBig ? ' mini-big' : '') + (overlay ? ' has-overlay' : '')} onMouseMove=${poke} onMouseDown=${poke} onWheel=${onWheel}>
     ${(channels.length > 0 || vod) && html`<${Player} tuned=${vod || tuned} settings=${settings} transitions=${settings.transitions} pip=${overlay === 'guide'} quiet=${overlay === 'arcade'} covered=${(!!overlay && overlay !== 'guide' && overlay !== 'help') || setup} bufferStart=${bufferStart.current} apiRef=${player} cast=${cast.mode === 'media' ? cast : null} onEnded=${onEnded} onFailed=${onFailed} onShift=${onShift} onCaptionsError=${() => { toast('💬 Live captions couldn’t start on this PC'); setSettings({ liveCaptions: false }); }} onVolume=${(p) => setSettings(p)} onStalled=${onStalled} onHiccup=${onHiccup} onPlaying=${onPlaying}>
       <${Banner} tuned=${vod || tuned} show=${banner && !overlay} live=${live} getBehind=${() => player.current.behind?.() || 0} getPos=${() => player.current.position?.() || 0} paused=${player.current.paused} raised=${chrome} />
       ${digits && html`<div class="number-entry">${digits.padEnd(2, '–')}<small>${channels.find((c) => c.number === +digits)?.name || ''}</small></div>`}

@@ -55,6 +55,7 @@ contextBridge.exposeInMainWorld('tv', {
   resetProgress: call('progress:reset'),
   miniMode: call('win:mini'),
   winPos: call('win:pos'),
+  miniGuide: call('win:miniGuide'),
   winMoveTo: call('win:moveTo'),
   onMini: on('mini'),
   phoneStatus: call('phone:status'),
