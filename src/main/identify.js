@@ -200,6 +200,57 @@ async function wikipedia(name, kind, year) {
   return out;
 }
 
+// ---- tags beyond genres: what it's about (from the summary), its format, its era ----
+const KEYWORD_TAGS = [
+  ['Police', /\b(police|cops?|detectives?|sheriff'?s?|deputies|precinct|lapd|nypd)\b/i], ['Crime', /\b(crime|criminal|gangsters?|mafia|mob boss|heist)\b/i],
+  ['Zombies', /\bzombies?\b/i], ['Vampires', /\bvampires?\b/i], ['Monsters', /\bmonsters?\b|\bkaiju\b/i], ['Ghosts', /\bghosts?\b|\bhaunt/i],
+  ['Space', /\b(outer space|spaceship|starship|galaxy|galactic|astronauts?|space station)\b/i], ['Aliens', /\baliens?\b|extraterrestrial/i],
+  ['Superhero', /\bsuper-?heroe?s?\b|\bsuperpowers?\b/i], ['Spy', /\b(spy|spies|espionage|secret agent|cia|mi6)\b/i],
+  ['Martial arts', /martial arts|kung fu|karate|samurai|ninjas?/i], ['Time travel', /time travel/i], ['Post-apocalyptic', /post-apocalyptic|apocalyp/i],
+  ['Mockumentary', /mockumentary/i], ['Parody', /\bparod(y|ies)\b|\bspoofs?\b/i], ['Satire', /\bsatir/i], ['Dark comedy', /black comedy|dark comedy/i],
+  ['Coming of age', /coming[- ]of[- ]age/i], ['Medical', /\b(hospital|surgeons?|medical drama|paramedics?)\b/i], ['Legal', /\b(lawyers?|attorneys?|courtroom|legal drama)\b/i],
+  ['Political', /\bpolitic(al|s)\b/i], ['Military', /\b(military|soldiers?|army|marines|navy seals?)\b/i], ['Sports', /\b(football|basketball|baseball|soccer|boxing|wrestling|hockey|olympic)\b/i],
+  ['Stand-up', /stand-?up comed/i], ['Christmas', /\bchristmas\b|\bsanta\b/i], ['Halloween', /\bhalloween\b/i], ['Teen', /\bteen(age|agers?)?\b|high school/i],
+  ['Kids', /\bchildren'?s (series|programme|program|television|film)\b|\bpreschool/i], ['Workplace', /\b(workplace|office|employees|coworkers)\b/i],
+  ['Family', /\bfamily (film|sitcom|comedy|drama)\b/i], ['Fairy tale', /fairy tale|fairytale|princess/i], ['Dinosaurs', /dinosaur/i], ['Robots', /\brobots?\b|\bandroids?\b|\bmecha\b/i],
+  ['Pirates', /\bpirates?\b/i], ['Magic', /\bmagic(al)?\b|\bwizards?\b|\bwitch(es)?\b|\bsorcer/i], ['Survival', /\bsurviv(al|e|ors?)\b/i], ['Prison', /\bprison\b|\binmates?\b/i],
+  ['Road trip', /road trip/i], ['Cars', /\b(racing|race car|street racing|cars)\b/i], ['Music', /\b(band|singer|musicians?|rock star|rapper)\b/i], ['Food', /\b(cooking|chef|restaurant|baking)\b/i],
+  ['True story', /based on (a )?true|true story|real[- ]life/i], ['Based on a book', /based on (the )?(novel|book)/i], ['Based on a comic', /based on (the )?(comic|manga|graphic novel)/i],
+  ['Remake', /\bremake\b/i], ['Reboot', /\breboot\b/i], ['Sequel', /\bsequel\b/i], ['Prequel', /\bprequel\b/i], ['Spin-off', /spin-?off/i],
+];
+const ADULT_TOON = /adult swim|comedy central|fxx|\bfx\b|fox|netflix|hulu|mtv|cartoon network/i;
+// Tags that describe it, best first: genres (from the sources), what it's about (summary),
+// then its format and era. `auto` = the ones safe to apply by themselves.
+function suggestTags(m, name = '') {
+  const g = [...(m.genres || [])];
+  const text = `${m.summary || ''}`;
+  const about = KEYWORD_TAGS.filter(([, re]) => re.test(text)).map(([t]) => t).slice(0, 6);
+  const anim = g.includes('Animation');
+  if (anim && g.includes('Comedy') && !g.includes('Kids') && !g.includes('Anime') && ADULT_TOON.test(m.network || '') && m.kind === 'show') about.push('Adult animation');
+  if (m.kind === 'show' && g.includes('Comedy') && !g.includes('Sitcom') && (m.type === 'Scripted' || m.type === 'Animation' || /sitcom/i.test(text))) about.push('Sitcom');
+  const fmt = [];
+  fmt.push(m.kind === 'show' ? 'TV show' : 'Movie');
+  if (g.includes('Anime')) fmt.push(m.kind === 'show' ? 'Anime series' : 'Anime movie');
+  else if (anim && m.kind === 'movie') fmt.push('Animated movie');
+  if (!anim && !g.includes('Documentary')) fmt.push('Live action');
+  if (/\b(ova|oad)\b/i.test(name)) fmt.push('OVA');
+  if (/\bona\b/i.test(name)) fmt.push('ONA');
+  if (/\bspecial\b/i.test(name)) fmt.push('Special');
+  if (/miniseries|mini-series|limited series/i.test(text) || g.includes('Miniseries')) fmt.push('Miniseries');
+  if (g.includes('Short film')) fmt.push('Short film');
+  if (/web series/i.test(text)) fmt.push('Web series');
+  if (g.includes('Documentary') && m.kind === 'show') fmt.push('Docuseries');
+  const era = m.year ? [`${String(m.year).slice(0, 3)}0s`] : [];
+  if (m.year && m.year < 1975) era.push('Classic');
+  // A comedy filed as a documentary is a mockumentary (Reno 911!, The Office).
+  if (g.includes('Comedy') && g.includes('Documentary')) { g.splice(g.indexOf('Documentary'), 1); about.unshift('Mockumentary'); fmt.splice(fmt.indexOf('Docuseries') >>> 0, fmt.includes('Docuseries') ? 1 : 0); }
+  const out = [...new Set([...g, ...about, ...fmt, ...era])];
+  // Summary words are only suggested for these (a summary mentioning a teenager doesn't make a teen show).
+  const MAYBE = new Set(['Teen', 'Workplace', 'Music', 'Survival', 'Magic', 'Cars', 'Food', 'Military', 'Political', 'Family', 'Prison', 'Road trip', 'Ghosts', 'Monsters']);
+  const auto = [...new Set([...g, ...about.filter((t) => !MAYBE.has(t))])];
+  return { all: out, auto };
+}
+
 // ---- putting it together ----
 function scoreOne(c, names, year, kind) {
   let s = Math.max(...names.map((n) => similar(n, c.name)));
@@ -288,6 +339,7 @@ async function run({ name, kind = 'auto', year = null }) {
   }).sort((a, b) => b.score - a.score);
   // Always the most probable answer (its confidence says how sure) — never nothing when anything was found.
   const best = matches[0] || null;
+  if (best) { const t = suggestTags(best, name); best.tags = t.all; best.autoTags = t.auto; }
   // Pictures: the best match's first, then each runner-up's best one, then the rest.
   const images = [], seen = new Set();
   const push = (m, p, isBest) => { if (!p?.url || seen.has(p.url)) return; seen.add(p.url); images.push({ url: p.url, name: m.name, source: p.source, best: !!isBest, label: `${[m.name, m.year].filter(Boolean).join(' · ')} — ${p.source}`, sure: m.confidence }); };
@@ -297,4 +349,4 @@ async function run({ name, kind = 'auto', year = null }) {
   return { best, matches: matches.slice(0, 12), images: images.slice(0, 24), tried: names };
 }
 
-module.exports = { identify, variants, lookupName, similar, mapGenres, norm, yearOf, genresFromText };
+module.exports = { identify, variants, lookupName, similar, mapGenres, norm, yearOf, genresFromText, suggestTags };

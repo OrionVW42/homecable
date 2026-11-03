@@ -9,7 +9,7 @@ async function lookupShow(name) {
   const b = r.best;
   if (!b) return { notFound: true, at: Date.now(), language: null };
   return {
-    id: b.tvmazeId || null, name: b.name, genres: b.genres || [], type: b.type || null, language: b.language || null, premiered: b.premiered || (b.year ? String(b.year) : null),
+    id: b.tvmazeId || null, name: b.name, genres: (b.autoTags || b.genres || []).slice(0, 12), suggest: b.tags || [], type: b.type || null, language: b.language || null, premiered: b.premiered || (b.year ? String(b.year) : null),
     poster: b.poster || null, network: b.network || null, summary: (b.summary || '').slice(0, 400), at: Date.now(),
     anime: (b.genres || []).includes('Anime'), confidence: b.confidence, sources: b.sources,
   };

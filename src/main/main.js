@@ -315,6 +315,101 @@ async function findSeriesPosters(online) {
 }
 const posterUrl = (it) => (it.poster ? media.artUrl(it.id) + '&v=' + (it.posterAt || 0) : null);
 
+// One series, one card: shows whose names match once release junk and years are gone
+// ("Family Guy" from a folder, "Family.Guy.S24.1080p" from a torrent) are grouped. Nothing
+// is moved — every show key stays as it is; edits apply to every key in the group.
+const ident = require('./identify');
+const showGroupKey = (name) => ident.norm(ident.lookupName(name).replace(/\(?\b(19|20)\d{2}(\s*-\s*((19|20)\d{2})?)?\)?/g, ' ')) || null;
+function showGroups() {
+  const groups = new Map();
+  for (const s of lib.shows()) {
+    const m = lib.meta[s.key] || {};
+    const display = m.nameOverride || s.name;
+    const gk = showGroupKey(display) || s.key;
+    if (!groups.has(gk)) groups.set(gk, []);
+    groups.get(gk).push({ ...s, display, m });
+  }
+  return [...groups.values()].map((shows) => {
+    const art = (s) => !!(s.m.posterFile || s.m.poster);
+    shows.sort((a, b) => (+!!b.m.nameOverride - +!!a.m.nameOverride) || (+art(b) - +art(a)) || b.count - a.count);
+    const p = shows[0];
+    const keys = shows.map((s) => s.key);
+    const eps = keys.flatMap((k) => lib.episodesOf(k));
+    // The proper name ("Reno 911!", "Bob's Burgers") once a lookup is sure; your own name always wins.
+    const found = shows.map((s) => s.m).find((m) => m.name && (m.confidence === 'sure' || m.confidence === 'likely'));
+    const name = p.m.nameOverride || found?.name || ident.lookupName(p.display) || p.display;
+    const genres = p.m.genresUser ? p.m.genres || [] : [...new Set(shows.flatMap((s) => s.m.genres || []))];
+    const year = +String(shows.map((s) => s.m.premiered).find(Boolean) || '').slice(0, 4) || null;
+    return {
+      key: p.key, keys, name, renamed: !!p.m.nameOverride, count: eps.length, seasons: new Set(eps.map((e) => e.season ?? 1)).size,
+      avg: eps.length ? eps.reduce((n, e) => n + (e.duration || 0), 0) / eps.length : 0,
+      poster: shows.map((s) => showArtUrl(s.key)).find(Boolean) || null, genres, year,
+      summary: shows.map((s) => s.m.summary).find(Boolean) || null, network: shows.map((s) => s.m.network).find(Boolean) || null,
+      unidentified: shows.every((s) => !s.m.name || s.m.notFound), added: Math.max(0, ...eps.map((e) => e.added || 0)),
+      thumbId: eps[0]?.id || null,
+    };
+  });
+}
+// Every key that belongs to the same series as this one (edits and episode lists use them all).
+function groupKeys(key) { return showGroups().find((g) => g.keys.includes(key))?.keys || [key]; }
+
+// Covers and tags for EVERYTHING in the library (not only On Demand screens): every series
+// and every movie is identified by name (several spellings, several sources). Things that
+// really can't be identified are marked, so the Library can put them in their own row.
+let enrichRun = null;
+function enrichLibraryAll({ force = false } = {}) {
+  if (enrichRun) return enrichRun;
+  enrichRun = (async () => {
+    if (!settings.onlineMeta && !force) return { shows: 0, movies: 0 };
+    let shows = 0, movies = 0, lastSend = 0;
+    const tick = () => { if (Date.now() - lastSend > 2000) { lastSend = Date.now(); lib.save(); send('library-changed', libraryStats()); } };
+    const DAY = 24 * 3600e3;
+    for (const g of showGroups()) {
+      const ms = g.keys.map((k) => lib.meta[k] || {});
+      const p = ms[0];
+      const tried = Math.max(0, ...ms.map((m) => m.at || 0));
+      const need = force ? !p.confidence || !g.poster || !g.genres.length
+        : !p.name ? (Date.now() - tried > (p.notFound ? DAY : 0)) : !p.confidence || (!g.poster && Date.now() - tried > DAY);
+      if (!need) continue;
+      let r;
+      try { r = await lookupShow(g.name); } catch (e) { if (/fetch failed|timeout|abort|offline/i.test(String(e))) break; continue; }
+      for (const k of g.keys) {
+        const m = lib.meta[k] || {};
+        const merged = { ...m, ...r };
+        if (m.genresUser) { merged.genres = m.genres; merged.genresUser = true; }
+        if (m.nameOverride) merged.nameOverride = m.nameOverride;
+        if (m.posterFile) { merged.posterFile = m.posterFile; merged.posterUserSet = m.posterUserSet; }
+        if (m.order) merged.order = m.order;
+        if (r.notFound) { merged.unidentified = true; merged.name = m.name || null; } else { delete merged.notFound; delete merged.unidentified; }
+        lib.meta[k] = merged;
+      }
+      if (!r.notFound) shows++;
+      tick();
+      await new Promise((ok) => setTimeout(ok, 400));
+    }
+    // Movies: tags (and a summary) for the ones that have none yet; posters come from findMoviePosters.
+    for (const it of lib.list().filter((i) => i.kind === 'movie' && !String(i.server || '').startsWith('archive:'))) {
+      if (it.genresUser || ((it.genres || []).length && !force) || (!force && it.genresTried && Date.now() - it.genresTried < RETRY_TAGS_MS)) continue;
+      let r = null;
+      try { r = await ident.identify({ name: it.titleUser || it.title, kind: 'movie', year: it.year || null }); } catch (e) { if (e.offline) break; }
+      it.genresTried = Date.now();
+      const b = r?.best;
+      if (b && b.score >= 0.75) {
+        if (b.tags?.length || b.genres?.length) it.genres = (b.autoTags || b.genres).slice(0, 12);
+        if (!it.summary && b.summary) it.infoSummary = b.summary;
+        if (!it.year && b.year) it.yearFound = b.year;
+        delete it.unidentified; movies++;
+      } else it.unidentified = true;
+      tick();
+      await new Promise((ok) => setTimeout(ok, 250));
+    }
+    lib.save();
+    send('library-changed', libraryStats());
+    return { shows, movies };
+  })().catch((e) => { log('library info', e.message); return { shows: 0, movies: 0 }; }).finally(() => { enrichRun = null; });
+  return enrichRun;
+}
+
 // Movie posters: embedded art, a picture next to the file, else looked up by name.
 let posterRun = null;
 function findMoviePosters({ force = false } = {}) {
@@ -352,6 +447,7 @@ function findMoviePosters({ force = false } = {}) {
       if (odShows.length) { lib.save(); send('library-changed', libraryStats()); }
     }
     if (todo.length) { lib.save(); log(`posters: ${found} found for ${todo.length} movies`); send('posters-progress', { n: todo.length, total: todo.length, done: true }); send('library-changed', libraryStats()); }
+    enrichLibraryAll().catch(() => {}); // then tags and covers for the rest of the library
     return { checked: todo.length, found };
   })().finally(() => { posterRun = null; });
   return posterRun;
@@ -775,7 +871,8 @@ function allowedItems() {
 
 function itemSummary(i) {
   return { id: i.id, poster: posterUrl(i), posterFrom: i.posterFrom || null, title: i.titleUser || i.title, renamed: !!i.titleUser, show: lib.meta[i.showKeyUser || i.showKey]?.nameOverride || i.showUser || i.show, showKey: i.showKeyUser || i.showKey, season: i.seasonUser ?? i.season, episode: i.episodeUser ?? i.episode, kind: i.kindUser || i.kind, duration: i.duration, path: i.path,
-    year: i.year, folder: i.folder, mode: i.mode, status: i.status || 'active', added: i.added, remote: !!i.remote, server: i.server || null, art: i.art || null, genres: i.genres || null, moved: !!i.showKeyUser };
+    year: i.year, folder: i.folder, mode: i.mode, status: i.status || 'active', added: i.added, remote: !!i.remote, server: i.server || null, art: i.art || null, genres: i.genres || null, moved: !!i.showKeyUser,
+    summary: i.summary || i.infoSummary || null, yearFound: i.yearFound || null, unidentified: !!i.unidentified, genresUser: !!i.genresUser };
 }
 
 // Look in every folder and media server; new things follow the new-media policy.
@@ -1253,7 +1350,7 @@ function handlers() {
     return r.canceled ? [] : r.filePaths;
   });
   h('library:removeFolder', (f) => { lib.removeFolder(f); return libraryStats(); });
-  h('library:shows', () => lib.shows().map(({ key, name, count, seasons, avg, meta, folders }) => ({ key, name, count, seasons, avg, folders, poster: meta?.poster || null, genres: meta?.genres || [] })));
+  h('library:shows', () => lib.shows().map(({ key, name, count, seasons, avg, meta, folders }) => ({ key, name, count, seasons, avg, folders, poster: showArtUrl(key), genres: meta?.genres || [] })));
   h('library:items', (kind) => lib.list().filter((i) => i.kind !== 'ad' && (!kind || i.kind === kind))
     .map(({ id, title, show, season, episode, kind, duration, path: p, year, folder, mode }) => ({ id, title, show, season, episode, kind, duration, path: p, year, folder, mode })));
   h('library:enrich', async () => {
@@ -1499,8 +1596,13 @@ function handlers() {
   h('library:reveal', (p) => shell.showItemInFolder(p));
   h('library:approve', (ids) => lib.approve(ids));
   h('library:pending', () => lib.list().filter((i) => i.status === 'pending').map(itemSummary));
-  h('library:browse', () => ({ items: allowedItems().map(itemSummary), hidden: profiles.isAdult() ? lib.hiddenList().map(itemSummary) : [], shows: lib.shows().map(({ key, name, count, seasons, avg, meta }) => ({ key, name: meta?.nameOverride || name, renamed: !!meta?.nameOverride, count, seasons, avg, poster: meta?.poster || null, genres: meta?.genres || [] })), media: { thumb: media.thumbUrl('ID') } }));
-  h('library:episodes', (key) => lib.episodesOf(key).map(itemSummary));
+  h('library:browse', () => {
+    // Series grouped by name; a viewer only sees the shows their channels include.
+    const ok = new Set(allowedItems().map((i) => i.showKeyUser || i.showKey).filter(Boolean));
+    return { items: allowedItems().map(itemSummary), hidden: profiles.isAdult() ? lib.hiddenList().map(itemSummary) : [],
+      shows: showGroups().filter((g) => g.keys.some((k) => ok.has(k))), progress: { resume: settings.vodResume || {}, watched: settings.vodWatched || {} }, media: { thumb: media.thumbUrl('ID') } };
+  });
+  h('library:episodes', (key) => groupKeys(key).flatMap((k) => lib.episodesOf(k)).sort((a, b) => ((a.seasonUser ?? a.season ?? 0) - (b.seasonUser ?? b.season ?? 0)) || ((a.episodeUser ?? a.episode ?? 0) - (b.episodeUser ?? b.episode ?? 0))).map(itemSummary));
   h('library:scanAll', () => scanEverything());
 
   // ---- Changing a movie's or a show's picture by hand (hold a poster on the wall) ----
@@ -1579,7 +1681,7 @@ function handlers() {
     name = String(name || '').trim().slice(0, 120);
     if (!name) { // back to the original name
       if (target.itemId) { const it = lib.items[target.itemId]; if (it) delete it.titleUser; }
-      else if (lib.meta[target.showKey]) delete lib.meta[target.showKey].nameOverride;
+      else for (const k of groupKeys(target.showKey)) if (lib.meta[k]) delete lib.meta[k].nameOverride;
       lib.save();
       send('library-changed', libraryStats());
       return { ok: true, name: null };
@@ -1589,7 +1691,7 @@ function handlers() {
       if (!it) throw new Error('That video isn’t in the library any more');
       it.titleUser = name;
     } else {
-      lib.meta[target.showKey] = { ...(lib.meta[target.showKey] || {}), nameOverride: name };
+      for (const k of groupKeys(target.showKey)) lib.meta[k] = { ...(lib.meta[k] || {}), nameOverride: name };
     }
     lib.save();
     send('library-changed', libraryStats());
@@ -1611,10 +1713,10 @@ function handlers() {
   // Everything the editor shows about one show or movie (right-click in the Library):
   // suggested tags (looked up by name online), what it is, where it's from, where it plays.
   h('edit:details', async (target) => {
-    const show = target?.showKey ? lib.shows().find((x) => x.key === target.showKey) : null;
+    const show = target?.showKey ? showGroups().find((g) => g.keys.includes(target.showKey)) : null;
     const it = target?.itemId ? lib.items[target.itemId] : null;
     if (!show && !it) return null;
-    const eps = show ? lib.episodesOf(show.key) : [];
+    const eps = show ? show.keys.flatMap((k) => lib.episodesOf(k)) : [];
     const items = show ? eps : [it];
     const meta = show ? lib.meta[show.key] || {} : {};
     const name = show ? meta.nameOverride || show.name : it.title;
@@ -1625,7 +1727,7 @@ function handlers() {
       if (r.best) {
         const b = r.best;
         match = { name: b.name, year: b.year, confidence: b.confidence, sources: b.sources, summary: b.summary || null, others: r.matches.slice(1, 4).map((m) => [m.name, m.year].filter(Boolean).join(' · ')) };
-        suggest = [...(b.genres || [])];
+        suggest = [...(b.tags || b.genres || [])];
         if (b.kind === 'movie' && !show) suggest.push(...(b.year && b.year < 1980 ? ['Classic'] : []));
       }
     } catch {}    const have = show ? meta.genres || [] : it.genres || [];
@@ -1673,7 +1775,7 @@ function handlers() {
       it.genres = list;
       it.genresUser = true;
     } else {
-      lib.meta[target.showKey] = { ...(lib.meta[target.showKey] || {}), genres: list, genresUser: true };
+      for (const k of groupKeys(target.showKey)) lib.meta[k] = { ...(lib.meta[k] || {}), genres: list, genresUser: true };
     }
     lib.save();
     send('library-changed', libraryStats());
@@ -1712,7 +1814,10 @@ function handlers() {
       const r = await handlerFns['meta:refresh'](ch.id).catch(() => null);
       if (r) { shows += r.shows; movies += r.movies; }
     }
-    return { shows, movies };
+    // The whole library too, not just On Demand screens (anything still missing a cover or tags).
+    const all = await enrichLibraryAll({ force: true });
+    findMoviePosters({ force: true }).catch(() => {});
+    return { shows: shows + all.shows, movies: movies + all.movies };
   });
   h('art:pickFile', async () => {
     const r = await dialog.showOpenDialog(win, { title: 'Pick a picture', properties: ['openFile'], filters: [{ name: 'Pictures', extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp'] }] });
@@ -1736,7 +1841,8 @@ function handlers() {
       if (!it) throw new Error('That video isn’t in the library any more');
       Object.assign(it, { poster: out, posterFrom: 'user', posterUserSet: true, posterAt: Date.now() });
     } else {
-      lib.meta[target.showKey] = { ...(lib.meta[target.showKey] || {}), name: target.name || lib.meta[target.showKey]?.name, posterFile: out, posterUserSet: true, at: Date.now() };
+      const now = Date.now();
+      for (const k of groupKeys(target.showKey)) lib.meta[k] = { ...(lib.meta[k] || {}), name: lib.meta[k]?.name || target.name, posterFile: out, posterUserSet: true, at: now };
     }
     lib.save();
     send('library-changed', libraryStats());
@@ -2208,7 +2314,7 @@ function handlers() {
       .map((i) => ({ id: i.id, title: i.title, year: i.year || null, poster: posterUrl(i) || i.art || null, duration: i.duration, folder: i.folder }))
       .sort((a, b) => a.title.localeCompare(b.title, undefined, { numeric: true }));
     const shows = lib.shows().filter((x) => lib.episodesOf(x.key).some(mine))
-      .map((x) => ({ key: x.key, name: x.name, poster: x.meta?.poster || null, thumb: media.thumbUrl(lib.episodesOf(x.key)[0]?.id), count: x.count, seasons: x.seasons, genres: x.meta?.genres || [], folders: x.folders || [] }))
+      .map((x) => ({ key: x.key, name: x.name, poster: showArtUrl(x.key), thumb: media.thumbUrl(lib.episodesOf(x.key)[0]?.id), count: x.count, seasons: x.seasons, genres: x.meta?.genres || [], folders: x.folders || [] }))
       .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
     const movieIds = new Set(movies.map((m) => m.id)), showKeys = new Set(shows.map((x) => x.key));
     const guess = suggestChannels(lib, channels).filter((x) => !x.ondemand).map((x) => {

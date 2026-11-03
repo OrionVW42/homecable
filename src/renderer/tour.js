@@ -32,7 +32,7 @@ const SLIDES = [
     ],
   },
   {
-    icon: '✏️', title: 'Make the channels your own',
+    icon: '🎨', title: 'Make the channels your own',
     lines: [
       ['Everything that edits lives in one place: the Edit menu, top of the screen.', null],
       ['Manage channels: add shows and movies to any channel, with suggestions that fit it.', 'E'],

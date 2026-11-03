@@ -95,7 +95,7 @@ test('library: browse, play on demand, drag onto a channel', async () => {
   await page.waitForTimeout(2500); // let thumbnails render
   await page.screenshot({ path: path.join(SHOTS, 'lib-01-grid.png') });
   // Drag "Penalti" onto the first channel in the rail.
-  const card = page.locator('.lib-card', { hasText: 'Penalti' });
+  const card = page.locator('.lib-card', { hasText: 'Penalti' }).first();
   const target = page.locator('.rail-ch').first();
   const chName = (await target.textContent()).trim();
   await card.dragTo(target);
@@ -103,8 +103,8 @@ test('library: browse, play on demand, drag onto a channel', async () => {
   const ch = (await page.evaluate(() => window.tv.state())).channels.find((c) => chName.includes(c.name));
   expect(ch.sources.some((x) => x.type === 'item' && x.label === 'Penalti')).toBe(true);
   // Play a movie on demand, seek, and come back.
-  await page.locator('.lib-card', { hasText: 'Sintel' }).hover();
-  await page.locator('.lib-card', { hasText: 'Sintel' }).locator('.lib-play').click();
+  await page.locator('.lib-card', { hasText: 'Sintel' }).first().hover();
+  await page.locator('.lib-card', { hasText: 'Sintel' }).first().locator('.lib-play').click();
   await expect(page.locator('.stage[data-vod]')).toHaveCount(1);
   await watching();
   await page.keyboard.press('.'); await page.keyboard.press('.'); await page.keyboard.press('.');

@@ -70,7 +70,7 @@ export function TagsPanel({ toast, isAdult }) {
           <div class="tag-chips">
             ${r.genres.map((g) => html`<span class="chip on">${g}<button title=${`Remove “${g}”`} onClick=${() => toggle(r, g)}>×</button></span>`)}
             <button class="chip add" title="Add a tag" onClick=${() => { setPick(pick === r.key ? null : r.key); setCustom(''); }}>＋ tag</button>
-            <button class="chip add" title="Full edit: name, picture, tags, make-a-show" onClick=${() => openEdit(r)}>✏ edit</button>
+            <button class="chip add" title="Full edit: name, picture, tags, make-a-show" onClick=${() => openEdit(r)}><${Icon.edit} /> edit</button>
           </div>
           ${pick === r.key && html`<div class="tag-palette" onClick=${(e) => e.stopPropagation()}>
             <div class="tag-pal-group">${TAGS.filter((g) => !r.genres.includes(g)).map((g) => html`<button class="chip" onClick=${() => toggle(r, g)}>＋ ${g}</button>`)}</div>

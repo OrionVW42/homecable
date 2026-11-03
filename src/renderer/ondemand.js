@@ -6,7 +6,7 @@
 // channel up/down, the number keys and the guide still flip channels like anywhere else.
 import { html } from 'htm/preact';
 import { useEffect, useMemo, useState } from 'preact/hooks';
-import { tv, fmtClock, ChannelLogo } from './util.js';
+import { tv, fmtClock, ChannelLogo, Icon } from './util.js';
 import { focusDefault } from './gamepad.js';
 
 const SORTS = [['az', 'A–Z'], ['new', 'Recently added'], ['year', 'Newest first'], ['old', 'Oldest first']];
@@ -308,11 +308,15 @@ function ShowTile({ s, last, onPick, first, cont, onArt, onDrop }) {
 
 // The standard tags, plus the anime words fans actually sort by (they appear
 // once something is tagged Anime, and always in the Tags page).
-export const TAGS = ['Anime', 'Animation', 'Action', 'Adventure', 'Comedy', 'Crime', 'Documentary', 'Drama', 'Family', 'Fantasy', 'Horror', 'Musical', 'Mystery', 'Romance', 'Science fiction', 'Superhero', 'Thriller', 'War', 'Western'];
-export const ANIME_TAGS = ['Shounen', 'Shoujo', 'Seinen', 'Josei', 'Isekai', 'Mecha', 'Slice of Life', 'Sports', 'Dubbed', 'Subbed', 'Magical girl', 'OVA'];
+export const TAGS = ['Anime', 'Animation', 'Action', 'Adventure', 'Comedy', 'Crime', 'Documentary', 'Drama', 'Family', 'Fantasy', 'Horror', 'Musical', 'Mystery', 'Romance', 'Science fiction', 'Superhero', 'Thriller', 'War', 'Western', 'Sports', 'Biography', 'History', 'Music', 'Kids', 'Teen', 'Reality'];
+// What it is (format) and what it's about — the editor's other tag sections.
+export const FORMAT_TAGS = ['TV show', 'Movie', 'Miniseries', 'Special', 'OVA', 'ONA', 'Anime series', 'Anime movie', 'Animated movie', 'Live action', 'Short film', 'Docuseries', 'Web series', 'Stand-up', 'Concert', 'Music video', 'Pilot', 'Extras', 'Trailer'];
+export const ABOUT_TAGS = ['Police', 'Crime', 'Mockumentary', 'Parody', 'Satire', 'Dark comedy', 'Coming of age', 'Space', 'Aliens', 'Time travel', 'Post-apocalyptic', 'Zombies', 'Vampires', 'Monsters', 'Ghosts', 'Magic', 'Robots', 'Martial arts', 'Spy', 'Military', 'Medical', 'Legal', 'Political', 'Workplace', 'Prison', 'Pirates', 'Dinosaurs', 'Fairy tale', 'Survival', 'Road trip', 'Cars', 'Food', 'True story', 'Based on a book', 'Based on a comic', 'Sequel', 'Prequel', 'Remake', 'Reboot', 'Spin-off'];
+export const ERA_TAGS = ['1950s', '1960s', '1970s', '1980s', '1990s', '2000s', '2010s', '2020s', 'Classic', 'Cult', 'Blockbuster', 'Award winner', 'Favorite', 'Comfort watch', 'Binge-worthy'];
+export const ANIME_TAGS = ['Shounen', 'Shoujo', 'Seinen', 'Josei', 'Isekai', 'Mecha', 'Slice of Life', 'Sports', 'Dubbed', 'Subbed', 'Magical girl', 'Harem', 'Idol', 'Psychological', 'Supernatural', 'Ecchi', 'Kodomo', 'Studio Ghibli'];
 // The editor's tag sections (right-click in the Library, ✏ on the walls).
-export const TV_TAGS = ['Sitcom', 'Cartoon', 'Adult animation', 'Kids', 'Teen', 'Reality', 'Game show', 'Talk show', 'Sketch comedy', 'Soap', 'Miniseries', 'Anthology', 'Sports', 'News'];
-export const MOVIE_TAGS = ['Classic', 'Cult', 'Blockbuster', 'Indie', 'Foreign', 'Biography', 'History', 'Holiday', 'Christmas', 'Halloween', 'Short film', 'Family movie night'];
+export const TV_TAGS = ['Sitcom', 'Cartoon', 'Adult animation', 'Kids', 'Teen', 'Reality', 'Game show', 'Talk show', 'Sketch comedy', 'Soap', 'Anthology', 'Procedural', 'Late night', 'Competition', 'Cooking show', 'Home & DIY', 'Nature', 'True crime', 'Sports', 'News', 'Saturday morning'];
+export const MOVIE_TAGS = ['Indie', 'Foreign', 'Holiday', 'Christmas', 'Halloween', 'Family movie night', 'Date night', 'Disney', 'Pixar', 'Marvel', 'DC', 'Star Wars', 'Studio Ghibli', 'Musical', 'Epic', 'Heist', 'Disaster', 'Noir', 'Slasher', 'Rom-com'];
 
 // Change a movie's or a show's picture: candidates found online (name only is sent),
 // or any picture file on this PC. Grown-ups only — the PC answers viewers with "ask a grown-up".
@@ -344,7 +348,7 @@ export function ArtModal({ what, onClose, onDone, toast }) {
   const rename = (to) => {
     setBusy(true);
     tv.nameSet(what.target, to)
-      .then((r) => { toast(r.name ? `\u270f Renamed to \u201c${r.name}\u201d` : '\u21a9 Back to its original name'); onDone(); })
+      .then((r) => { toast(r.name ? `✓ Renamed to \u201c${r.name}\u201d` : '\u21a9 Back to its original name'); onDone(); })
       .catch((e) => { setBusy(false); toast(err(e)); });
   };
   const unmove = () => {
@@ -394,7 +398,7 @@ export function ArtModal({ what, onClose, onDone, toast }) {
       </div>`}
       <form class="row" style="gap:8px;margin-top:10px" onSubmit=${(e) => { e.preventDefault(); look(q); }}>
         <input class="input grow" value=${q} onInput=${(e) => setQ(e.target.value)} placeholder=${what.kind === 'show' ? 'Show name' : 'Movie name'} />
-        <button class="btn" type="button" disabled=${busy || !q.trim() || q.trim() === what.name} onClick=${() => rename(q.trim())}>\u270f Rename</button>
+        <button class="btn" type="button" disabled=${busy || !q.trim() || q.trim() === what.name} onClick=${() => rename(q.trim())}><${Icon.edit} /> Rename</button>
         <button class="btn" type="submit">\u{1F50D} Find pictures</button>
         <button class="btn" type="button" onClick=${pickFile}>\u{1F4C1} Picture file\u2026</button>
       </form>
@@ -408,11 +412,12 @@ export function ArtModal({ what, onClose, onDone, toast }) {
           ${o.on ? '✓ ' : ''}${o.style === 'series' ? '🍿' : '🎬'} ${o.name}</button>`)}</div>`}
       <h4 class="od-h4">Tags</h4>
       ${(() => {
-        const groups = [['Genres', TAGS], ...(what.kind === 'show' ? [['TV', TV_TAGS], ['Movies', MOVIE_TAGS]] : [['Movies', MOVIE_TAGS], ['TV', TV_TAGS]]), ['Anime', ANIME_TAGS]];
+        const groups = [['What it is', FORMAT_TAGS], ['Genres', TAGS], ['About', ABOUT_TAGS], ...(what.kind === 'show' ? [['TV', TV_TAGS], ['Movies', MOVIE_TAGS]] : [['Movies', MOVIE_TAGS], ['TV', TV_TAGS]]), ['Anime', ANIME_TAGS], ['Era & more', ERA_TAGS]];
         const known = new Set(groups.flatMap((g) => g[1]));
         const own = tags.filter((g) => !known.has(g));
         const chip = (g) => html`<button class=${'chip' + (tags.includes(g) ? ' on' : '')} disabled=${busy} onClick=${() => toggleTag(g)}>${tags.includes(g) ? '\u2713 ' : ''}${g}</button>`;
-        return html`${groups.map(([title, list]) => html`<div class="od-tag-group"><span class="od-tag-title">${title}</span><div class="od-tags">${list.map(chip)}</div></div>`)}
+        return html`${groups.map(([title, list], gi) => (gi < 2 ? html`<div class="od-tag-group"><span class="od-tag-title">${title}</span><div class="od-tags">${list.map(chip)}</div></div>`
+          : html`<details class="od-tag-group od-tag-more" open=${list.some((t) => tags.includes(t))}><summary class="od-tag-title">${title} <span class="faint">${list.filter((t) => tags.includes(t)).length || ""}</span></summary><div class="od-tags">${list.map(chip)}</div></details>`))}
           <div class="od-tag-group"><span class="od-tag-title">Your own</span><div class="od-tags">${own.map(chip)}
             <form class="row" style="gap:6px" onSubmit=${(e) => { e.preventDefault(); const v = e.currentTarget.elements.t.value.trim(); if (v && !tags.includes(v)) toggleTag(v); e.currentTarget.reset(); }}><input class="input sm" name="t" placeholder="New tag…" style="width:140px" /><button class="btn sm" type="submit">+ Add</button></form></div></div>`;
       })()}
