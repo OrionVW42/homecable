@@ -312,6 +312,8 @@ export const TAGS = ['Anime', 'Animation', 'Action', 'Adventure', 'Comedy', 'Cri
 // What it is (format) and what it's about — the editor's other tag sections.
 export const FORMAT_TAGS = ['TV show', 'Movie', 'Miniseries', 'Special', 'OVA', 'ONA', 'Anime series', 'Anime movie', 'Animated movie', 'Live action', 'Short film', 'Docuseries', 'Web series', 'Stand-up', 'Concert', 'Music video', 'Pilot', 'Extras', 'Trailer'];
 export const ABOUT_TAGS = ['Police', 'Crime', 'Mockumentary', 'Parody', 'Satire', 'Dark comedy', 'Coming of age', 'Space', 'Aliens', 'Time travel', 'Post-apocalyptic', 'Zombies', 'Vampires', 'Monsters', 'Ghosts', 'Magic', 'Robots', 'Martial arts', 'Spy', 'Military', 'Medical', 'Legal', 'Political', 'Workplace', 'Prison', 'Pirates', 'Dinosaurs', 'Fairy tale', 'Survival', 'Road trip', 'Cars', 'Food', 'True story', 'Based on a book', 'Based on a comic', 'Sequel', 'Prequel', 'Remake', 'Reboot', 'Spin-off'];
+// Only for videos in the locked section (never offered anywhere else).
+export const ADULT_TAGS = ['Adult', 'Amateur', 'Professional', 'Solo', 'Couple', 'Threesome', 'Group', 'Straight', 'Lesbian', 'Gay', 'Trans', 'MILF', 'Mature', 'Teen (18+)', 'College', 'POV', 'Romantic', 'Softcore', 'Hardcore', 'Massage', 'Shower', 'Outdoor', 'Roleplay', 'Cosplay', 'Fetish', 'BDSM', 'Hentai', 'Cartoon (adult)', 'JAV', 'Webcam', 'Compilation', 'Interview', 'Behind the scenes', 'Vintage', 'VR', '4K', 'Favorite'];
 export const ERA_TAGS = ['1950s', '1960s', '1970s', '1980s', '1990s', '2000s', '2010s', '2020s', 'Classic', 'Cult', 'Blockbuster', 'Award winner', 'Favorite', 'Comfort watch', 'Binge-worthy'];
 export const ANIME_TAGS = ['Shounen', 'Shoujo', 'Seinen', 'Josei', 'Isekai', 'Mecha', 'Slice of Life', 'Sports', 'Dubbed', 'Subbed', 'Magical girl', 'Harem', 'Idol', 'Psychological', 'Supernatural', 'Ecchi', 'Kodomo', 'Studio Ghibli'];
 // The editor's tag sections (right-click in the Library, ✏ on the walls).
@@ -334,7 +336,9 @@ export function ArtModal({ what, onClose, onDone, toast }) {
       .then(setCands)
       .catch((e) => { if (/grown-up/i.test(String(e))) { toast('Ask a grown-up to change this'); onClose(); } else setCands([]); });
   };
-  useEffect(() => { look(what.name); }, []);
+  // Locked videos: nothing is looked up online unless you ask (then only the name is sent).
+  useEffect(() => { if (what.private) setCands('private'); else look(what.name); }, []);
+  const lookOnline = () => { look(q); tv.editDetails?.(what.target, { online: true }).then((d) => d && setInfo(d)).catch(() => {}); };
   // What it is, where it's from, where it plays — and tags suggested by looking it up online.
   const [info, setInfo] = useState(null);
   useEffect(() => { tv.editDetails?.(what.target).then(setInfo).catch(() => setInfo(null)); }, []);
@@ -374,7 +378,8 @@ export function ArtModal({ what, onClose, onDone, toast }) {
       .then((r) => { toast(`\u{1F4FA} \u201c${nm}\u201d is a show now (${r.count} video${r.count === 1 ? '' : 's'})`); onDone(); })
       .catch((e) => { setBusy(false); toast(err(e)); });
   };
-  const suggest = Array.isArray(cands) && cands[0]?.name && norm0(cands[0].name) !== norm0(what.name) ? cands[0].name : null;
+  const suggest = (Array.isArray(cands) && cands[0]?.name && norm0(cands[0].name) !== norm0(what.name) ? cands[0].name : null)
+    || (info?.match?.name && norm0(info.match.name) !== norm0(what.name) ? info.match.name : null); // locked videos: the tidied file name
   const tagList = [...new Set([...TAGS, ...(tags.includes('Anime') ? ANIME_TAGS : []), ...tags])];
   return html`<div class="modal-bg" onClick=${onClose}><div class="modal od-art" onClick=${(e) => e.stopPropagation()}>
     <div class="modal-body">
@@ -394,7 +399,7 @@ export function ArtModal({ what, onClose, onDone, toast }) {
           ${info.watched ? html`<span>✓ ${info.watched} watched</span>` : ''}
           ${info.from && html`<span class="ell" title=${info.from}>${info.from}</span>`}
         </div>
-        <div class="od-info-row muted">${info.on.length ? `Plays on: ${info.on.slice(0, 6).join(' · ')}${info.on.length > 6 ? ` +${info.on.length - 6}` : ''}` : 'Not on any channel yet — drag it onto one in the Library.'}${info.torrent && info.kept ? ' · 📌 kept' : ''}</div>
+        <div class="od-info-row muted">${info.private ? '🔒 Private — it stays in its locked section (never on channels, walls or the guide)' : info.on.length ? `Plays on: ${info.on.slice(0, 6).join(' · ')}${info.on.length > 6 ? ` +${info.on.length - 6}` : ''}` : 'Not on any channel yet — drag it onto one in the Library.'}${info.torrent && info.kept ? ' · 📌 kept' : ''}</div>
       </div>`}
       <form class="row" style="gap:8px;margin-top:10px" onSubmit=${(e) => { e.preventDefault(); look(q); }}>
         <input class="input grow" value=${q} onInput=${(e) => setQ(e.target.value)} placeholder=${what.kind === 'show' ? 'Show name' : 'Movie name'} />
@@ -403,7 +408,7 @@ export function ArtModal({ what, onClose, onDone, toast }) {
         <button class="btn" type="button" onClick=${pickFile}>\u{1F4C1} Picture file\u2026</button>
       </form>
       ${(suggest || what.renamed) && html`<div class="od-suggest">
-        ${suggest && html`<span>Found online: <b>\u201c${suggest}\u201d</b></span><button class="btn sm primary" disabled=${busy} onClick=${() => rename(suggest)}>\u2713 Use the correct name</button>`}
+        ${suggest && html`<span>${what.private && !Array.isArray(cands) ? 'Tidier name' : 'Found online'}: <b>\u201c${suggest}\u201d</b></span><button class="btn sm primary" disabled=${busy} onClick=${() => rename(suggest)}>\u2713 Use the correct name</button>`}
         ${what.renamed && html`<button class="btn sm" disabled=${busy} onClick=${() => rename('')}>\u21a9 Back to the original name</button>`}
       </div>`}
       ${info?.od?.length > 0 && html`<h4 class="od-h4">Show it on</h4>
@@ -412,11 +417,11 @@ export function ArtModal({ what, onClose, onDone, toast }) {
           ${o.on ? '✓ ' : ''}${o.style === 'series' ? '🍿' : '🎬'} ${o.name}</button>`)}</div>`}
       <h4 class="od-h4">Tags</h4>
       ${(() => {
-        const groups = [['What it is', FORMAT_TAGS], ['Genres', TAGS], ['About', ABOUT_TAGS], ...(what.kind === 'show' ? [['TV', TV_TAGS], ['Movies', MOVIE_TAGS]] : [['Movies', MOVIE_TAGS], ['TV', TV_TAGS]]), ['Anime', ANIME_TAGS], ['Era & more', ERA_TAGS]];
+        const groups = [...(what.private ? [['Adult', ADULT_TAGS]] : []), ['What it is', FORMAT_TAGS], ['Genres', TAGS], ['About', ABOUT_TAGS], ...(what.kind === 'show' ? [['TV', TV_TAGS], ['Movies', MOVIE_TAGS]] : [['Movies', MOVIE_TAGS], ['TV', TV_TAGS]]), ['Anime', ANIME_TAGS], ['Era & more', ERA_TAGS]];
         const known = new Set(groups.flatMap((g) => g[1]));
         const own = tags.filter((g) => !known.has(g));
         const chip = (g) => html`<button class=${'chip' + (tags.includes(g) ? ' on' : '')} disabled=${busy} onClick=${() => toggleTag(g)}>${tags.includes(g) ? '\u2713 ' : ''}${g}</button>`;
-        return html`${groups.map(([title, list], gi) => (gi < 2 ? html`<div class="od-tag-group"><span class="od-tag-title">${title}</span><div class="od-tags">${list.map(chip)}</div></div>`
+        return html`${groups.map(([title, list], gi) => (gi < (what.private ? 3 : 2) ? html`<div class="od-tag-group"><span class="od-tag-title">${title}</span><div class="od-tags">${list.map(chip)}</div></div>`
           : html`<details class="od-tag-group od-tag-more" open=${list.some((t) => tags.includes(t))}><summary class="od-tag-title">${title} <span class="faint">${list.filter((t) => tags.includes(t)).length || ""}</span></summary><div class="od-tags">${list.map(chip)}</div></details>`))}
           <div class="od-tag-group"><span class="od-tag-title">Your own</span><div class="od-tags">${own.map(chip)}
             <form class="row" style="gap:6px" onSubmit=${(e) => { e.preventDefault(); const v = e.currentTarget.elements.t.value.trim(); if (v && !tags.includes(v)) toggleTag(v); e.currentTarget.reset(); }}><input class="input sm" name="t" placeholder="New tag…" style="width:140px" /><button class="btn sm" type="submit">+ Add</button></form></div></div>`;
@@ -430,7 +435,8 @@ export function ArtModal({ what, onClose, onDone, toast }) {
         </div>
         ${lookalikes.length > 0 && html`<label class="row small muted" style="gap:8px;justify-content:flex-start;margin-top:6px;cursor:pointer"><input type="checkbox" checked=${withOthers} onChange=${(e) => setWithOthers(e.target.checked)} /> Also move the ${lookalikes.length} other video${lookalikes.length === 1 ? '' : 's'} that look like \u201c${showName.trim()}\u201d into it</label>`}`}
       ${what.movedIds?.length > 0 && html`<button class="btn sm" style="margin-top:10px" onClick=${unmove}>\u21a9 Put ${what.movedIds.length} moved video${what.movedIds.length === 1 ? '' : 's'} back where ${what.movedIds.length === 1 ? 'it' : 'they'} came from</button>`}
-      ${cands === 'looking' ? html`<div class="muted" style="padding:16px 0">Looking it up a few ways (IMDb, TVmaze, iTunes, Wikipedia)\u2026</div>`
+      ${cands === 'private' ? html`<div class="od-private"><span>🔒 Locked video — nothing about it has been looked up online.</span><button class="btn sm" onClick=${lookOnline}>🔍 Look it up online (sends only the name)</button><button class="btn sm" onClick=${pickFile}>📁 Picture file…</button></div>`
+      : cands === 'looking' ? html`<div class="muted" style="padding:16px 0">Looking it up a few ways (IMDb, TVmaze, iTunes, Wikipedia)\u2026</div>`
         : html`<div class="od-art-pick">
           ${cands[0] && html`<button class="od-art-best" disabled=${busy} title=${cands[0].label} onClick=${() => use({ url: cands[0].url })}>
             <img src=${cands[0].url} alt="" />

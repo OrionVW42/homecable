@@ -1,7 +1,7 @@
 {
   "name": "homecable",
   "productName": "HomeCable",
-  "version": "1.6.2",
+  "version": "1.6.3",
   "license": "MIT",
   "description": "Turn your video library into live cable TV channels.",
   "homecable": {

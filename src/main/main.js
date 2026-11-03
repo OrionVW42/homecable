@@ -177,7 +177,7 @@ function sortedChannels() { return visible().filter((c) => !c.locked).sort((a, b
 function libraryStats() {
   const items = lib.list();
   const count = (k) => items.filter((i) => i.kind === k).length;
-  return { total: items.length, episodes: count('episode'), movies: count('movie'), music: count('music'), shorts: count('short'), clips: count('clip'), shows: lib.shows().length, folders: lib.folders, servers: lib.servers.map(({ id, name, detail }) => ({ id, name, detail })), pending: lib.pendingCount(), scanning: lib.scanning, lastScan: settings.lastScan };
+  return { total: items.length, episodes: count('episode'), movies: count('movie'), music: count('music'), shorts: count('short'), clips: count('clip'), shows: lib.shows().length, folders: lib.folders.filter((f) => !lib.isPrivate(f)) /* the locked section's folders are never listed */, servers: lib.servers.map(({ id, name, detail }) => ({ id, name, detail })), pending: lib.pendingCount(), scanning: lib.scanning, lastScan: settings.lastScan };
 }
 
 function describe(entry) {
@@ -320,9 +320,28 @@ const posterUrl = (it) => (it.poster ? media.artUrl(it.id) + '&v=' + (it.posterA
 // is moved — every show key stays as it is; edits apply to every key in the group.
 const ident = require('./identify');
 const showGroupKey = (name) => ident.norm(ident.lookupName(name).replace(/\(?\b(19|20)\d{2}(\s*-\s*((19|20)\d{2})?)?\)?/g, ' ')) || null;
-function showGroups() {
+// Locked (Collection) videos can be shown in the Library for tagging — only after the PIN,
+// only there, and only until you leave the Library. They never join channels, walls or rows.
+let libUnlocked = false;
+const privateItems = () => (settings.vault ? lib.listAll().filter((it) => !it.remote && !it.hiddenUser && it.kind !== 'ad' && lib.isPrivate(it.path)) : []);
+const isPrivItem = (it) => !!(it && !it.remote && lib.isPrivate(it.path));
+const privOpen = () => (libUnlocked || vaultOpen) && profiles.isAdult();
+// lib.shows() / lib.episodesOf() for any pool of items (the locked ones aren't in lib.list()).
+function showsOf(pool) {
+  const map = new Map();
+  for (const it of pool) {
+    if (it.kind !== 'episode' || !it.showKey || !it.show) continue;
+    let s = map.get(it.showKey);
+    if (!s) map.set(it.showKey, s = { key: it.showKey, name: it.show, count: 0, meta: lib.meta[it.showKey] || null });
+    s.count++;
+  }
+  return [...map.values()];
+}
+const epsOf = (pool, key) => pool.filter((it) => it.showKey === key && it.kind === 'episode').sort((a, b) => ((a.season ?? 0) - (b.season ?? 0)) || ((a.episode ?? 0) - (b.episode ?? 0)) || String(a.path).localeCompare(String(b.path)));
+function showGroups(pool = null) {
   const groups = new Map();
-  for (const s of lib.shows()) {
+  const eOf = (k) => (pool ? epsOf(pool, k) : lib.episodesOf(k));
+  for (const s of pool ? showsOf(pool) : lib.shows()) {
     const m = lib.meta[s.key] || {};
     const display = m.nameOverride || s.name;
     const gk = showGroupKey(display) || s.key;
@@ -334,7 +353,7 @@ function showGroups() {
     shows.sort((a, b) => (+!!b.m.nameOverride - +!!a.m.nameOverride) || (+art(b) - +art(a)) || b.count - a.count);
     const p = shows[0];
     const keys = shows.map((s) => s.key);
-    const eps = keys.flatMap((k) => lib.episodesOf(k));
+    const eps = keys.flatMap((k) => eOf(k));
     // The proper name ("Reno 911!", "Bob's Burgers") once a lookup is sure; your own name always wins.
     const found = shows.map((s) => s.m).find((m) => m.name && (m.confidence === 'sure' || m.confidence === 'likely'));
     const name = p.m.nameOverride || found?.name || ident.lookupName(p.display) || p.display;
@@ -351,7 +370,7 @@ function showGroups() {
   });
 }
 // Every key that belongs to the same series as this one (edits and episode lists use them all).
-function groupKeys(key) { return showGroups().find((g) => g.keys.includes(key))?.keys || [key]; }
+function groupKeys(key) { return showGroups().find((g) => g.keys.includes(key))?.keys || (privOpen() ? showGroups(privateItems()).find((g) => g.keys.includes(key))?.keys : null) || [key]; }
 
 // Covers and tags for EVERYTHING in the library (not only On Demand screens): every series
 // and every movie is identified by name (several spellings, several sources). Things that
@@ -872,7 +891,7 @@ function allowedItems() {
 function itemSummary(i) {
   return { id: i.id, poster: posterUrl(i), posterFrom: i.posterFrom || null, title: i.titleUser || i.title, renamed: !!i.titleUser, show: lib.meta[i.showKeyUser || i.showKey]?.nameOverride || i.showUser || i.show, showKey: i.showKeyUser || i.showKey, season: i.seasonUser ?? i.season, episode: i.episodeUser ?? i.episode, kind: i.kindUser || i.kind, duration: i.duration, path: i.path,
     year: i.year, folder: i.folder, mode: i.mode, status: i.status || 'active', added: i.added, remote: !!i.remote, server: i.server || null, art: i.art || null, genres: i.genres || null, moved: !!i.showKeyUser,
-    summary: i.summary || i.infoSummary || null, yearFound: i.yearFound || null, unidentified: !!i.unidentified, genresUser: !!i.genresUser };
+    summary: i.summary || i.infoSummary || null, yearFound: i.yearFound || null, unidentified: !!i.unidentified, genresUser: !!i.genresUser, private: isPrivItem(i) || undefined };
 }
 
 // Look in every folder and media server; new things follow the new-media policy.
@@ -1123,7 +1142,7 @@ function handlers() {
     const ok = profiles.switchTo(id, secret);
     if (!ok) { if (++fails >= 5) { lockedUntil = Date.now() + 30e3; fails = 0; } return { ok: false }; }
     fails = 0;
-    vaultOpen = false;
+    vaultOpen = false; libUnlocked = false;
     // A channel this profile can't see is no longer "last watched".
     if (!visible().some((c) => c.id === settings.lastChannel)) { settings.lastChannel = sortedChannels()[0]?.id || null; saveSettings(); }
     send('channels-changed');
@@ -1411,6 +1430,14 @@ function handlers() {
     return r;
   });
   h('vault:lock', () => { vaultOpen = false; return true; });
+  // The Library's 🔒 button: the same PIN, but it only shows locked videos IN the Library.
+  h('library:unlock', (password) => {
+    if (!profiles.isAdult() || !settings.vault) return { ok: false };
+    const r = vaultCheck(password);
+    if (r.ok) libUnlocked = true;
+    return r;
+  });
+  h('library:lock', () => { libUnlocked = false; return true; });
   h('vault:update', async (p = {}) => {
     const v = settings.vault;
     if (!v) return vaultView();
@@ -1600,9 +1627,12 @@ function handlers() {
     // Series grouped by name; a viewer only sees the shows their channels include.
     const ok = new Set(allowedItems().map((i) => i.showKeyUser || i.showKey).filter(Boolean));
     return { items: allowedItems().map(itemSummary), hidden: profiles.isAdult() ? lib.hiddenList().map(itemSummary) : [],
-      shows: showGroups().filter((g) => g.keys.some((k) => ok.has(k))), progress: { resume: settings.vodResume || {}, watched: settings.vodWatched || {} }, media: { thumb: media.thumbUrl('ID') } };
+      shows: showGroups().filter((g) => g.keys.some((k) => ok.has(k))),
+      vault: settings.vault && profiles.isAdult() ? { name: settings.vault.name } : null,
+      locked: libUnlocked && profiles.isAdult() && settings.vault ? { name: settings.vault.name, items: privateItems().map(itemSummary), shows: showGroups(privateItems()) } : null,
+      progress: { resume: settings.vodResume || {}, watched: settings.vodWatched || {} }, media: { thumb: media.thumbUrl('ID') } };
   });
-  h('library:episodes', (key) => groupKeys(key).flatMap((k) => lib.episodesOf(k)).sort((a, b) => ((a.seasonUser ?? a.season ?? 0) - (b.seasonUser ?? b.season ?? 0)) || ((a.episodeUser ?? a.episode ?? 0) - (b.episodeUser ?? b.episode ?? 0))).map(itemSummary));
+  h('library:episodes', (key) => groupKeys(key).flatMap((k) => { const e = lib.episodesOf(k); return e.length || !privOpen() ? e : epsOf(privateItems(), k); }).sort((a, b) => ((a.seasonUser ?? a.season ?? 0) - (b.seasonUser ?? b.season ?? 0)) || ((a.episodeUser ?? a.episode ?? 0) - (b.episodeUser ?? b.episode ?? 0))).map(itemSummary));
   h('library:scanAll', () => scanEverything());
 
   // ---- Changing a movie's or a show's picture by hand (hold a poster on the wall) ----
@@ -1678,6 +1708,7 @@ function handlers() {
   });
   // Renaming a show or a movie (hold its poster → Edit): only how it's shown changes, never your files.
   h('name:set', (target, name) => {
+    guardPriv(target);
     name = String(name || '').trim().slice(0, 120);
     if (!name) { // back to the original name
       if (target.itemId) { const it = lib.items[target.itemId]; if (it) delete it.titleUser; }
@@ -1712,17 +1743,29 @@ function handlers() {
   // Tags turned on/off by hand — kept even when info is looked up again.
   // Everything the editor shows about one show or movie (right-click in the Library):
   // suggested tags (looked up by name online), what it is, where it's from, where it plays.
-  h('edit:details', async (target) => {
-    const show = target?.showKey ? showGroups().find((g) => g.keys.includes(target.showKey)) : null;
+  h('edit:details', async (target, opts = {}) => {
+    let show = target?.showKey ? showGroups().find((g) => g.keys.includes(target.showKey)) : null;
+    let pool = null; // the locked videos, when this is one of them
+    if (!show && target?.showKey && privOpen()) { pool = privateItems(); show = showGroups(pool).find((g) => g.keys.includes(target.showKey)) || null; }
     const it = target?.itemId ? lib.items[target.itemId] : null;
     if (!show && !it) return null;
-    const eps = show ? show.keys.flatMap((k) => lib.episodesOf(k)) : [];
+    const priv = !!pool || isPrivItem(it);
+    if (priv && !privOpen()) return null;
+    const eps = show ? show.keys.flatMap((k) => (pool ? epsOf(pool, k) : lib.episodesOf(k))) : [];
     const items = show ? eps : [it];
     const meta = show ? lib.meta[show.key] || {} : {};
     const name = show ? meta.nameOverride || show.name : it.title;
     // What it most probably is (name tried several ways, checked against several sources).
     let suggest = [], match = null;
-    try {
+    // Locked videos: suggestions from the file and folder names only — nothing leaves this PC
+    // unless you press "Look it up online" (then only the name is sent).
+    if (priv) {
+      const words = [...new Set(items.slice(0, 40).flatMap((x) => [x.title, x.show, path.basename(path.dirname(x.path))]))].filter(Boolean).join(' ');
+      suggest = ident.localTags(words + ' ' + name, { adult: true });
+      const clean = ident.lookupName(name);
+      if (clean && clean !== name) match = { name: clean, confidence: 'guess', sources: ['the file name'], others: [] };
+    }
+    if (!priv || opts.online) try {
       const r = await identify({ name, kind: show ? 'show' : 'movie', year: show ? null : it.year || null });
       if (r.best) {
         const b = r.best;
@@ -1730,12 +1773,13 @@ function handlers() {
         suggest = [...(b.tags || b.genres || [])];
         if (b.kind === 'movie' && !show) suggest.push(...(b.year && b.year < 1980 ? ['Classic'] : []));
       }
-    } catch {}    const have = show ? meta.genres || [] : it.genres || [];
+    } catch {}
+    const have = show ? meta.genres || [] : it.genres || [];
     suggest = [...new Set(suggest)].filter((g) => !have.includes(g)).slice(0, 10);
     // Where it plays: every channel (and On Demand screen) whose sources include it.
     const ids = new Set(items.map((x) => x.id));
     const on = [];
-    for (const ch of sortedChannels()) {
+    for (const ch of priv ? [] : sortedChannels()) {
       if (ch.iptv) continue;
       try { const got = ch.ondemand ? onDemandItems(ch, false) : ch.sources.flatMap((s) => lib.resolve(s)); if (got.some((x) => ids.has(x.id))) on.push(`${ch.number} ${ch.name}`); } catch {}
     }
@@ -1746,13 +1790,14 @@ function handlers() {
       kind: show ? 'show' : it.kind, name, year: show ? null : it.year || match?.year || null, summary: (show ? meta.summary : it.summary) || match?.summary || null, match,
       episodes: eps.length, seasons: show ? new Set(eps.map((e) => e.season ?? 1)).size : 0, duration: items.reduce((n, x) => n + (x.duration || 0), 0),
       watched: items.filter((x) => settings.vodWatched?.[x.id]).length, from, on, suggest, tags: have,
-      od: channels.filter((c) => c.ondemand && !c.locked).map((c) => ({ id: c.id, name: c.name, style: c.odStyle || 'movies', on: onDemandItems(c, false).some((x) => ids.has(x.id)) })),
+      private: priv, od: priv ? [] : channels.filter((c) => c.ondemand && !c.locked).map((c) => ({ id: c.id, name: c.name, style: c.odStyle || 'movies', on: onDemandItems(c, false).some((x) => ids.has(x.id)) })),
       torrent: !!tor, kept: tor ? !!torrents.isKept(first) || (show && (settings.torrentKeep || []).includes('show:' + show.key)) : false,
     };
   });
   // The editor's "Show it on" switches: put a show / movie on an On Demand or Stream Demand
   // screen, or take it off (even when a folder or torrent source would bring it there).
   h('edit:onDemand', (target, chId, on) => {
+    if (isPrivItem(target?.itemId && lib.items[target.itemId]) || (target?.showKey && epsOf(privateItems(), target.showKey).length)) throw new Error('Locked videos stay in their own section');
     const ch = channels.find((c) => c.id === chId && c.ondemand && !c.locked);
     if (!ch) throw new Error('No such On Demand screen');
     const key = target.showKey ? 'show:' + target.showKey : 'item:' + target.itemId;
@@ -1767,7 +1812,14 @@ function handlers() {
     send('channels-changed');
     return there();
   });
+  // Changing a locked video needs the PIN (the Library's 🔒, or the locked screen open).
+  const guardPriv = (target) => {
+    const it = target?.itemId ? lib.items[target.itemId] : null;
+    const privShow = target?.showKey && !lib.episodesOf(target.showKey).length && epsOf(privateItems(), target.showKey).length;
+    if ((isPrivItem(it) || privShow) && !privOpen()) throw new Error('Unlock it first');
+  };
   h('tags:set', (target, genres) => {
+    guardPriv(target);
     const list = [...new Set((Array.isArray(genres) ? genres : []).map((g) => String(g).trim()).filter(Boolean))].slice(0, 20);
     if (target.itemId) {
       const it = lib.items[target.itemId];
@@ -1824,6 +1876,7 @@ function handlers() {
     return r.canceled ? null : r.filePaths[0];
   });
   h('art:set', async (target, source) => {
+    guardPriv(target);
     // target: { itemId } (a movie) or { showKey, name } (a show); source: { url } (https) or { file } (a picture on this PC).
     fs.mkdirSync(posterDir(), { recursive: true });
     const out = target.itemId ? path.join(posterDir(), target.itemId + '.jpg') : path.join(posterDir(), seriesArtId(target.showKey) + '.jpg');
@@ -1902,7 +1955,7 @@ function handlers() {
   h('vod:play', (itemId, t = 0, opts = {}) => {
     const raw = lib.items[itemId];
     const locked = raw && lib.isPrivate(raw.path);
-    if (locked && !(vaultOpen && profiles.isAdult()) && !opts.vaultOk) return null;
+    if (locked && !privOpen() && !opts.vaultOk) return null;
     const it = locked ? raw : allowedItems().find((i) => i.id === itemId);
     if (!it) return null;
     if (locked) return { item: itemSummary(it), next: null, play: playFor(it, t), now: Date.now() };

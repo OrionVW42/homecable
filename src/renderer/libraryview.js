@@ -128,10 +128,13 @@ export function LibraryPanel({ stats, channels, setChannels, onPlay, onEdit, toa
   const [limit, setLimit] = useState(180);
   const [genre, setGenre] = useState(null);
   const mainRef = useRef(null);
-  const [seed] = useState(() => Math.random()); // which recent title is featured (stays put while you browse)
+  const [seed] = useState(() => Math.random());
+  const [pin, setPin] = useState(null); // the PIN box for showing locked videos: null | { pw, err } // which recent title is featured (stays put while you browse)
 
   const load = () => tv.browse().then(setData);
   useEffect(() => { load(); }, [stats]);
+  // Leaving the Library locks the locked videos again (the PIN is needed next time).
+  useEffect(() => () => { tv.libraryLock?.().catch(() => {}); }, []);
   useEffect(() => { const off = tv.onProgressChanged?.(() => load()); return () => off?.(); }, []);
   useEffect(() => { if (open?.type === 'show') tv.episodes(open.key).then(setEpisodes); }, [open?.key, data]);
   useEffect(() => { setLimit(180); setSel(new Set()); }, [view, source, q]);
@@ -142,23 +145,26 @@ export function LibraryPanel({ stats, channels, setChannels, onPlay, onEdit, toa
   const frame = (id) => (id ? thumb.replace('ID', id) : null);
   const resume = data?.progress?.resume || {};
   const watched = data?.progress?.watched || {};
-  const items = (view === 'hidden' ? data?.hidden : data?.items) || [];
+  // The locked section's videos, only in their own view (never mixed into anything else).
+  const P = view === 'locked' && data?.locked ? data.locked : data;
+  const lockedView = view === 'locked' && !!data?.locked;
+  const items = (view === 'hidden' ? data?.hidden : P?.items) || [];
   const inSource = (it) => !source || (source.type === 'server' ? it.server === source.id : String(it.path || '').toLowerCase().startsWith(source.path.toLowerCase()));
   const ql = q.trim().toLowerCase();
   const match = (it) => !ql || `${it.title} ${it.show || ''} ${it.year || ''}`.toLowerCase().includes(ql);
   const inGenre = (x) => !genre || (x.genres || []).includes(genre);
 
   // ---- what's in the library, as titles ----
-  const shows = useMemo(() => (data?.shows || []).filter((s) => (!ql || s.name.toLowerCase().includes(ql)) && inGenre(s)
-    && (!source || items.some((it) => s.keys.includes(it.showKey) && inSource(it)))), [data, q, source, genre]);
+  const shows = useMemo(() => (P?.shows || []).filter((s) => (!ql || s.name.toLowerCase().includes(ql)) && inGenre(s)
+    && (!source || items.some((it) => s.keys.includes(it.showKey) && inSource(it)))), [data, q, source, genre, view]);
   const movies = useMemo(() => items.filter((it) => it.kind === 'movie' && inSource(it) && match(it) && inGenre(it)), [items, source, q, genre]);
   const collections = useMemo(() => collectionsOf(movies.filter((m) => !m.unidentified)), [movies]);
   const inCollection = useMemo(() => new Set(collections.flatMap((c) => c.movies.map((m) => m.id))), [collections]);
   const genres = useMemo(() => {
     const count = new Map();
-    for (const x of [...(data?.shows || []), ...(data?.items || []).filter((i) => i.kind === 'movie')]) for (const g of x.genres || []) count.set(g, (count.get(g) || 0) + 1);
-    return [...count.entries()].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(b[0])).map(([g]) => g).slice(0, 24);
-  }, [data]);
+    for (const x of [...(P?.shows || []), ...(P?.items || []).filter((i) => i.kind !== 'episode' && (lockedView || i.kind === 'movie'))]) for (const g of x.genres || []) count.set(g, (count.get(g) || 0) + 1);
+    return [...count.entries()].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(b[0])).map(([g]) => g).slice(0, lockedView ? 40 : 24);
+  }, [data, view]);
   const by = sort === 'added' ? (a, b) => (b.added || 0) - (a.added || 0)
     : sort === 'year' ? (a, b) => (b.year || b.yearFound || 0) - (a.year || a.yearFound || 0) || String(a.name || a.title).localeCompare(String(b.name || b.title))
     : (a, b) => String(a.name || a.title).localeCompare(String(b.name || b.title), undefined, { numeric: true });
@@ -177,7 +183,7 @@ export function LibraryPanel({ stats, channels, setChannels, onPlay, onEdit, toa
   const selectedSources = () => {
     const out = [];
     for (const id of sel) {
-      if (id.startsWith('show:')) { const s = (data?.shows || []).find((x) => 'show:' + x.key === id); if (s) out.push(...s.keys.map((k) => ({ type: 'show', key: k, label: s.name }))); }
+      if (id.startsWith('show:')) { const s = (P?.shows || []).find((x) => 'show:' + x.key === id); if (s) out.push(...s.keys.map((k) => ({ type: 'show', key: k, label: s.name }))); }
       else { const it = items.find((x) => x.id === id); if (it) out.push(srcOf(it)); }
     }
     return out;
@@ -207,20 +213,33 @@ export function LibraryPanel({ stats, channels, setChannels, onPlay, onEdit, toa
       .catch((e) => toast(errText(e)))
       .finally(() => setTagging(false));
   };
+  // 🔒 Show locked: the same PIN as the locked section; they appear in their own view only.
+  const toggleLocked = async () => {
+    if (data?.locked) { await tv.libraryLock(); if (view === 'locked') nav('all'); load(); return; }
+    setPin({ pw: '', err: '' });
+  };
+  const tryPin = async () => {
+    const r = await tv.libraryUnlock(pin.pw).catch(() => ({ ok: false }));
+    if (!r.ok) return setPin({ pw: '', err: r.wait ? `Too many tries — wait ${r.wait} s` : 'That’s not it' });
+    setPin(null);
+    await load();
+    setView('locked'); setOpen(null); setSource(null);
+  };
+  useEffect(() => { if (view === 'locked' && data && !data.locked) setView('all'); }, [data, view]);
   const fromTorrent = (x) => String(x?.server || '').startsWith('torrent:');
   const keepAction = (key) => ({ label: '📌 Keep (never auto-delete)', run: () => tv.torrentKeep(key, true).then(() => toast('📌 Kept — the torrent storage limit won’t delete it')) });
   const editShow = (s) => {
     const torrentShow = items.some((it) => s.keys.includes(it.showKey) && fromTorrent(it));
-    setEdit({ kind: 'show', name: s.name, year: s.year, genres: s.genres || [], renamed: !!s.renamed, target: { showKey: s.key, name: s.name },
-      actions: [...(torrentShow ? [keepAction('show:' + s.key)] : []), { label: '🚫 Hide this show', run: () => hideShow(s) }] });
+    setEdit({ kind: 'show', name: s.name, year: s.year, genres: s.genres || [], renamed: !!s.renamed, target: { showKey: s.key, name: s.name }, private: lockedView,
+      actions: lockedView ? [] : [...(torrentShow ? [keepAction('show:' + s.key)] : []), { label: '🚫 Hide this show', run: () => hideShow(s) }] });
   };
-  const editItem = (it) => setEdit({ kind: 'movie', name: it.title, year: it.year || it.yearFound, genres: it.genres || [], renamed: !!it.renamed, target: { itemId: it.id }, others: movies.filter((x) => x.id !== it.id).map(({ id, title }) => ({ id, title })),
-    actions: [...(fromTorrent(it) ? [keepAction(it.id)] : []), view === 'hidden' ? { label: '👁 Show it again', run: () => hideToggle(it, false) } : { label: '🚫 Hide it', run: () => hideToggle(it, true) }] });
+  const editItem = (it) => setEdit({ kind: 'movie', name: it.title, year: it.year || it.yearFound, genres: it.genres || [], renamed: !!it.renamed, target: { itemId: it.id }, private: !!it.private, others: movies.filter((x) => x.id !== it.id).map(({ id, title }) => ({ id, title })),
+    actions: it.private ? [] : [...(fromTorrent(it) ? [keepAction(it.id)] : []), view === 'hidden' ? { label: '👁 Show it again', run: () => hideToggle(it, false) } : { label: '🚫 Hide it', run: () => hideToggle(it, true) }] });
   // A view and a folder filter are one choice at a time: picking one clears the other.
   const nav = (v) => { setView(v); setOpen(null); setSource(null); };
   const pickSource = (s) => { setSource(s); setOpen(null); if (LIST_VIEWS.has(view) || view === 'unknown') setView('all'); };
-  // Right-click any video to hide it everywhere (channels and walls too) — quick for things you don't want.
-  // It waits under Library -> Hidden, where a right-click (or 👁) brings it back. ✏ opens the editor.
+  // Ctrl + right-click a video to hide it everywhere (channels and walls too).
+  // It waits under Library -> Hidden, where Ctrl + right-click (or 👁) brings it back. Edit opens the editor.
   const hideToggle = async (it, on) => {
     await tv.itemsHide([it.id], on).catch((e) => toast(errText(e)));
     toast(on ? `🚫 “${it.title}” is hidden — find it under Hidden` : `👁 “${it.title}” is back`);
@@ -233,6 +252,8 @@ export function LibraryPanel({ stats, channels, setChannels, onPlay, onEdit, toa
     if (open?.key === sh.key) setOpen(null);
     load();
   };
+  // Hiding is Ctrl + right-click (a plain right-click is too easy to hit). Locked videos stay put.
+  const hideClick = (e, fn) => { e.preventDefault(); if (!isAdult || !e.ctrlKey || lockedView) return; fn(); };
   const folderSrc = (f) => ({ type: 'folder', path: f, label: f.split(/[\\/]/).filter(Boolean).pop() || f });
   // Two folders can share a last name ("Videos" and "OneDrive\Videos") — say which is which.
   const folderLabel = (f) => {
@@ -255,8 +276,8 @@ export function LibraryPanel({ stats, channels, setChannels, onPlay, onEdit, toa
   const editBtn = (fn) => isAdult && html`<button class="lib-edit" title="Edit name, pictures, tags & where it shows" onClick=${(e) => { e.stopPropagation(); fn(); }}><${Icon.edit} /> Edit</button>`;
   const ShowCard = (s) => {
     const id = 'show:' + s.key;
-    return html`<div class=${'lib-card nf-card' + (sel.has(id) ? ' sel' : '')} key=${id} draggable="true" tabindex="0" title=${s.name}
-        onContextMenu=${(e) => { if (!isAdult) return; e.preventDefault(); hideShow(s); }}
+    return html`<div class=${'lib-card nf-card' + (sel.has(id) ? ' sel' : '')} key=${id} draggable=${!lockedView} tabindex="0" title=${s.name}
+        onContextMenu=${(e) => hideClick(e, () => hideShow(s))}
         onDragStart=${(e) => startDrag(e, id, s.keys.map((k) => ({ type: 'show', key: k, label: s.name })))}
         onClick=${(e) => (e.ctrlKey || e.metaKey || e.shiftKey ? clickSel(id, e) : setOpen({ type: 'show', key: s.key }))}
         onKeyDown=${(e) => e.key === 'Enter' && setOpen({ type: 'show', key: s.key })}>
@@ -264,8 +285,8 @@ export function LibraryPanel({ stats, channels, setChannels, onPlay, onEdit, toa
         <span class="nf-badge">${s.seasons > 1 ? `${s.seasons} seasons` : `${s.count} ep`}</span>${editBtn(() => editShow(s))}</div>
       <div class="lib-cap"><b>${s.name}</b><span>${[s.year, s.genres?.[0]].filter(Boolean).join(' · ') || `${s.count} episodes`}</span></div></div>`;
   };
-  const MovieCard = (it) => html`<div class=${'lib-card nf-card' + (sel.has(it.id) ? ' sel' : '')} key=${it.id} draggable="true" tabindex="0" title=${it.title}
-      onContextMenu=${(e) => { if (!isAdult) return; e.preventDefault(); hideToggle(it, view !== 'hidden'); }}
+  const MovieCard = (it) => html`<div class=${'lib-card nf-card' + (sel.has(it.id) ? ' sel' : '')} key=${it.id} draggable=${!it.private} tabindex="0" title=${it.title}
+      onContextMenu=${(e) => hideClick(e, () => hideToggle(it, view !== 'hidden'))}
       onDragStart=${(e) => startDrag(e, it.id, srcOf(it))}
       onClick=${(e) => (e.ctrlKey || e.metaKey || e.shiftKey ? clickSel(it.id, e) : setOpen({ type: 'movie', id: it.id }))} onDblClick=${() => onPlay(it.id)}
       onKeyDown=${(e) => e.key === 'Enter' && setOpen({ type: 'movie', id: it.id })}>
@@ -274,14 +295,14 @@ export function LibraryPanel({ stats, channels, setChannels, onPlay, onEdit, toa
       ${editBtn(() => editItem(it))}${pct(it) > 0 && html`<span class="nf-progress"><i style=${{ width: pct(it) + '%' }}></i></span>`}
       ${it.status === 'pending' && html`<span class="lib-tag new">NEW</span>`}</div>
     <div class="lib-cap"><b>${it.title}</b><span>${[it.year || it.yearFound, it.duration ? fmtDur(it.duration) : null, it.remote ? '🌐' : ''].filter(Boolean).join(' · ')}</span></div></div>`;
-  const CollectionCard = (c) => html`<div class="lib-card nf-card nf-col" key=${c.key} draggable="true" tabindex="0" title=${c.name}
+  const CollectionCard = (c) => html`<div class="lib-card nf-card nf-col" key=${c.key} draggable=${!lockedView} tabindex="0" title=${c.name}
       onDragStart=${(e) => startDrag(e, c.key, c.movies.map(srcOf))} onClick=${() => setOpen({ type: 'collection', key: c.key })}
       onKeyDown=${(e) => e.key === 'Enter' && setOpen({ type: 'collection', key: c.key })}>
     <div class="nf-cover nf-stack">${c.movies.slice(0, 3).reverse().map((m, i, a) => html`<div class="nf-stack-card" style=${{ '--i': a.length - 1 - i }}><${Cover} poster=${m.poster || m.art} frame=${frame(m.id)} title=${m.title} /></div>`)}
       <span class="nf-badge">${c.movies.length} movies</span></div>
     <div class="lib-cap"><b>${c.name}</b><span>Movie series · ${c.movies.map((m) => m.year || m.yearFound).filter(Boolean).sort()[0] || ''}${c.movies.length > 1 ? '–' : ''}${c.movies.map((m) => m.year || m.yearFound).filter(Boolean).sort().pop() || ''}</span></div></div>`;
   const WideCard = (it) => html`<div class=${'lib-card nf-wide' + (sel.has(it.id) ? ' sel' : '')} key=${it.id} draggable="true" tabindex="0"
-      onContextMenu=${(e) => { if (!isAdult) return; e.preventDefault(); hideToggle(it, view !== 'hidden'); }}
+      onContextMenu=${(e) => hideClick(e, () => hideToggle(it, view !== 'hidden'))}
       onDragStart=${(e) => startDrag(e, it.id, srcOf(it))} onClick=${(e) => (e.ctrlKey || e.metaKey || e.shiftKey ? clickSel(it.id, e) : onPlay(it.id))}>
     <div class="lib-art"><${Thumb} item=${it} thumb=${thumb} />
       <button class="lib-play" title="Play now" onClick=${(e) => { e.stopPropagation(); onPlay(it.id); }}><${Icon.play} /></button>
@@ -333,8 +354,8 @@ export function LibraryPanel({ stats, channels, setChannels, onPlay, onEdit, toa
         <div class="nf-grid">${c.movies.map(MovieCard)}</div></div>`;
     }
     const isShow = open.type === 'show';
-    const s = isShow ? (data.shows || []).find((x) => x.key === open.key || x.keys.includes(open.key)) : null;
-    const it = !isShow ? (data.items || []).find((x) => x.id === open.id) : null;
+    const s = isShow ? (P.shows || []).find((x) => x.key === open.key || x.keys.includes(open.key)) : null;
+    const it = !isShow ? (P.items || []).find((x) => x.id === open.id) : null;
     if (!s && !it) return html`<div class="muted">That isn’t in the library any more.</div>`;
     const x = s || it;
     const eps = isShow ? episodes : [];
@@ -342,7 +363,7 @@ export function LibraryPanel({ stats, channels, setChannels, onPlay, onEdit, toa
     const cur = seasons.includes(season) ? season : (nextEp(eps)?.season ?? seasons[0]);
     const shown = eps.filter((e) => (e.season ?? 0) === cur);
     const nx = isShow ? nextEp(eps) : null;
-    const related = isShow ? (data.items || []).filter((m) => m.kind === 'movie' && words(m.title).join(' ').startsWith(words(s.name).join(' '))) : [];
+    const related = isShow ? (P.items || []).filter((m) => m.kind === 'movie' && words(m.title).join(' ').startsWith(words(s.name).join(' '))) : [];
     const col = !isShow ? collections.find((c) => c.movies.some((m) => m.id === it.id)) : null;
     const playLabel = isShow ? (nx && (resume[nx.id] || watched[eps[0]?.id]) ? `Resume ${epLabel(nx) || ''}` : 'Play') : resume[it.id] ? 'Resume' : 'Play';
     return html`<div class="nf-page">
@@ -356,7 +377,8 @@ export function LibraryPanel({ stats, channels, setChannels, onPlay, onEdit, toa
           ${x.summary ? html`<p>${x.summary}</p>` : x.unidentified && isAdult ? html`<p class="muted">Couldn’t work out what this is from its name. Press Edit, type the name it’s known by, and pick its cover.</p>` : ''}
           <div class="row" style="gap:10px;justify-content:flex-start;flex-wrap:wrap">
             <button class="btn primary nf-big" onClick=${() => onPlay(isShow ? nx?.id : it.id)} disabled=${isShow && !nx}><${Icon.play} /> ${playLabel}</button>
-            ${isAdult && html`<button class="btn nf-big" onClick=${() => (isShow ? editShow(s) : editItem(it))}><${Icon.edit} /> Edit</button>
+            ${isAdult && lockedView && html`<button class="btn nf-big" onClick=${() => (isShow ? editShow(s) : editItem(it))}><${Icon.edit} /> Edit</button>`}
+            ${isAdult && !lockedView && html`<button class="btn nf-big" onClick=${() => (isShow ? editShow(s) : editItem(it))}><${Icon.edit} /> Edit</button>
               <button class="btn nf-big" onClick=${() => setDialog({ addTo: isShow ? s.keys.map((k) => ({ type: 'show', key: k, label: s.name })) : [srcOf(it)] })}><${Icon.plus} /> Add to channel</button>
               <button class="btn ghost" onClick=${() => (isShow ? hideShow(s) : hideToggle(it, true).then(() => setOpen(null)))}>🚫 Hide</button>`}
           </div>
@@ -364,9 +386,9 @@ export function LibraryPanel({ stats, channels, setChannels, onPlay, onEdit, toa
       </div>
       ${isShow && html`<div class="nf-eps-head"><h3>Episodes</h3>
         ${seasons.length > 1 && html`<div class="nf-seasons">${seasons.map((n) => html`<button class=${'chip' + (n === cur ? ' on' : '')} onClick=${() => setSeason(n)}>${n ? `Season ${n}` : 'Specials'}</button>`)}</div>`}</div>
-        <div class="nf-eps">${shown.map((ep, i) => html`<div class=${'nf-ep' + (sel.has(ep.id) ? ' sel' : '') + (nx?.id === ep.id ? ' next' : '')} key=${ep.id} draggable="true"
+        <div class="nf-eps">${shown.map((ep, i) => html`<div class=${'nf-ep' + (sel.has(ep.id) ? ' sel' : '') + (nx?.id === ep.id ? ' next' : '')} key=${ep.id} draggable=${!lockedView}
             onDragStart=${(e) => startDrag(e, ep.id, srcOf(ep))} onClick=${(e) => (e.ctrlKey || e.metaKey || e.shiftKey ? clickSel(ep.id, e) : onPlay(ep.id))}
-            onContextMenu=${(e) => { if (!isAdult) return; e.preventDefault(); hideToggle(ep, true).then(() => tv.episodes(open.key).then(setEpisodes)); }}>
+            onContextMenu=${(e) => hideClick(e, () => hideToggle(ep, true).then(() => tv.episodes(open.key).then(setEpisodes)))}>
           <span class="nf-ep-n">${ep.episode ?? i + 1}</span>
           <div class="nf-ep-thumb"><${Thumb} item=${ep} thumb=${thumb} /><span class="nf-ep-play"><${Icon.play} /></span>
             ${pct(ep) > 0 && html`<span class="nf-progress"><i style=${{ width: pct(ep) + '%' }}></i></span>`}</div>
@@ -377,9 +399,10 @@ export function LibraryPanel({ stats, channels, setChannels, onPlay, onEdit, toa
     </div>`;
   };
 
-  const heading = open ? null : source ? source.label : VIEWS.find((v) => v[0] === view)[1];
+  const heading = open ? null : view === 'locked' ? `🔒 ${data.locked?.name || 'Locked'}` : source ? source.label : VIEWS.find((v) => v[0] === view)?.[1];
   const posterGrid = !open && !LIST_VIEWS.has(view) && (view !== 'all' || ql || genre);
-  const gridTitles = view === 'shows' ? shows.filter(known).sort(by) : view === 'movie' ? homeMovies : view === 'unknown' ? unknownT
+  const gridTitles = lockedView ? [...shows, ...collections, ...items.filter((i) => i.kind !== 'episode' && i.kind !== 'movie' && inSource(i) && match(i) && inGenre(i)), ...movies.filter((m) => !inCollection.has(m.id))].sort((a, b) => by(a.movies ? { title: a.name } : a, b.movies ? { title: b.name } : b))
+    : view === 'shows' ? shows.filter(known).sort(by) : view === 'movie' ? homeMovies : view === 'unknown' ? unknownT
     : [...shows, ...collections, ...movies.filter((m) => !inCollection.has(m.id))].sort((a, b) => by(a.movies ? { title: a.name } : a, b.movies ? { title: b.name } : b));
 
   return html`<div class="overlay lib">
@@ -388,12 +411,14 @@ export function LibraryPanel({ stats, channels, setChannels, onPlay, onEdit, toa
       <input class="input" style="width:260px" placeholder="Search shows, movies, music…" value=${q} onInput=${(e) => { setQ(e.target.value); setOpen(null); }} />
       ${isAdult && html`<button class="btn" onClick=${() => tv.scanAll().then((r) => toast(r.busy ? 'Already scanning…' : `Scan done — ${r.added || 0} new`))} disabled=${stats.scanning}><${Icon.refresh} /> Scan now</button>
       <button class="btn" disabled=${tagging} title="Look every show and movie up by name — covers, tags, summaries" onClick=${tagAll}>${tagging ? 'Looking everything up…' : '🏷 Find covers & tags'}</button>
+      ${data.vault && html`<button class=${'btn' + (data.locked ? ' on' : '')} title=${data.locked ? 'Hide the locked videos again' : `Show ${data.vault.name}'s videos here, for tagging — needs the PIN`} onClick=${toggleLocked}>${data.locked ? '🔓 Hide locked' : '🔒 Show locked'}</button>`}
       <button class="btn" onClick=${() => setDialog('torrents')}>🧲 Torrents</button>
       <button class="btn" onClick=${() => setDialog('free')}>📡 Free TV</button>
       <button class="btn primary" onClick=${() => setDialog('sources')}><${Icon.plus} /> Add sources</button>`}
     </div>
     <div class="lib-body">
       <nav class="lib-nav">
+        ${data.locked && html`<button class=${'lib-nav-item lib-nav-locked' + (view === 'locked' && !open ? ' on' : '')} onClick=${() => nav('locked')}><span>🔒</span><span class="grow ell">${data.locked.name}</span><span class="badge">${data.locked.items.length}</span></button>`}
         ${VIEWS.filter(([k]) => k !== 'unknown' || unknownT.length).map(([k, l, ic]) => html`<button class=${'lib-nav-item' + (view === k && !open && !source ? ' on' : '')} onClick=${() => nav(k)}
           draggable=${!!KIND_SOURCE[k]} onDragStart=${(e) => KIND_SOURCE[k] && dragSources(e, [{ type: 'kind', kind: k, label: KIND_SOURCE[k] }])}>
           <span>${ic}</span><span class="grow">${l}</span>${k === 'pending' && pendingN > 0 && html`<span class="badge">${pendingN}</span>`}${k === 'unknown' && html`<span class="badge">${unknownT.length}</span>`}</button>`)}
@@ -419,7 +444,7 @@ export function LibraryPanel({ stats, channels, setChannels, onPlay, onEdit, toa
               <option value="title">A–Z</option><option value="added">Newest first</option><option value="year">By year</option>${LIST_VIEWS.has(view) && html`<option value="length">Longest first</option>`}</select>`}
           </div>
           ${view === 'pending' && html`<p class="muted small" style="margin-top:-6px">New media waits here when Settings → New media is set to “Let me review”. Approved videos join any channel that includes their folder, show or type.</p>`}
-          ${view === 'hidden' && html`<p class="muted small" style="margin-top:-6px">Hidden by right-click: these stay out of every channel, wall and list. Right-click one (or press 👁) to bring it back.</p>`}
+          ${view === 'hidden' && html`<p class="muted small" style="margin-top:-6px">Hidden with Ctrl + right-click: these stay out of every channel, wall and list. Ctrl + right-click one (or press 👁) to bring it back.</p>`}
           ${view === 'unknown' && html`<p class="muted small" style="margin-top:-6px">These names didn’t match any show or movie online. Press Edit on one, type the name it’s known by, and pick its cover — or press 🏷 Find covers & tags to try again.</p>`}
           ${genres.length > 0 && !LIST_VIEWS.has(view) && view !== 'unknown' && html`<div class="row lib-genres nf-genre-bar">
             <button class=${'chip' + (!genre ? ' on' : '')} onClick=${() => setGenre(null)}>All</button>
@@ -447,7 +472,7 @@ export function LibraryPanel({ stats, channels, setChannels, onPlay, onEdit, toa
           ${LIST_VIEWS.has(view) && html`<div class="lib-grid">
             ${list.slice(0, limit).map((it) => html`
               <div class=${'lib-card' + (sel.has(it.id) ? ' sel' : '')} key=${it.id} draggable="true" tabindex="0"
-                onContextMenu=${(e) => { if (!isAdult) return; e.preventDefault(); hideToggle(it, view !== 'hidden'); }}
+                onContextMenu=${(e) => hideClick(e, () => hideToggle(it, view !== 'hidden'))}
                 onDragStart=${(e) => startDrag(e, it.id, srcOf(it))} onClick=${(e) => clickSel(it.id, e)} onDblClick=${() => onPlay(it.id)}>
               <div class="lib-art"><${Thumb} item=${it} thumb=${thumb} />
                 ${view === 'hidden' ? html`<button class="lib-play" title="Show it again" onClick=${(e) => { e.stopPropagation(); hideToggle(it, false); }}>👁</button>`
@@ -459,12 +484,20 @@ export function LibraryPanel({ stats, channels, setChannels, onPlay, onEdit, toa
           ${list.length > limit && html`<div style="text-align:center;margin:20px"><button class="btn" onClick=${() => setLimit((n) => n + 300)}>Show more (${list.length - limit})</button></div>`}`}`}
       </main>
 
-      ${isAdult ? html`<${DropRail} channels=${channels} onDrop=${addTo} onNew=${newFrom} />` : html`<aside class="lib-rail"></aside>`}
+      ${isAdult && !lockedView ? html`<${DropRail} channels=${channels} onDrop=${addTo} onNew=${newFrom} />` : html`<aside class="lib-rail">${lockedView && html`<div class="rail-title">🔒 Private</div><p class="muted small">These stay in ${data.locked.name}. They're shown here only for tagging and naming — never on channels, walls or the guide — and they lock again when you leave the Library.</p>`}</aside>`}
     </div>
 
     ${dialog === 'sources' && html`<${AddSourcesDialog} onClose=${() => setDialog(null)} toast=${toast} />`}
     ${dialog === 'free' && html`<${FreeTvDialog} onClose=${() => setDialog(null)} toast=${toast} />`}
     ${dialog === 'torrents' && html`<${TorrentsPanel} onClose=${() => { setDialog(null); load(); }} toast=${toast} onPlay=${onPlay} isAdult=${isAdult} />`}
+    ${pin && html`<div class="modal-bg" onClick=${(e) => e.target === e.currentTarget && setPin(null)}><div class="modal narrow">
+      <div class="modal-head"><h3>🔒 Show ${data.vault?.name || 'locked'} videos</h3><button class="icon-btn" onClick=${() => setPin(null)}><${Icon.close} /></button></div>
+      <form class="modal-body" onSubmit=${(e) => { e.preventDefault(); tryPin(); }}>
+        <p class="muted small" style="margin-top:0">They show here only, for naming and tagging — they don’t join channels or anything else, and they lock again when you leave the Library.</p>
+        <input class="input" type="password" autofocus placeholder="PIN or password" value=${pin.pw} onInput=${(e) => setPin({ ...pin, pw: e.target.value, err: '' })} style="width:100%" />
+        ${pin.err && html`<p class="small" style="color:var(--bad);margin:8px 0 0">${pin.err}</p>`}
+        <div class="row" style="justify-content:flex-end;gap:8px;margin-top:14px"><button type="button" class="btn" onClick=${() => setPin(null)}>Cancel</button><button class="btn primary" disabled=${!pin.pw}>Unlock</button></div>
+      </form></div></div>`}
     ${edit && html`<${ArtModal} what=${edit} onClose=${() => { setEdit(null); load(); }} onDone=${() => { setEdit(null); load(); }} toast=${toast} />`}
     ${dialog?.addTo && html`<div class="modal-bg" onClick=${(e) => e.target === e.currentTarget && setDialog(null)}><div class="modal narrow">
       <div class="modal-head"><h3>Add ${dialog.addTo.length === 1 ? `“${dialog.addTo[0].label}”` : dialog.addTo.length + ' items'} to…</h3><button class="icon-btn" onClick=${() => setDialog(null)}><${Icon.close} /></button></div>

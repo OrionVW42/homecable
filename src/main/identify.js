@@ -251,6 +251,32 @@ function suggestTags(m, name = '') {
   return { all: out, auto };
 }
 
+// ---- tags from names alone (locked videos: nothing is looked up online) ----
+// The adult words only ever apply inside the locked section (opts.adult).
+const ADULT_WORDS = [
+  ['Amateur', /\bamateur|homemade|home ?made\b/i], ['Professional', /\bstudio|professional|brazzers|vixen|blacked|tushy|reality ?kings|bangbros|naughty ?america|digital ?playground\b/i],
+  ['Solo', /\bsolo\b/i], ['Couple', /\bcouples?\b/i], ['Threesome', /\bthreesome|3some|ffm|mmf\b/i], ['Group', /\bgroup|orgy|gangbang\b/i],
+  ['Lesbian', /\blesbian|girl ?on ?girl|\bgg\b/i], ['Gay', /\bgay\b/i], ['Trans', /\btrans|tgirl|shemale\b/i], ['Straight', /\bstraight\b/i],
+  ['MILF', /\bmilf|cougar\b/i], ['Mature', /\bmature|gilf\b/i], ['Teen (18+)', /\b(18|19) ?(yo|year)|\bteen\b/i], ['College', /\bcollege|dorm\b/i],
+  ['POV', /\bpov\b/i], ['Compilation', /\bcompilation|\bcompil|\bpmv\b|\bbest of\b/i], ['Softcore', /\bsoftcore|erotic|sensual\b/i], ['Hardcore', /\bhardcore\b/i],
+  ['Romantic', /\bromantic|passionate|lovemaking\b/i], ['Massage', /\bmassage\b/i], ['Outdoor', /\boutdoors?|public|beach\b/i], ['Shower', /\bshower|bath\b/i],
+  ['BDSM', /\bbdsm|bondage|domina|submissive|spank/i], ['Fetish', /\bfetish|feet|foot|latex|leather|stockings|nylon/i], ['Roleplay', /\broleplay|role ?play|step ?(sis|mom|bro|dad)|nurse|teacher|maid/i],
+  ['Cosplay', /\bcosplay\b/i], ['Hentai', /\bhentai\b/i], ['Cartoon (adult)', /\bcartoon|animated|3d ?anim|\bsfm\b/i], ['Vintage', /\bvintage|retro\b/i],
+  ['VR', /\bvr\b|180x180|\b3dh\b|\bsbs\b/i], ['4K', /\b2160p|\b4k\b|\buhd\b/i], ['Webcam', /\bcam(girl|show)?\b|webcam|onlyfans/i], ['Interview', /\binterview|casting\b/i],
+  ['Big cast', /\bparty\b/i], ['Behind the scenes', /\bbts\b|behind the scenes/i], ['JAV', /\bjav\b|\b[a-z]{2,5}-\d{3,4}\b/i],
+];
+function localTags(text, { adult = false } = {}) {
+  const t = String(text || '').replace(/[._]+/g, ' ');
+  const out = [];
+  for (const [g, re] of GENRE_WORDS) if (re.test(t)) out.push(g);
+  for (const [g, re] of KEYWORD_TAGS) if (re.test(t) && !out.includes(g)) out.push(g);
+  if (adult) for (const [g, re] of ADULT_WORDS) if (re.test(t) && !out.includes(g)) out.push(g);
+  if (adult && !out.includes('Adult')) out.unshift('Adult');
+  const y = yearOf(t);
+  if (y) out.push(`${String(y).slice(0, 3)}0s`);
+  return out.slice(0, 14);
+}
+
 // ---- putting it together ----
 function scoreOne(c, names, year, kind) {
   let s = Math.max(...names.map((n) => similar(n, c.name)));
@@ -349,4 +375,4 @@ async function run({ name, kind = 'auto', year = null }) {
   return { best, matches: matches.slice(0, 12), images: images.slice(0, 24), tried: names };
 }
 
-module.exports = { identify, variants, lookupName, similar, mapGenres, norm, yearOf, genresFromText, suggestTags };
+module.exports = { identify, variants, lookupName, similar, mapGenres, norm, yearOf, genresFromText, suggestTags, localTags };

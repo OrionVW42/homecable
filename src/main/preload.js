@@ -109,6 +109,8 @@ contextBridge.exposeInMainWorld('tv', {
   approve: call('library:approve'),
   pending: call('library:pending'),
   browse: call('library:browse'),
+  libraryUnlock: call('library:unlock'),
+  libraryLock: call('library:lock'),
   episodes: call('library:episodes'),
   scanAll: call('library:scanAll'),
   discover: call('network:discover'),

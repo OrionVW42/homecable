@@ -1,6 +1,6 @@
 // Torrents, the native way (1.6.1): a finished download says so up top and stops sharing on
 // one press — then plays straight from disk; torrent movies land in On Demand by themselves;
-// right-click in the Library opens the editor (never hides); the storage limit clears only
+// the Library's Edit button opens the editor (Ctrl + right-click hides); the storage limit clears only
 // WATCHED videos and never kept ones; priority and "downloads at once" queue torrents.
 // Real app, off-screen, a temp data folder; free Blender films (CC-BY). Needs the internet.
 //   npx playwright test tests/torrent-manage.e2e.test.js      (HOMECABLE_NO_NET=1 skips)
@@ -49,7 +49,7 @@ test('a torrent movie lands in On Demand by itself, looked up and tagged', async
   await expect.poll(async () => (await page.evaluate((id) => window.tv.onDemandList(id), od.id))?.items?.some((m) => m.id === sintel.id), { timeout: 30000 }).toBe(true);
 });
 
-test('the ✏ Edit button opens the full editor; right-click still hides', async () => {
+test('the Edit button opens the full editor; Ctrl + right-click hides', async () => {
   test.setTimeout(60000);
   await page.keyboard.press('l'); // the Library
   await page.waitForSelector('.lib-card', { timeout: 15000 });
@@ -77,8 +77,11 @@ test('the ✏ Edit button opens the full editor; right-click still hides', async
   await page.locator('.od-art').getByRole('button', { name: 'Done' }).click();
   await expect(page.locator('.od-art')).toHaveCount(0);
   expect((await items()).some((i) => i.id === sintel.id), 'still in the library (not hidden)').toBe(true);
-  // Right-click is the quick "I don't want this" — and a right-click in Hidden brings it back.
+  // A plain right-click does nothing; Ctrl + right-click is the quick "I don't want this".
   await card.click({ button: 'right' });
+  await page.waitForTimeout(600);
+  expect((await items()).some((i) => i.id === sintel.id), 'a plain right-click hides nothing').toBe(true);
+  await card.click({ button: 'right', modifiers: ['Control'] });
   await expect(page.locator('.od-art')).toHaveCount(0); // no editor — it just hides
   await expect(page.locator('.lib-card', { hasText: 'Sintel' })).toHaveCount(0, { timeout: 10000 });
   await page.evaluate((id) => window.tv.itemsHide([id], false), sintel.id); // back for the next tests
