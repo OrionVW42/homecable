@@ -309,7 +309,10 @@ function ShowTile({ s, last, onPick, first, cont, onArt, onDrop }) {
 // The standard tags, plus the anime words fans actually sort by (they appear
 // once something is tagged Anime, and always in the Tags page).
 export const TAGS = ['Anime', 'Animation', 'Action', 'Adventure', 'Comedy', 'Crime', 'Documentary', 'Drama', 'Family', 'Fantasy', 'Horror', 'Musical', 'Mystery', 'Romance', 'Science fiction', 'Superhero', 'Thriller', 'War', 'Western'];
-export const ANIME_TAGS = ['Shounen', 'Shoujo', 'Seinen', 'Josei', 'Isekai', 'Mecha', 'Slice of Life', 'Sports'];
+export const ANIME_TAGS = ['Shounen', 'Shoujo', 'Seinen', 'Josei', 'Isekai', 'Mecha', 'Slice of Life', 'Sports', 'Dubbed', 'Subbed', 'Magical girl', 'OVA'];
+// The editor's tag sections (right-click in the Library, ✏ on the walls).
+export const TV_TAGS = ['Sitcom', 'Cartoon', 'Adult animation', 'Kids', 'Teen', 'Reality', 'Game show', 'Talk show', 'Sketch comedy', 'Soap', 'Miniseries', 'Anthology', 'Sports', 'News'];
+export const MOVIE_TAGS = ['Classic', 'Cult', 'Blockbuster', 'Indie', 'Foreign', 'Biography', 'History', 'Holiday', 'Christmas', 'Halloween', 'Short film', 'Family movie night'];
 
 // Change a movie's or a show's picture: candidates found online (name only is sent),
 // or any picture file on this PC. Grown-ups only — the PC answers viewers with "ask a grown-up".
@@ -328,6 +331,9 @@ export function ArtModal({ what, onClose, onDone, toast }) {
       .catch((e) => { if (/grown-up/i.test(String(e))) { toast('Ask a grown-up to change this'); onClose(); } else setCands([]); });
   };
   useEffect(() => { look(what.name); }, []);
+  // What it is, where it's from, where it plays — and tags suggested by looking it up online.
+  const [info, setInfo] = useState(null);
+  useEffect(() => { tv.editDetails?.(what.target).then(setInfo).catch(() => setInfo(null)); }, []);
   const use = (source) => {
     setBusy(true);
     tv.artSet(what.target, source)
@@ -369,6 +375,23 @@ export function ArtModal({ what, onClose, onDone, toast }) {
   return html`<div class="modal-bg" onClick=${onClose}><div class="modal od-art" onClick=${(e) => e.stopPropagation()}>
     <div class="modal-body">
       <h3>Edit \u201c${what.name}\u201d</h3>
+      ${info?.suggest?.length > 0 && html`<div class="od-suggest-tags"><span class="muted small">Suggested tags:</span>
+        ${info.suggest.filter((g) => !tags.includes(g)).map((g) => html`<button class="chip sugg" disabled=${busy} onClick=${() => toggleTag(g)}>+ ${g}</button>`)}
+        ${info.suggest.some((g) => !tags.includes(g)) && html`<button class="btn sm" disabled=${busy} onClick=${() => { const next = [...new Set([...tags, ...info.suggest])]; setTags(next); tv.tagsSet(what.target, next).catch((e) => toast(err(e))); }}>✓ Add all</button>`}</div>`}
+      ${info?.match && html`<div class="od-match"><span class=${'od-sure ' + info.match.confidence}>${{ sure: '\u2713 Sure', likely: '\u2713 Likely', maybe: '? Maybe', guess: '? Best guess' }[info.match.confidence] || ''}</span>
+        <span>This is most probably <b>${info.match.name}</b>${info.match.year ? ` (${info.match.year})` : ''}</span>
+        <span class="muted small">matched by ${info.match.sources.join(' + ')}${info.match.others?.length ? ` \u00b7 or: ${info.match.others.join(', ')}` : ''}</span></div>`}
+      ${info && html`<div class="od-info">
+        ${info.summary && html`<p>${info.summary.replace(/<[^>]+>/g, '').slice(0, 420)}</p>`}
+        <div class="od-info-row">
+          ${info.year ? html`<span>📅 ${info.year}</span>` : ''}
+          ${info.episodes ? html`<span>📺 ${info.episodes} episode${info.episodes === 1 ? '' : 's'}${info.seasons > 1 ? ` · ${info.seasons} seasons` : ''}</span>` : ''}
+          ${info.duration ? html`<span>⏱ ${Math.round(info.duration / 60)} min</span>` : ''}
+          ${info.watched ? html`<span>✓ ${info.watched} watched</span>` : ''}
+          ${info.from && html`<span class="ell" title=${info.from}>${info.from}</span>`}
+        </div>
+        <div class="od-info-row muted">${info.on.length ? `Plays on: ${info.on.slice(0, 6).join(' · ')}${info.on.length > 6 ? ` +${info.on.length - 6}` : ''}` : 'Not on any channel yet — drag it onto one in the Library.'}${info.torrent && info.kept ? ' · 📌 kept' : ''}</div>
+      </div>`}
       <form class="row" style="gap:8px;margin-top:10px" onSubmit=${(e) => { e.preventDefault(); look(q); }}>
         <input class="input grow" value=${q} onInput=${(e) => setQ(e.target.value)} placeholder=${what.kind === 'show' ? 'Show name' : 'Movie name'} />
         <button class="btn" type="button" disabled=${busy || !q.trim() || q.trim() === what.name} onClick=${() => rename(q.trim())}>\u270f Rename</button>
@@ -379,8 +402,21 @@ export function ArtModal({ what, onClose, onDone, toast }) {
         ${suggest && html`<span>Found online: <b>\u201c${suggest}\u201d</b></span><button class="btn sm primary" disabled=${busy} onClick=${() => rename(suggest)}>\u2713 Use the correct name</button>`}
         ${what.renamed && html`<button class="btn sm" disabled=${busy} onClick=${() => rename('')}>\u21a9 Back to the original name</button>`}
       </div>`}
+      ${info?.od?.length > 0 && html`<h4 class="od-h4">Show it on</h4>
+        <div class="od-tags">${info.od.map((o) => html`<button class=${'chip' + (o.on ? ' on' : '')} disabled=${busy}
+          onClick=${() => tv.editOnDemand(what.target, o.id, !o.on).then((now) => { setInfo((i) => ({ ...i, od: i.od.map((x) => (x.id === o.id ? { ...x, on: now } : x)) })); toast(now ? `${o.style === 'series' ? '🍿' : '🎬'} On ${o.name}` : `Taken off ${o.name}`); }).catch((e) => toast(err(e)))}>
+          ${o.on ? '✓ ' : ''}${o.style === 'series' ? '🍿' : '🎬'} ${o.name}</button>`)}</div>`}
       <h4 class="od-h4">Tags</h4>
-      <div class="od-tags">${tagList.map((g) => html`<button class=${'chip' + (tags.includes(g) ? ' on' : '')} disabled=${busy} onClick=${() => toggleTag(g)}>${tags.includes(g) ? '\u2713 ' : ''}${g}</button>`)}</div>
+      ${(() => {
+        const groups = [['Genres', TAGS], ...(what.kind === 'show' ? [['TV', TV_TAGS], ['Movies', MOVIE_TAGS]] : [['Movies', MOVIE_TAGS], ['TV', TV_TAGS]]), ['Anime', ANIME_TAGS]];
+        const known = new Set(groups.flatMap((g) => g[1]));
+        const own = tags.filter((g) => !known.has(g));
+        const chip = (g) => html`<button class=${'chip' + (tags.includes(g) ? ' on' : '')} disabled=${busy} onClick=${() => toggleTag(g)}>${tags.includes(g) ? '\u2713 ' : ''}${g}</button>`;
+        return html`${groups.map(([title, list]) => html`<div class="od-tag-group"><span class="od-tag-title">${title}</span><div class="od-tags">${list.map(chip)}</div></div>`)}
+          <div class="od-tag-group"><span class="od-tag-title">Your own</span><div class="od-tags">${own.map(chip)}
+            <form class="row" style="gap:6px" onSubmit=${(e) => { e.preventDefault(); const v = e.currentTarget.elements.t.value.trim(); if (v && !tags.includes(v)) toggleTag(v); e.currentTarget.reset(); }}><input class="input sm" name="t" placeholder="New tag…" style="width:140px" /><button class="btn sm" type="submit">+ Add</button></form></div></div>`;
+      })()}
+      <div class="od-tags" hidden>${tagList.map((g) => html`<button class=${'chip' + (tags.includes(g) ? ' on' : '')} disabled=${busy} onClick=${() => toggleTag(g)}>${tags.includes(g) ? '\u2713 ' : ''}${g}</button>`)}</div>
       ${what.kind === 'movie' && html`
         <h4 class="od-h4">Not a movie?</h4>
         <div class="row" style="gap:8px">
@@ -389,12 +425,22 @@ export function ArtModal({ what, onClose, onDone, toast }) {
         </div>
         ${lookalikes.length > 0 && html`<label class="row small muted" style="gap:8px;justify-content:flex-start;margin-top:6px;cursor:pointer"><input type="checkbox" checked=${withOthers} onChange=${(e) => setWithOthers(e.target.checked)} /> Also move the ${lookalikes.length} other video${lookalikes.length === 1 ? '' : 's'} that look like \u201c${showName.trim()}\u201d into it</label>`}`}
       ${what.movedIds?.length > 0 && html`<button class="btn sm" style="margin-top:10px" onClick=${unmove}>\u21a9 Put ${what.movedIds.length} moved video${what.movedIds.length === 1 ? '' : 's'} back where ${what.movedIds.length === 1 ? 'it' : 'they'} came from</button>`}
-      ${cands === 'looking' ? html`<div class="muted" style="padding:16px 0">Looking for pictures\u2026</div>`
-        : html`<div class="od-art-grid">
-          ${cands.map((c) => html`<button class="od-art-cand" disabled=${busy} title=${c.label} onClick=${() => use({ url: c.url })}><img src=${c.url} loading="lazy" alt="" /><span>${c.label}</span></button>`)}
-          ${!cands.length && html`<div class="muted" style="grid-column:1/-1">Nothing found online \u2014 try different words, or use a picture file from this PC.</div>`}
+      ${cands === 'looking' ? html`<div class="muted" style="padding:16px 0">Looking it up a few ways (IMDb, TVmaze, iTunes, Wikipedia)\u2026</div>`
+        : html`<div class="od-art-pick">
+          ${cands[0] && html`<button class="od-art-best" disabled=${busy} title=${cands[0].label} onClick=${() => use({ url: cands[0].url })}>
+            <img src=${cands[0].url} alt="" />
+            <span class="od-best-tag">${cands[0].best ? (cands[0].sure === 'sure' || cands[0].sure === 'likely' ? '\u2605 Most likely' : '\u2605 Best guess') : '\u2605 Closest'}</span>
+            <span class="od-best-label">${cands[0].label}</span>
+            <span class="btn sm primary">\u2713 Use this cover</span></button>`}
+          <div class="od-art-grid">
+            ${cands.slice(1).map((c) => html`<button class="od-art-cand" disabled=${busy} title=${c.label} onClick=${() => use({ url: c.url })}><img src=${c.url} loading="lazy" alt="" /><span>${c.label}</span></button>`)}
+            ${!cands.length && html`<div class="muted" style="grid-column:1/-1">Nothing matched online under any spelling \u2014 type the name the way it\u2019s known above and press Find, or use a picture file from this PC.</div>`}
+          </div>
         </div>`}
-      <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn ghost" onClick=${onClose}>Done</button></div>
+      <div class="row" style="justify-content:flex-end;margin-top:12px;gap:8px">
+        ${(what.actions || []).map((a) => html`<button class="btn sm" disabled=${busy} onClick=${async () => { setBusy(true); try { await a.run(); } finally { setBusy(false); } if (/Hide|Show it again/.test(a.label)) onDone(); }}>${a.label}</button>`)}
+        <span class="grow"></span>
+        <button class="btn primary" onClick=${onClose}>Done</button></div>
     </div></div></div>`;
 }
 

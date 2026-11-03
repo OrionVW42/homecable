@@ -118,6 +118,7 @@ function App() {
   const [avMenu, setAvMenu] = useState(false); // Audio & subtitles picker while watching
   const [mini, setMini] = useState(false); // pop-out always-on-top mini player
   const miniDrag = useRef(null); // dragging the pop-out by its top edge
+  const [torrentDone, setTorrentDone] = useState(null); // { id, name } — the "finished downloading" note up top
   const [miniBig, setMiniBig] = useState(false); // the pop-out grown to guide size while a menu is open
   useEffect(() => {
     if (!mini) { setMiniBig(false); return; }
@@ -152,6 +153,8 @@ function App() {
       tv.onEnrichProgress((p) => setEnrichProgress(p.n >= p.total ? null : p)),
       tv.onFullscreen(setFullscreen),
       tv.onToast((m) => toast(m)),
+      // A torrent finished downloading: say so up top, with a one-press "stop sharing".
+      tv.onTorrentDone?.((d) => setTorrentDone(d)),
       // An update was found: a quiet note top-left for a moment. It downloads by
       // itself without touching what's playing, and installs on the next restart.
       tv.onUpdateToast(({ version }) => { setUpdMsg(version); clearTimeout(timers.current.upd); timers.current.upd = setTimeout(() => setUpdMsg(null), 8000); }),
@@ -645,6 +648,11 @@ function App() {
       <button class="mini-ctl play" title="Pause / play" onClick=${() => { player.current.togglePause?.(); poke(); }}>${player.current.paused ? '▶' : '❚❚'}</button>
       <button class="mini-ctl" title="Forward 10 seconds" onClick=${() => { player.current.seekBy?.(10); poke(); }}>10⟳</button>
       <button class="mini-ctl" title="Back to the full window (P)" onClick=${() => tv.miniMode(false)}>⛶</button>
+    </div>`}
+    ${torrentDone && html`<div class="tor-done" role="status">
+      <span>✅ <b>${torrentDone.name}</b> finished downloading — it’s still sharing with others.</span>
+      <button class="btn sm primary" onClick=${() => { tv.torrentStop(torrentDone.id).then(() => toast('⏹ Stopped sharing — it plays from your PC now')).catch((e) => toast(String(e.message || e))); setTorrentDone(null); }}>⏹ Stop sharing</button>
+      <button class="btn sm" onClick=${() => setTorrentDone(null)}>Keep sharing</button>
     </div>`}
     ${settings.muted && !overlay && channels.length > 0 && html`<div class="mute-badge" title="Muted (M / B)"><${Icon.mute} /></div>`}
     ${settings.showClock && !overlay && !chrome && channels.length > 0 && html`<div class="clock">${new Date(clock).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</div>`}

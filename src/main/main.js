@@ -38,6 +38,16 @@ if (!BOOT && !app.requestSingleInstanceLock()) { app.quit(); return; }
 
 let win, store, lib, sched, media, channels, settings, profiles, updater, sleepBlock = null;
 let torrents = null; // torrent sources (src/main/torrents.js); started once there are any
+let nowPlayingItem = null; // the video on screen right now (the torrent clean-up never removes it)
+// Running an updated version (app-versions\<v>\app.asar)? Its native parts (ffmpeg, the torrent
+// engine's add-ons) must sit beside it — an older launcher may not have put a copy there (1.6.0's
+// didn't), so this version makes sure itself, before anything loads them.
+{
+  const asar = path.resolve(__dirname, '..', '..');
+  if (app.isPackaged && process.resourcesPath && !asar.toLowerCase().startsWith(path.resolve(process.resourcesPath).toLowerCase())) {
+    try { require('../boot/core').ensureUnpacked(path.dirname(asar)); } catch {}
+  }
+}
 const logFile = () => path.join(app.getPath('userData'), 'homecable.log');
 function log(...a) {
   const line = `[${new Date().toISOString()}] ${a.join(' ')}\n`;
@@ -45,7 +55,7 @@ function log(...a) {
   if (!app.isPackaged) process.stdout.write(line);
 }
 
-const DEFAULT_SETTINGS = { setupDone: false, onlineMeta: true, transitions: true, showClock: true, volume: 0.9, muted: false, lastChannel: null, prevChannel: null, bannerSeconds: 5, lockChannel: null, startFullscreen: false, brightness: 1, fit: 'fit',
+const DEFAULT_SETTINGS = { torrentLimitGB: 100, torrentMaxActive: 3, torrentCleanSeries: 'watched', torrentCleanMovies: 'watched', torrentStopSeeding: false, torrentToOnDemand: true, torrentKeep: [], setupDone: false, onlineMeta: true, transitions: true, showClock: true, volume: 0.9, muted: false, lastChannel: null, prevChannel: null, bannerSeconds: 5, lockChannel: null, startFullscreen: false, brightness: 1, fit: 'fit',
   // auto / manual / in-between
   newMedia: 'auto',          // 'auto' = onto channels · 'review' = inbox first · 'library' = library only
   scanInterval: '6h',        // 'off' | '1h' | '6h' | '24h' (folders are also watched live)
@@ -619,7 +629,29 @@ function tune(id, atTime, opts = {}) {
       play: st ? { mode: 'live', url: media.liveUrl(st.id, ++liveSeq), offset: 0, startedAt: 0, audioOnly: !!st.iptv.audioOnly } : null };
   }
   const item = entry.itemId ? lib.items[entry.itemId] : null;
+  if (item?.torrent) torrents?.focus(item.id).catch(() => {});
   return { channel: ch, entry: describe(entry), next: describe(next), offset, play: item ? playFor(item, offset, opts) : null, now, at: t, earliest };
+}
+
+// Torrent videos join the On Demand screens by themselves: shows → Stream Demand, movies →
+// On Demand (a "from torrents" source on each), then that screen looks everything up by
+// name — real titles, posters, genres and tags.
+let odTagBusy = false;
+async function torrentsToOnDemand() {
+  let changed = false;
+  const want = [['series', 'episode', 'Shows from torrents'], ['movies', 'movie', 'Movies from torrents']];
+  const touched = [];
+  for (const [style, kind, label] of want) {
+    const ch = channels.find((c) => c.ondemand && (c.odStyle || 'movies') === style && !c.locked);
+    if (!ch) continue;
+    if (!ch.sources.some((s) => s.type === 'torrent' && s.kind === kind)) { ch.sources.push({ type: 'torrent', kind, label }); changed = true; }
+    touched.push(ch.id);
+  }
+  if (changed) { saveChannels(); send('channels-changed'); }
+  if (odTagBusy || !touched.length) return;
+  odTagBusy = true;
+  try { for (const id of touched) await handlerFns['meta:refresh']?.(id).catch((e) => log('torrent tags', e.message)); send('library-changed', libraryStats()); }
+  finally { odTagBusy = false; }
 }
 
 let adSync = { at: 0, error: null, count: 0 };
@@ -976,7 +1008,7 @@ function createWindow() {
 function handlers() {
   // Changing things is for grown-ups; watching is for everyone.
   const ADMIN = new Set(['channels:create', 'channels:update', 'channels:delete', 'channels:renumber', 'channels:setNumber', 'channels:addSources', 'channels:related', 'channels:logoPick', 'live:mix', 'live:renumber',
-    'iptv:add', 'iptv:auto', 'iptv:removeDead', 'iptv:checkAll', 'iptv:recheck', 'iptv:addOne', 'iptv:autoRemove', 'channels:hide', 'free:add', 'sources:add', 'sources:removeServer', 'torrents:add', 'torrents:pause', 'torrents:resume', 'torrents:files', 'torrents:remove', 'torrents:openFolder', 'torrents:pickFile', 'library:scan', 'library:rescan',
+    'iptv:add', 'iptv:auto', 'iptv:removeDead', 'iptv:checkAll', 'iptv:recheck', 'iptv:addOne', 'iptv:autoRemove', 'channels:hide', 'free:add', 'sources:add', 'sources:removeServer', 'torrents:add', 'torrents:pause', 'torrents:resume', 'torrents:stop', 'torrents:keep', 'torrents:priority', 'edit:onDemand', 'torrents:files', 'torrents:remove', 'torrents:openFolder', 'torrents:pickFile', 'library:scan', 'library:rescan',
     'library:removeFolder', 'library:approve', 'library:scanAll', 'library:pickFolders', 'import:legacy', 'ads:makePack', 'ads:pickFolder', 'ads:sync', 'ads:packAdd', 'ads:packsOpen', 'ads:rescanPacks', 'guides:refresh',
     'profiles:upsert', 'profiles:remove', 'profiles:setLock', 'profiles:ask', 'ondemand:useFolder', 'ondemand:pickFolder', 'art:set', 'art:candidates', 'art:pickFile', 'meta:refresh', 'meta:refreshAll', 'name:set', 'show:move', 'show:make', 'tags:set', 'items:hide', 'app:startOver', 'vault:create', 'vault:update', 'vault:remove', 'phone:enable', 'phone:pairStart', 'phone:forget', 'phone:setLevel']);
   const VIEWER_SETTINGS = new Set(['volume', 'muted', 'brightness', 'fit', 'lastChannel', 'prevChannel', 'arcadeScores', 'castAuto', 'castHinted', 'vodResume', 'vodWatched', 'castMode', 'showLast', 'subMode', 'subLang', 'audioPref', 'liveCaptions']);
@@ -1063,6 +1095,9 @@ function handlers() {
     saveSettings();
     if ('newArrivals' in patch) ensureNewArrivals();
     if ('torrentInterface' in patch) torrents?.setInterface(settings.torrentInterface || '').catch((e) => log('torrents', e.message));
+    if ('torrentMaxActive' in patch) torrents?._schedule().catch(() => {});
+    if ('torrentLimitGB' in patch || 'torrentCleanSeries' in patch || 'torrentCleanMovies' in patch) torrents?.enforceLimit().catch((e) => log('torrents', e.message));
+    if (patch.torrentToOnDemand) torrentsToOnDemand().catch(() => {});
     if (AD_KEYS.some((k) => k in patch) || 'adPacks' in patch || 'bumpersOn' in patch || 'bumperSeconds' in patch) {
       if ('adFeed' in patch || ('adsOn' in patch && settings.adsOn)) await syncAds();
       if ('adFolder' in patch && settings.adFolder) { await lib.scan([settings.adFolder], { prune: false, policy: 'auto', minBytes: 64 * 1024 }); adsLib.markFolder(lib, settings.adFolder); }
@@ -1471,48 +1506,14 @@ function handlers() {
   // ---- Changing a movie's or a show's picture by hand (hold a poster on the wall) ----
   const uaHeaders = { 'User-Agent': 'HomeCable/1.0 (home media player)', Accept: 'application/json' };
   // Names from folders carry release junk ("S01-S06", "1080p", "x265") — lookups search without it.
-  const lookupName = (s) => String(s || '').replace(/[\[(].*?[\])]/g, ' ')
-    .replace(/\b(s\d{1,2}(?:-s?\d{1,2})?|seasons? \d+(?:-\d+)?|complete|collection|pack|batch|\d{3,4}p|[48]k|x26[45]|h26[45]|hevc|avc|aac|ac3|bluray|brrip|webrip|web[- ]?dl|dvdrip|hdtv|remux|remaster(?:ed)?|uncut|extended|dual[- ]?audio|multi[- ]?subs?|subbed|dubbed|dub|eng|jpn)\b/gi, ' ')
-    .replace(/[._]+/g, ' ').replace(/\s{2,}/g, ' ').replace(/[\s\-–—]+$/, '').trim();
+  // Names from folders carry release junk ("S01-S06", "1080p", "x265") — lookups search without it.
+  const { lookupName, identify } = require('./identify');
   h('art:candidates', async (q) => {
     // q: { kind: 'movie' | 'show', name, year } — only the name (and year) is sent.
-    const out = [];
-    const seen = new Set();
-    q = { ...q, name: lookupName(q.name) || String(q.name || '') };
-    if (q.kind === 'show') {
-      const r = await fetch('https://api.tvmaze.com/search/shows?q=' + encodeURIComponent(q.name), { signal: AbortSignal.timeout(10000), headers: uaHeaders });
-      if (r.ok) for (const x of await r.json()) {
-        const img = x.show?.image?.original || x.show?.image?.medium;
-        if (img && !seen.has(img)) { seen.add(img); out.push({ url: img, name: x.show.name, label: [x.show.name, (x.show.premiered || '').slice(0, 4)].filter(Boolean).join(' · ') }); }
-      }
-    } else {
-      const tryPage = async (p) => {
-        try {
-          const j = await (await fetch('https://en.wikipedia.org/api/rest_v1/page/summary/' + encodeURIComponent(p.replace(/ /g, '_')), { signal: AbortSignal.timeout(10000), headers: uaHeaders })).json();
-          const img = j.originalimage?.source || j.thumbnail?.source;
-          const url = img && (j.thumbnail?.source || img).replace(/\/\d+px-/, '/500px-');
-          if (j.type === 'standard' && url && !seen.has(url)) { seen.add(url); out.push({ url, name: j.title.replace(/\s*\((\d{4} )?film\)\s*$/i, ''), label: [j.title, j.description].filter(Boolean).join(' — ') }); }
-        } catch {}
-      };
-      if (q.year) await tryPage(`${q.name} (${q.year} film)`);
-      await tryPage(`${q.name} (film)`);
-      await tryPage(q.name);
-      try {
-        // The REST search endpoint (api.php turns Electron's requests away).
-        const s = await (await fetch('https://en.wikipedia.org/w/rest.php/v1/search/page?' + new URLSearchParams({ q: `${q.name} ${q.year || ''} film`.trim(), limit: '8' }), { signal: AbortSignal.timeout(10000), headers: uaHeaders })).json();
-        for (const r2 of s.pages || []) await tryPage(r2.title);
-      } catch {}
-      // Stubborn movies: a second, plainer search pass (no 'film' bias), so big
-      // titles whose article isn't worded that way still turn up.
-      if (out.length < 4) {
-        try {
-          const s2 = await (await fetch('https://en.wikipedia.org/w/rest.php/v1/search/page?' + new URLSearchParams({ q: q.name, limit: '8' }), { signal: AbortSignal.timeout(10000), headers: uaHeaders })).json();
-          for (const r3 of s2.pages || []) await tryPage(r3.title);
-        } catch {}
-        if (/^the /i.test(q.name)) await tryPage(q.name.replace(/^the /i, ''));
-      }
-    }
-    return out.slice(0, 18);
+    // The name is tried several ways against IMDb, TVmaze, iTunes and Wikipedia; the most
+    // probable match's cover comes first (best: true), then the other matches' covers.
+    const r = await identify({ kind: q.kind === 'show' ? 'show' : 'movie', name: String(q.name || ''), year: q.year || null }).catch(() => ({ images: [], best: null }));
+    return r.images.slice(0, 18).map((i) => ({ url: i.url, name: i.name, label: i.label, source: i.source, best: i.best, sure: i.sure }));
   });
   // "Update show & movie info": look everything on this wall up by name — genres,
   // posters, anime and all. Runs by itself for auto libraries (new finds get info as
@@ -1559,6 +1560,10 @@ function handlers() {
         if (needG && !(it.genres || []).length) {
           const hit = await artwork.wikipediaPoster(it.title, it.year).catch(() => null);
           if (hit?.genres?.length) { it.genres = hit.genres; got = true; }
+          else { // not on Wikipedia under that name: ask everywhere, under every spelling
+            const r = await identify({ name: it.title, kind: 'movie', year: it.year || null }).catch(() => null);
+            if (r?.best?.genres?.length && r.best.score >= 0.75) { it.genres = r.best.genres; if (!it.year && r.best.year) it.yearFound = r.best.year; got = true; }
+          }
           it.genresTried = Date.now();
         }
       } catch (e) { if (e.offline) break; }
@@ -1603,6 +1608,63 @@ function handlers() {
     return { ok: true };
   });
   // Tags turned on/off by hand — kept even when info is looked up again.
+  // Everything the editor shows about one show or movie (right-click in the Library):
+  // suggested tags (looked up by name online), what it is, where it's from, where it plays.
+  h('edit:details', async (target) => {
+    const show = target?.showKey ? lib.shows().find((x) => x.key === target.showKey) : null;
+    const it = target?.itemId ? lib.items[target.itemId] : null;
+    if (!show && !it) return null;
+    const eps = show ? lib.episodesOf(show.key) : [];
+    const items = show ? eps : [it];
+    const meta = show ? lib.meta[show.key] || {} : {};
+    const name = show ? meta.nameOverride || show.name : it.title;
+    // What it most probably is (name tried several ways, checked against several sources).
+    let suggest = [], match = null;
+    try {
+      const r = await identify({ name, kind: show ? 'show' : 'movie', year: show ? null : it.year || null });
+      if (r.best) {
+        const b = r.best;
+        match = { name: b.name, year: b.year, confidence: b.confidence, sources: b.sources, summary: b.summary || null, others: r.matches.slice(1, 4).map((m) => [m.name, m.year].filter(Boolean).join(' · ')) };
+        suggest = [...(b.genres || [])];
+        if (b.kind === 'movie' && !show) suggest.push(...(b.year && b.year < 1980 ? ['Classic'] : []));
+      }
+    } catch {}    const have = show ? meta.genres || [] : it.genres || [];
+    suggest = [...new Set(suggest)].filter((g) => !have.includes(g)).slice(0, 10);
+    // Where it plays: every channel (and On Demand screen) whose sources include it.
+    const ids = new Set(items.map((x) => x.id));
+    const on = [];
+    for (const ch of sortedChannels()) {
+      if (ch.iptv) continue;
+      try { const got = ch.ondemand ? onDemandItems(ch, false) : ch.sources.flatMap((s) => lib.resolve(s)); if (got.some((x) => ids.has(x.id))) on.push(`${ch.number} ${ch.name}`); } catch {}
+    }
+    const first = items[0];
+    const tor = first?.torrent ? torrents?.saved.find((r) => r.infoHash === first.torrent.infoHash) : null;
+    const from = tor ? `🧲 Torrent · ${tor.name}` : first?.remote ? `🌐 ${lib.servers.find((s) => s.id === first.server)?.name || 'Network'}` : first ? `📁 ${path.dirname(first.path)}` : '';
+    return {
+      kind: show ? 'show' : it.kind, name, year: show ? null : it.year || match?.year || null, summary: (show ? meta.summary : it.summary) || match?.summary || null, match,
+      episodes: eps.length, seasons: show ? new Set(eps.map((e) => e.season ?? 1)).size : 0, duration: items.reduce((n, x) => n + (x.duration || 0), 0),
+      watched: items.filter((x) => settings.vodWatched?.[x.id]).length, from, on, suggest, tags: have,
+      od: channels.filter((c) => c.ondemand && !c.locked).map((c) => ({ id: c.id, name: c.name, style: c.odStyle || 'movies', on: onDemandItems(c, false).some((x) => ids.has(x.id)) })),
+      torrent: !!tor, kept: tor ? !!torrents.isKept(first) || (show && (settings.torrentKeep || []).includes('show:' + show.key)) : false,
+    };
+  });
+  // The editor's "Show it on" switches: put a show / movie on an On Demand or Stream Demand
+  // screen, or take it off (even when a folder or torrent source would bring it there).
+  h('edit:onDemand', (target, chId, on) => {
+    const ch = channels.find((c) => c.id === chId && c.ondemand && !c.locked);
+    if (!ch) throw new Error('No such On Demand screen');
+    const key = target.showKey ? 'show:' + target.showKey : 'item:' + target.itemId;
+    const mine = (s) => (target.showKey ? s.type === 'show' && s.key === target.showKey : s.type === 'item' && s.id === target.itemId);
+    ch.exclude = (ch.exclude || []).filter((x) => x !== key);
+    ch.sources = ch.sources.filter((s) => !mine(s));
+    const ids = new Set((target.showKey ? lib.episodesOf(target.showKey) : [lib.items[target.itemId]]).filter(Boolean).map((x) => x.id));
+    const there = () => onDemandItems(ch, false).some((x) => ids.has(x.id));
+    if (on && !there()) ch.sources.push(target.showKey ? { type: 'show', key: target.showKey, label: target.name || 'Show' } : { type: 'item', id: target.itemId, label: lib.items[target.itemId]?.title || 'Movie' });
+    if (!on && there()) ch.exclude.push(key);
+    saveChannels();
+    send('channels-changed');
+    return there();
+  });
   h('tags:set', (target, genres) => {
     const list = [...new Set((Array.isArray(genres) ? genres : []).map((g) => String(g).trim()).filter(Boolean))].slice(0, 20);
     if (target.itemId) {
@@ -1711,6 +1773,19 @@ function handlers() {
   h('torrents:list', () => torrents?.list() || []);
   h('torrents:add', (link) => torrents.add(link, { policy: settings.setupDone ? settings.newMedia : 'auto' }));
   h('torrents:pause', (id) => torrents.pause(id));
+  // Stop: no more downloading or sharing; finished videos keep playing from disk.
+  h('torrents:stop', (id) => torrents.stop(id));
+  h('torrents:priority', (id, p) => torrents.setPriority(id, String(p)));
+  // Keep (never cleaned up by the storage limit): a torrent ('torrent:<hash>'), a show ('show:<key>') or one video (its id).
+  h('torrents:keep', (key, on) => {
+    const k = String(key || '');
+    const cur = new Set(settings.torrentKeep || []);
+    if (on) cur.add(k); else cur.delete(k);
+    settings.torrentKeep = [...cur].slice(-2000);
+    saveSettings();
+    return settings.torrentKeep;
+  });
+  h('torrents:usage', () => torrents?.usage() || { bytes: 0, limitBytes: (settings.torrentLimitGB ?? 100) * 1e9 });
   h('torrents:resume', (id) => torrents.resume(id));
   h('torrents:files', (id, paths) => torrents.setFiles(id, Array.isArray(paths) ? paths.map(String) : []));
   h('torrents:remove', (id, opts) => torrents.remove(id, { keepFiles: !!opts?.keepFiles }));
@@ -1728,6 +1803,7 @@ function handlers() {
     const next = it.showKey ? lib.episodesOf(it.showKey).find((e, i, a) => a[i - 1]?.id === it.id) : null;
     // Anime gets the guessed 90-second "Skip intro" (that timing is an anime OP thing).
     const anime = [...(lib.meta[it.showKeyUser || it.showKey]?.genres || []), ...(it.genres || [])].includes('Anime');
+    if (it.torrent) torrents?.focus(it.id).catch(() => {}); // this one first, the next episode right behind it
     return { item: itemSummary(it), next: next ? itemSummary(next) : null, anime, play: playFor(it, t, opts), now: Date.now() };
   });
 
@@ -2116,7 +2192,7 @@ function handlers() {
   h('phone:pairStop', () => phone.pairStop());
   h('phone:forget', (id) => phone.forget(id));
   h('phone:setLevel', (id, level) => phone.setLevel(id, level));
-  h('remote:now', (n) => { phone.setNow(n); });
+  h('remote:now', (n) => { phone.setNow(n); nowPlayingItem = n?.itemId || null; });
   h('audio:remember', (key, lang) => { settings.audioChoice = { ...(settings.audioChoice || {}), [key]: lang }; saveSettings(); });
   h('subs:remember', (key, choice) => { settings.subChoice = { ...(settings.subChoice || {}), [key]: choice }; saveSettings(); subsCache.clear(); });
   h('app:startOver', () => {
@@ -2386,7 +2462,13 @@ app.whenReady().then(async () => {
   applyVault();
   media.item = (id) => lib.items[id] || null;
   // Torrents play while they download; saved ones come back at start.
-  torrents = new Torrents(lib, { dir: path.join(app.getPath('userData'), 'torrents'), store, log, iface: () => settings.torrentInterface || '' });
+  torrents = new Torrents(lib, {
+    dir: path.join(app.getPath('userData'), 'torrents'), store, log, iface: () => settings.torrentInterface || '',
+    settings: () => settings, send, playing: () => nowPlayingItem,
+    // New torrent videos: shows go to Stream Demand, movies to On Demand (Settings → Torrents),
+    // then everything there is looked up by name — posters, genres, tags.
+    onNew: () => { if (settings.torrentToOnDemand !== false) torrentsToOnDemand().catch((e) => log('torrents → On Demand', e.message)); },
+  });
   if (torrents.saved.length) torrents.start().catch((e) => log('torrents', e.message));
   // What a kids/teens phone may play: everything on the channels its level can see (cached briefly).
   const phoneAllow = { at: 0, kids: null, teens: null };

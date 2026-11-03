@@ -1,18 +1,17 @@
-// Optional online lookup of show genres / posters / summaries via TVmaze
-// (free, no API key). Only show names are sent. Results cache in library.meta.
+// Optional online lookup of show genres / posters / summaries. The name is tried several
+// ways and checked against TVmaze, IMDb, iTunes and Wikipedia (identify.js) — the most
+// probable match wins. Only show names are sent. Results cache in library.meta.
+const { identify } = require('./identify');
+
 async function lookupShow(name) {
-  const res = await fetch('https://api.tvmaze.com/singlesearch/shows?q=' + encodeURIComponent(name), { signal: AbortSignal.timeout(10000) });
-  if (res.status === 404) return { notFound: true, at: Date.now(), language: null };
-  if (!res.ok) throw new Error('TVmaze ' + res.status);
-  const j = await res.json();
-  const genres = [...(j.genres || [])];
-  // "Anime" isn't a TVmaze genre: an animated, Japanese-language show is one.
-  if (j.type === 'Animation' && !genres.includes('Animation')) genres.push('Animation');
-  if (j.type === 'Animation' && j.language === 'Japanese' && !genres.includes('Anime')) genres.unshift('Anime');
+  let r;
+  try { r = await identify({ name, kind: 'show' }); } catch (e) { throw new Error(e.offline ? 'fetch failed' : String(e.message || e)); }
+  const b = r.best;
+  if (!b) return { notFound: true, at: Date.now(), language: null };
   return {
-    id: j.id, name: j.name, genres, type: j.type, language: j.language || null, premiered: j.premiered,
-    poster: j.image?.medium || null, network: j.network?.name || j.webChannel?.name || null,
-    summary: (j.summary || '').replace(/<[^>]+>/g, '').slice(0, 400), at: Date.now(),
+    id: b.tvmazeId || null, name: b.name, genres: b.genres || [], type: b.type || null, language: b.language || null, premiered: b.premiered || (b.year ? String(b.year) : null),
+    poster: b.poster || null, network: b.network || null, summary: (b.summary || '').slice(0, 400), at: Date.now(),
+    anime: (b.genres || []).includes('Anime'), confidence: b.confidence, sources: b.sources,
   };
 }
 

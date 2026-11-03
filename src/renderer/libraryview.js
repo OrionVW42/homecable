@@ -145,11 +145,19 @@ export function LibraryPanel({ stats, channels, setChannels, onPlay, onEdit, toa
       .catch((e) => toast(String(e.message || e).replace(/^Error invoking remote method '[^']+': Error: /, '')))
       .finally(() => setTagging(false));
   };
-  const editShow = (s) => setEdit({ kind: 'show', name: s.name, year: null, genres: s.genres || [], renamed: !!s.renamed, target: { showKey: s.key, name: s.name } });
-  const editItem = (it) => setEdit({ kind: 'movie', name: it.title, year: it.year, genres: it.genres || [], renamed: !!it.renamed, target: { itemId: it.id }, others: list.filter((x) => x.id !== it.id).map(({ id, title }) => ({ id, title })) });
+  // The editor (✏ on any picture): name, pictures, tags, where it shows — plus hide, and 📌 keep for torrent videos.
+  const fromTorrent = (x) => String(x?.server || '').startsWith('torrent:');
+  const keepAction = (key) => ({ label: '📌 Keep (never auto-delete)', run: () => tv.torrentKeep(key, true).then(() => toast('📌 Kept — the torrent storage limit won’t delete it')) });
+  const editShow = (s) => {
+    const torrentShow = items.some((it) => it.showKey === s.key && fromTorrent(it));
+    setEdit({ kind: 'show', name: s.name, year: null, genres: s.genres || [], renamed: !!s.renamed, target: { showKey: s.key, name: s.name },
+      actions: [...(torrentShow ? [keepAction('show:' + s.key)] : []), { label: '🚫 Hide this show', run: () => hideShow(s) }] });
+  };
+  const editItem = (it) => setEdit({ kind: 'movie', name: it.title, year: it.year, genres: it.genres || [], renamed: !!it.renamed, target: { itemId: it.id }, others: list.filter((x) => x.id !== it.id).map(({ id, title }) => ({ id, title })),
+    actions: [...(fromTorrent(it) ? [keepAction(it.id)] : []), view === 'hidden' ? { label: '👁 Show it again', run: () => hideToggle(it, false) } : { label: '🚫 Hide it', run: () => hideToggle(it, true) }] });
   const nav = (v) => { setView(v); setShow(null); };
-  // Right-click any video to hide it everywhere (channels and walls too); it waits
-  // under Library -> Hidden, where a right-click (or the eye button) brings it back.
+  // Right-click any video to hide it everywhere (channels and walls too) — quick for things you don't want.
+  // It waits under Library -> Hidden, where a right-click (or 👁) brings it back. ✏ opens the editor.
   const hideToggle = async (it, on) => {
     await tv.itemsHide([it.id], on).catch((e) => toast(String(e.message || e).replace(/^Error invoking remote method '[^']+': Error: /, '')));
     toast(on ? `🚫 “${it.title}” is hidden — find it under Hidden` : `👁 “${it.title}” is back`);
@@ -227,7 +235,7 @@ export function LibraryPanel({ stats, channels, setChannels, onPlay, onEdit, toa
                 onContextMenu=${(e) => { if (!isAdult) return; e.preventDefault(); hideShow(s); }}
                 onDragStart=${(e) => startDrag(e, id, showSrc(s))} onClick=${(e) => (e.ctrlKey || e.shiftKey ? clickSel(id, e) : setShow(s))} tabindex="0">
               <div class=${'lib-art' + (s.poster ? ' tall' : '')}><${Thumb} item=${first} thumb=${thumb} poster=${s.poster} /><span class="lib-tag">${s.count} ep</span>
-                ${isAdult && html`<button class="lib-edit" title="Edit name, picture & tags" onClick=${(e) => { e.stopPropagation(); editShow(s); }}>✏</button>`}</div>
+                ${isAdult && html`<button class="lib-edit" title="Edit name, picture & tags" onClick=${(e) => { e.stopPropagation(); editShow(s); }}>✏ Edit</button>`}</div>
               <div class="lib-cap"><b>${s.name}</b><span>${s.seasons > 1 ? s.seasons + ' seasons · ' : ''}~${fmtDur(s.avg)}</span></div></div>`; })}
             ${list.slice(0, limit).map((it, i, arr) => html`
               ${view === 'all' && bandOf(it) > 0 && (i === 0 || bandOf(arr[i - 1]) !== bandOf(it)) && html`<div class="lib-sec">${BAND_LABEL[bandOf(it)]}</div>`}
@@ -237,7 +245,7 @@ export function LibraryPanel({ stats, channels, setChannels, onPlay, onEdit, toa
               <div class="lib-art"><${Thumb} item=${it} thumb=${thumb} />
                 ${view === 'hidden' ? html`<button class="lib-play" title="Show it again" onClick=${(e) => { e.stopPropagation(); hideToggle(it, false); }}>👁</button>`
                   : html`<button class="lib-play" title="Play now" onClick=${(e) => { e.stopPropagation(); onPlay(it.id); }}><${Icon.play} /></button>`}
-                ${isAdult && html`<button class="lib-edit" title="Edit name, picture & tags" onClick=${(e) => { e.stopPropagation(); editItem(it); }}>✏</button>`}
+                ${isAdult && html`<button class="lib-edit" title="Edit name, picture & tags" onClick=${(e) => { e.stopPropagation(); editItem(it); }}>✏ Edit</button>`}
                 <span class="lib-tag">${fmtDur(it.duration)}</span>${it.status === 'pending' && html`<span class="lib-tag new">NEW</span>`}</div>
               <div class="lib-cap"><b>${it.title}</b><span>${[it.show && epLabel(it), it.year, it.remote ? '🌐' : ''].filter(Boolean).join(' · ') || it.kind}</span></div></div>`)}
           </div>

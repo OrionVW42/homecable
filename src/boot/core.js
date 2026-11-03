@@ -166,7 +166,7 @@ function installed(shell) {
     const asar = path.join(root, n, 'app.asar');
     let st = null; try { st = fs.statSync(asar); } catch {}
     if (!meta || meta.version !== n || !st || (meta.size && st.size !== meta.size)) continue;
-    dropLink(path.join(root, n, 'app.asar.unpacked')); // 1.4.10-1.4.11 put a link here: take it away (see below)
+    dropLink(path.join(root, n, 'app.asar.unpacked')); // 1.4.10-1.4.11 put a link here: take it away (see below; our own copies are real folders)
     out.push({ version: n, dir: asar, shell: meta.shell, notes: meta.notes || '', matches: !!shell && meta.shell === shell });
   }
   return out.sort((a, b) => (newer(a.version, b.version) ? -1 : 1));
@@ -184,10 +184,46 @@ function dropLink(p) {
     try { fs.rmdirSync(p); } catch { fs.unlinkSync(p); }
   } catch {}
 }
-// Remove one version's folder WITHOUT ever recursing: its link (if any), its own files,
-// then the folder itself only if it is empty. Anything unexpected is simply left.
+// The installed program's native parts — ffmpeg, and since 1.6.0 the torrent engine's
+// add-ons (node-datachannel & co.) — live in resources\app.asar.unpacked, and Electron
+// looks for them NEXT TO whichever app.asar is running. A downloaded version therefore
+// gets its own COPY (same shell = the very same files). A copy, never a link: deleting a
+// version's copy can't reach the installed program (the 1.4.11 lesson).
+const COPY_MARK = '.homecable-copy.json';
+function ensureUnpacked(dir) {
+  try {
+    const src = process.resourcesPath ? path.join(process.resourcesPath, 'app.asar.unpacked') : null;
+    if (!src || !fs.existsSync(src)) return false;
+    const dst = path.join(dir, 'app.asar.unpacked');
+    dropLink(dst);
+    const shell = shellId();
+    const mark = readJson(path.join(dst, COPY_MARK), null);
+    if (mark && mark.shell === shell) return true; // already there, for this shell
+    const tmp = dst + '.part';
+    removeCopy(tmp);
+    fs.cpSync(src, tmp, { recursive: true, dereference: false, force: true });
+    fs.writeFileSync(path.join(tmp, COPY_MARK), JSON.stringify({ shell, at: Date.now() }));
+    removeCopy(dst);
+    fs.renameSync(tmp, dst);
+    return true;
+  } catch { return false; }
+}
+// Delete a version's own copy — only a real folder (never a link) inside the versions
+// folder that carries our mark (or is a half-made copy).
+function removeCopy(p) {
+  try {
+    let link = true; try { fs.readlinkSync(p); } catch { link = false; }
+    if (link) return dropLink(p);
+    if (!fs.existsSync(p)) return;
+    const real = fs.realpathSync(p), root = fs.realpathSync(versionsDir());
+    if (!real.toLowerCase().startsWith(root.toLowerCase() + path.sep)) return;
+    if (p.endsWith('.part') || fs.existsSync(path.join(p, COPY_MARK))) fs.rmSync(p, { recursive: true, force: true });
+  } catch {}
+}
+// Remove one version's folder: its own copy of the native parts (see above), its own
+// files, then the folder itself only if it is empty. Anything unexpected is simply left.
 function removeVersionDir(dir) {
-  dropLink(path.join(dir, 'app.asar.unpacked'));
+  removeCopy(path.join(dir, 'app.asar.unpacked'));
   let names = []; try { names = fs.readdirSync(dir); } catch { return; }
   for (const n of names) {
     const p = path.join(dir, n);
@@ -201,6 +237,7 @@ async function fetchApp(info, { current, onProgress, signal } = {}) {
   const dir = path.join(versionsDir(), info.version);
   const asar = path.join(dir, 'app.asar');
   const size = await download(info.app.url, asar, { size: info.app.size, sha256: info.app.sha256, version: current, onProgress, signal, max: MAX_APP });
+  ensureUnpacked(dir); // its own copy of ffmpeg + the torrent add-ons
   writeJson(path.join(dir, 'meta.json'), { version: info.version, shell: info.app.shell, size, sha256: info.app.sha256, notes: info.notes || '', at: Date.now() });
   const st = readState();
   st.bad = (st.bad || []).filter((v) => v !== info.version); // a fresh copy gets a fresh chance
@@ -223,6 +260,7 @@ function pick({ builtin, shell }) {
     if (!v.matches || (st.bad || []).includes(v.version)) continue;
     if (newer(v.version, best.version)) { best = { version: v.version, dir: v.dir, builtin: false, notes: v.notes }; break; }
   }
+  if (!best.builtin) ensureUnpacked(path.dirname(best.dir)); // (once per version and shell)
   return best;
 }
 
@@ -334,5 +372,5 @@ function syncWindowsVersion(version, exePath, log) {
 module.exports = {
   MANIFEST, newer, parseVer, validVer, okHost, versionsDir, shellId, readJson, writeJson,
   latest, plan, download, installed, fetchApp, pick, beginTrial, markGood, markBad, readState, tidy,
-  fetchInstaller, pendingInstaller, dropInstaller, runInstaller, syncWindowsVersion, dropLink, removeVersionDir,
+  fetchInstaller, pendingInstaller, dropInstaller, runInstaller, syncWindowsVersion, dropLink, removeVersionDir, ensureUnpacked, removeCopy,
 };

@@ -65,19 +65,8 @@ function sidecarFor(item, siblingsInFolder) {
 
 // 3. Online lookups (title + year only).
 const norm = (s) => String(s || '').toLowerCase().replace(/&/g, 'and').replace(/^(the|a|an) /, '').replace(/[^a-z0-9]+/g, '');
-// Film genres, read from how Wikipedia describes it ("2001 Japanese animated fantasy film").
-const GENRE_WORDS = [
-  ['Animation', /\banimat(ed|ion)\b/i], ['Science fiction', /\bscience[ -]fiction|\bsci[ -]fi\b/i], ['Horror', /\bhorror\b/i],
-  ['Comedy', /\bcomedy\b/i], ['Drama', /\bdrama\b/i], ['Action', /\baction\b/i], ['Fantasy', /\bfantasy\b/i],
-  ['Thriller', /\bthriller\b/i], ['Romance', /\bromance\b|\bromantic\b/i], ['Documentary', /\bdocumentary\b/i],
-  ['Crime', /\bcrime\b|\bheist\b/i], ['Western', /\bwestern\b/i], ['Adventure', /\badventure\b/i], ['Mystery', /\bmystery\b/i],
-  ['Musical', /\bmusical\b/i], ['Family', /\bfamily film|children's film/i], ['War', /\bwar film/i], ['Superhero', /\bsuperhero\b/i],
-];
-function genresFromText(text) {
-  const out = GENRE_WORDS.filter(([, re]) => re.test(text)).map(([g]) => g);
-  if (out.includes('Animation') && /japanese/i.test(text)) out.unshift('Anime');
-  return out;
-}
+// Genres, read from how Wikipedia describes it (shared with the show/movie identifier).
+const { genresFromText } = require('./identify');
 async function getJson(url) {
   const r = await fetch(url, { signal: AbortSignal.timeout(12000), headers: { 'User-Agent': 'HomeCable/1.0 (home media player)', Accept: 'application/json' } });
   // Rate-limited: stop the whole online pass for now (it resumes on a later run)
@@ -136,7 +125,15 @@ async function findPoster(item, { dir, online = false, siblings = 1, log = () =>
   if (side && await toJpeg(side, out)) return done('folder', { posterSource: side });
   item.posterTried = Date.now();
   if (!online) return false;
-  for (const look of [wikipediaPoster]) {
+  // Then every source at once (IMDb, Wikipedia, TVmaze, iTunes), name tried several ways —
+  // the most probable match's cover, so a poster is found even for oddly named files.
+  const identified = async (title, year) => {
+    const { identify } = require('./identify');
+    const r = await identify({ name: title, year, kind: item.kind === 'episode' ? 'show' : 'movie' });
+    const b = r.best;
+    return b?.poster && b.score >= 0.6 ? { url: b.poster, genres: b.genres } : null;
+  };
+  for (const look of [wikipediaPoster, identified]) {
     try {
       const hit = await look(item.title, item.year);
       if (hit && await download(hit.url, out)) return done('online', { posterUrl: hit.url, ...(hit.genres?.length && !(item.genres || []).length ? { genres: hit.genres } : {}) });

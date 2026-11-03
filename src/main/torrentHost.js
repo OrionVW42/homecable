@@ -153,6 +153,14 @@ const handlers = {
     t.files.forEach((f, i) => (want.has(i) ? f.select() : f.deselect()));
     return true;
   },
+  // Watching: this file (and the next episode right behind it) downloads first.
+  async prioritize({ infoHash, path: p, priority = 1 }) {
+    const t = client && await client.get(infoHash);
+    const f = t && t.files.find((x) => x.path === p);
+    if (!f) return false;
+    f.select(priority);
+    return true;
+  },
   // Drop a torrent from the client — pausing keeps its files, forgetting can delete them.
   async remove({ infoHash, destroyStore = true }) {
     if (client && await client.get(infoHash)) await new Promise((r) => client.remove(infoHash, { destroyStore }, r));

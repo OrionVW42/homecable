@@ -164,3 +164,34 @@ test('cleaning up old versions never touches the installed program (links are on
     fs.rmSync(W, { recursive: true, force: true });
   }
 });
+
+// 1.6.1: an updated version gets its own COPY of the native parts (ffmpeg, the torrent add-ons),
+// and removing that version deletes only the copy — never the installed program's originals.
+test('updated versions get a copy of the native parts; cleanup removes only the copy', () => {
+  const W = fs.mkdtempSync(path.join(os.tmpdir(), 'hc-unpacked-'));
+  const res = path.join(W, 'install', 'resources');
+  const orig = path.join(res, 'app.asar.unpacked', 'node_modules', 'node-datachannel', 'build', 'Release');
+  fs.mkdirSync(orig, { recursive: true });
+  fs.writeFileSync(path.join(orig, 'node_datachannel.node'), 'native');
+  const ver = path.join(W, 'versions');
+  const saved = { dir: process.env.HOMECABLE_VERSIONS_DIR, shell: process.env.HOMECABLE_SHELL, rp: Object.getOwnPropertyDescriptor(process, 'resourcesPath') };
+  process.env.HOMECABLE_VERSIONS_DIR = ver; process.env.HOMECABLE_SHELL = 'S1';
+  Object.defineProperty(process, 'resourcesPath', { value: res, configurable: true });
+  try {
+    const d = path.join(ver, '1.6.1'); fs.mkdirSync(d, { recursive: true });
+    fs.writeFileSync(path.join(d, 'app.asar'), 'x');
+    assert.ok(core.ensureUnpacked(d), 'made the copy');
+    const copy = path.join(d, 'app.asar.unpacked', 'node_modules', 'node-datachannel', 'build', 'Release', 'node_datachannel.node');
+    assert.ok(fs.existsSync(copy), 'the add-on sits beside the updated app');
+    assert.throws(() => fs.readlinkSync(path.join(d, 'app.asar.unpacked')), 'a real folder, not a link');
+    assert.ok(core.ensureUnpacked(d), 'second time: already there');
+    core.removeVersionDir(d);
+    assert.ok(!fs.existsSync(d), 'the version folder is gone');
+    assert.ok(fs.existsSync(path.join(orig, 'node_datachannel.node')), 'the installed original is untouched');
+  } finally {
+    if (saved.dir == null) delete process.env.HOMECABLE_VERSIONS_DIR; else process.env.HOMECABLE_VERSIONS_DIR = saved.dir;
+    if (saved.shell == null) delete process.env.HOMECABLE_SHELL; else process.env.HOMECABLE_SHELL = saved.shell;
+    if (saved.rp) Object.defineProperty(process, 'resourcesPath', saved.rp); else delete process.resourcesPath;
+    fs.rmSync(W, { recursive: true, force: true });
+  }
+});

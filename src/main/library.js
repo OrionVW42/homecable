@@ -326,6 +326,8 @@ class Library extends EventEmitter {
         return ordered(all.filter((it) => it.added >= since && it.kind !== 'music' && it.kind !== 'short'));
       }
       case 'server': return ordered(all.filter((it) => it.server === src.id));
+      // Everything that came from torrents, by kind (On Demand: 'movie'; Stream Demand: 'episode').
+      case 'torrent': return ordered(all.filter((it) => it.torrent && (!src.kind || it.kind === src.kind)));
       default: return [];
     }
   }
