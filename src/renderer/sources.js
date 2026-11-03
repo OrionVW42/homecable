@@ -13,7 +13,8 @@ export function SourcesPicker({ value, onChange, autoSelect = true }) {
   const [roots, setRoots] = useState([]);
   const [unc, setUnc] = useState('');
   const [uncMsg, setUncMsg] = useState('');
-  const key = (s) => s.type === 'dlna' ? 'dlna:' + s.server.id : 'folder:' + s.path.toLowerCase();
+  const [torrent, setTorrent] = useState('');
+  const key = (s) => s.type === 'dlna' ? 'dlna:' + s.server.id : s.type === 'torrent' ? 'torrent:' + s.link : 'folder:' + s.path.toLowerCase();
   const has = (s) => value.some((v) => key(v) === key(s));
   const toggle = (s) => onChange(has(s) ? value.filter((v) => key(v) !== key(s)) : [...value, s]);
 
@@ -44,6 +45,15 @@ export function SourcesPicker({ value, onChange, autoSelect = true }) {
     } else onChange([...value, { type: 'folder', path: p, label: p }]);
     setUnc(''); setUncMsg('');
   };
+  // A magnet link, an info hash or a .torrent file: its videos play while they download.
+  const addTorrent = () => {
+    const link = torrent.trim();
+    if (!link) return;
+    const dn = link.match(/[?&]dn=([^&]+)/);
+    const label = dn ? decodeURIComponent(dn[1].replace(/\+/g, ' ')) : link.split(/[\\/]/).pop().replace(/\.torrent$/i, '');
+    if (!has({ type: 'torrent', link })) onChange([...value, { type: 'torrent', link, label }]);
+    setTorrent('');
+  };
   const pickFolders = async () => {
     const f = await tv.pickFolders();
     onChange([...value, ...f.filter((p) => !has({ type: 'folder', path: p })).map((p) => ({ type: 'folder', path: p, label: p }))]);
@@ -51,7 +61,7 @@ export function SourcesPicker({ value, onChange, autoSelect = true }) {
 
   const Row = ({ s, icon, title, sub }) => html`<div class=${'src-row' + (has(s) ? ' on' : '')} onClick=${() => toggle(s)}>
     <${Check} on=${has(s)} /><span class="src-ic">${icon}</span><div class="grow"><b>${title}</b>${sub && html`<span>${sub}</span>`}</div></div>`;
-  const extra = value.filter((v) => v.type === 'folder' && !roots.some((q) => q.path === v.path) && !found?.thisPc.drives.some((d) => d.path === v.path) && !found?.pcs.some((pc) => pc.shares.some((sh) => sh.path === v.path)));
+  const extra = value.filter((v) => v.type === 'torrent' || (v.type === 'folder' && !roots.some((q) => q.path === v.path) && !found?.thisPc.drives.some((d) => d.path === v.path) && !found?.pcs.some((pc) => pc.shares.some((sh) => sh.path === v.path))));
 
   return html`<div class="sources">
     <div class="row" style="margin-bottom:10px"><b class="grow">${busy ? 'Looking around your PC and network…' : 'Found on this PC and your network'}</b>
@@ -65,14 +75,19 @@ export function SourcesPicker({ value, onChange, autoSelect = true }) {
       ${found.dlna.length ? found.dlna.map((d) => html`<${Row} s=${{ type: 'dlna', server: d, label: d.name }} icon="📡" title=${d.name} sub=${d.detail} />`) : html`<div class="src-empty">None found. Turn on DLNA / “media sharing” on your NAS or media server to have it show up here.</div>`}
       <div class="src-group">🖥️ Shared folders on other computers</div>
       ${found.pcs.some((pc) => pc.shares.length) ? found.pcs.filter((pc) => pc.shares.length).map((pc) => pc.shares.map((sh) => html`<${Row} s=${{ type: 'folder', path: sh.path, label: `${sh.name} on ${pc.name}` }} icon="🖥️" title=${`${sh.name}`} sub=${`on ${pc.name} · ${sh.path}`} />`)) : html`<div class="src-empty">No shared folders visible. Add one below by its path, like <code>\\\\LIVINGROOM-PC\\Movies</code>.</div>`}
-      ${extra.length > 0 && html`<div class="src-group">➕ Added by you</div>${extra.map((s) => html`<${Row} s=${s} icon="📁" title=${s.label || s.path} sub=${s.path} />`)}`}
     `}
+    ${extra.length > 0 && html`<div class="src-group">➕ Added by you</div>${extra.map((s) => html`<${Row} s=${s} icon=${s.type === 'torrent' ? '🧲' : '📁'} title=${s.label || s.path || s.link} sub=${s.type === 'torrent' ? 'Torrent — plays while it downloads' : s.path} />`)}`}
     <div class="row" style="margin-top:14px;flex-wrap:wrap">
       <button class="btn sm" onClick=${pickFolders}><${Icon.folder} /> Choose a folder…</button>
       <input class="input grow" style="min-width:220px" placeholder="Network path, e.g. \\\\NAS\\Videos or \\\\OTHER-PC" value=${unc} onInput=${(e) => setUnc(e.target.value)} onKeyDown=${(e) => e.key === 'Enter' && addUnc()} />
       <button class="btn sm" onClick=${addUnc}>Add</button>
     </div>
     ${uncMsg && html`<p class="small" style="color:var(--warn)">${uncMsg}</p>`}
+    <div class="row" style="margin-top:8px;flex-wrap:wrap">
+      <input class="input grow" style="min-width:220px" placeholder="Magnet link or .torrent file, e.g. magnet:?xt=urn:btih:…" value=${torrent} onInput=${(e) => setTorrent(e.target.value)} onKeyDown=${(e) => e.key === 'Enter' && addTorrent()} />
+      <button class="btn sm" onClick=${addTorrent}>Add torrent</button>
+    </div>
+    <p class="small muted">A torrent’s videos play while they download, on channels and On Demand alike. Only add torrents you have the right to download.</p>
   </div>`;
 }
 

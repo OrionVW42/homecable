@@ -1,6 +1,7 @@
 // The library: browse everything, play anything on demand, and drag shows,
 // movies, folders or whole collections onto channels.
 import { html } from 'htm/preact';
+import { TorrentsPanel } from './torrents.js';
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import { tv, fmtDur, ChannelLogo, Icon, epLabel } from './util.js';
 import { SourcesPicker, FreeTvPicker, DEFAULT_FREE, freeFromSettings, applyFreeTv } from './sources.js';
@@ -170,6 +171,7 @@ export function LibraryPanel({ stats, channels, setChannels, onPlay, onEdit, toa
       <input class="input" style="width:260px" placeholder="Search shows, movies, music…" value=${q} onInput=${(e) => setQ(e.target.value)} />
       ${isAdult && html`<button class="btn" onClick=${() => tv.scanAll().then((r) => toast(r.busy ? 'Already scanning…' : `Scan done — ${r.added || 0} new`))} disabled=${stats.scanning}><${Icon.refresh} /> Scan now</button>
       <button class="btn" disabled=${tagging} title="Look everything up by name: names, posters, genres, anime, airing order — old entries too" onClick=${tagAll}>${tagging ? 'Looking everything up…' : '🏷 Update all info'}</button>
+      <button class="btn" onClick=${() => setDialog('torrents')}>🧲 Torrents</button>
       <button class="btn" onClick=${() => setDialog('free')}>📡 Free TV</button>
       <button class="btn primary" onClick=${() => setDialog('sources')}><${Icon.plus} /> Add sources</button>`}
     </div>
@@ -247,6 +249,7 @@ export function LibraryPanel({ stats, channels, setChannels, onPlay, onEdit, toa
 
     ${dialog === 'sources' && html`<${AddSourcesDialog} onClose=${() => setDialog(null)} toast=${toast} />`}
     ${dialog === 'free' && html`<${FreeTvDialog} onClose=${() => setDialog(null)} toast=${toast} />`}
+    ${dialog === 'torrents' && html`<${TorrentsPanel} onClose=${() => { setDialog(null); load(); }} toast=${toast} onPlay=${onPlay} isAdult=${isAdult} />`}
     ${edit && html`<${ArtModal} what=${edit} onClose=${() => setEdit(null)} onDone=${() => { setEdit(null); load(); }} toast=${toast} />`}
     ${dialog?.addTo && html`<div class="modal-bg" onClick=${(e) => e.target === e.currentTarget && setDialog(null)}><div class="modal narrow">
       <div class="modal-head"><h3>Add ${dialog.addTo.length === 1 ? `“${dialog.addTo[0].label}”` : dialog.addTo.length + ' items'} to…</h3><button class="icon-btn" onClick=${() => setDialog(null)}><${Icon.close} /></button></div>

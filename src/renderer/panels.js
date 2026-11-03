@@ -1,5 +1,6 @@
 import { html } from 'htm/preact';
 import { useEffect, useMemo, useState } from 'preact/hooks';
+import { TorrentsPanel } from './torrents.js';
 import { tv, fmtDur, ChannelLogo, Icon, ORDER_LABEL, PALETTE } from './util.js';
 import { LookEditor } from './look.js';
 import { VaultSettings } from './vault.js';
@@ -387,6 +388,7 @@ export function SettingsPanel({ settings, setSettings, onRunSetup, onShowTour, v
       <div class="settings-row"><div class="grow"><b>“New Arrivals” channel</b><span>Plays whatever was added in the last two weeks.</span></div><${Toggle} k="newArrivals" /></div>
       <div class="settings-row"><div class="grow"><b>Sources</b><span>${(stats?.folders.length || 0)} folders · ${(stats?.servers || []).length} media servers. Add network shares, NAS boxes and media servers.</span></div><button class="btn sm" onClick=${onOpenLibrary}>Manage in Library</button></div>
       <div class="settings-row"><div class="grow"><b>Free TV</b><span>Free live IPTV stations and public-domain classic movies, cartoons and TV.</span></div><button class="btn sm" onClick=${() => setFreeOpen(true)}>📡 Add free channels</button></div>
+      <${TorrentSettings} settings=${settings} setSettings=${setSettings} toast=${toast} />
       <${AdsSettings} settings=${settings} setSettings=${setSettings} toast=${toast} />
       <div class="section-title">Watching</div>
       <${PhoneSettings} toast=${toast} />
@@ -499,4 +501,36 @@ function NumberBox({ ch, onSet }) {
   if (!edit) return html`<button class="num num-btn" title="Change channel number" onClick=${() => { setV(ch.number); setEdit(true); }}>${ch.number}</button>`;
   const done = () => { setEdit(false); if (+v && +v !== ch.number) onSet(+v); };
   return html`<input class="input num-input" type="number" min="1" value=${v} autofocus onInput=${(e) => setV(e.target.value)} onBlur=${done} onKeyDown=${(e) => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') setEdit(false); e.stopPropagation(); }} />`;
+}
+
+// Torrents: what's downloading, and which network interface the torrent client is pinned to —
+// like qBittorrent's "Network interface" setting. Pick a VPN adapter and peers, trackers and the DHT
+// only ever use it; if the VPN drops, torrents stop instead of falling back to the normal connection.
+export function TorrentSettings({ settings, setSettings, toast }) {
+  const [ifaces, setIfaces] = useState([]);
+  const [bound, setBound] = useState(null);
+  const [list, setList] = useState([]);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    let on = true;
+    tv.torrentInterfaces().then((x) => on && setIfaces(x)).catch(() => {});
+    const poll = () => Promise.all([tv.torrentBound(), tv.torrents()]).then(([b, l]) => { if (on) { setBound(b); setList(l); } }).catch(() => {});
+    poll();
+    const t = setInterval(poll, 3000);
+    return () => { on = false; clearInterval(t); };
+  }, []);
+  const cur = settings.torrentInterface || '';
+  const peers = list.reduce((n, t) => n + (t.peers || 0), 0), down = list.reduce((n, t) => n + (t.downloadSpeed || 0), 0);
+  const live = list.length ? ` · ${list.length} torrent${list.length === 1 ? '' : 's'} · ${peers} peers · ${(down / 1e6).toFixed(1)} MB/s` : '';
+  const status = bound?.state === 'waiting' ? `⏸ Waiting for “${cur}” — it has no address right now, so torrents are paused.`
+    : bound?.state === 'ready' ? (cur ? `Bound to ${cur}${bound.address ? ` (${bound.address})` : ''}` : 'Any interface') + live
+      : cur ? `Will use ${cur}.` : 'Any interface.';
+  return html`<div class="settings-row"><div class="grow"><b>Torrents</b><span>Magnet links and .torrent files play while they download. Pin their traffic to one adapter, like qBittorrent: pick your VPN and peers, trackers and the DHT only ever use it — if the VPN drops, torrents stop instead of falling back. ${status}</span></div>
+    <select class="select" value=${cur} onChange=${(e) => setSettings({ torrentInterface: e.target.value })}>
+      <option value="">Any interface</option>
+      ${ifaces.map((i) => html`<option value=${i.name}>${i.name} — ${i.address}</option>`)}
+      ${cur && !ifaces.some((i) => i.name === cur) && html`<option value=${cur}>${cur} — not connected</option>`}
+    </select>
+    <button class="btn sm" onClick=${() => setOpen(true)}>🧲 Manage torrents</button>
+    ${open && html`<${TorrentsPanel} onClose=${() => setOpen(false)} toast=${toast} settings=${settings} setSettings=${setSettings} />`}</div>`;
 }

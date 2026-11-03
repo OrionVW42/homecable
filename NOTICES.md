@@ -16,6 +16,8 @@ HomeCable ships with these components. Their licenses travel with the installer.
 | htm | 3 | Apache 2.0 | |
 | multicast-dns | 7 | MIT | Finds NAS / Mac / Linux shares on your network |
 | node-qrcode | 1.5.4 | MIT | Draws the phone pairing QR code |
+| WebTorrent (with parse-torrent, bittorrent-dht and friends) | 3 | MIT | Downloads torrents you add, in playing order; its HTTP side listens on this PC only (127.0.0.1) |
+| node-datachannel (libdatachannel) | 0.32 | MPL 2.0 | WebRTC for WebTorrent; license text in `resources/app.asar.unpacked/node_modules/node-datachannel/LICENSE` |
 | whisper.cpp (`whisper-server`, ggml) | 1.9.5 (build b5454) | MIT | Live captions, run on this PC only (127.0.0.1). https://github.com/ggml-org/whisper.cpp — files in `resources/whisper` |
 | Whisper “base” speech model (ggml q5_1) | — | MIT (OpenAI Whisper weights) | `ggml-base-q5_1.bin`, sha256 422f1ae452ade6f30a004d7e5c6a43195e4433bc370bf23fac9cc591f01a8898 |
 | Microsoft Visual C++ runtime DLLs | 14.x | Microsoft redistributable | Needed by the captions engine; `resources/whisper` |
@@ -36,6 +38,7 @@ It only goes online for features you turn on:
 | Commercial breaks with an ad pack (optional; the shipped joke ads are on by default, every switch is in setup and Settings) | The ad pack's host | A plain request for the ad list and new ad videos — no cookies, IDs or tracking |
 | App updates | api.github.com, github.com (the HomeCable releases page) | A plain request for the newest version's name, then the update files themselves (the small app file and its manifest, or the full installer) — no accounts, cookies, IDs or tracking. New versions install only when HomeCable restarts; Settings → Updates sets how often to look |
 | Network sources | Devices on your own network only | Discovery messages (DLNA/SSDP, WS-Discovery, mDNS) |
+| Torrents (only ones you add yourself) | The trackers named in the link, the BitTorrent DHT, and the other people sharing that torrent — anywhere on the internet | The torrent's id, and the pieces of it you have and want. Like any BitTorrent client, your IP address is visible to those peers and you share the pieces you have while a torrent is in your library. HomeCable never asks your router to open a port (no UPnP / NAT-PMP). Settings → Torrent network interface pins all of this traffic to one adapter (your VPN, say): if that adapter has no address, torrents pause rather than use another connection |
 | Phone app (only while on) | Your paired phones, on your home network or your own VPN | Channels, your library lists and video streams — only to phones paired with a code shown on this PC |
 | Live captions | Nothing — speech is turned into text on this PC | — |
 | Casting to a TV | Chromecast / Google TV devices on your own network only | Finds them with mDNS; while casting, the TV fetches the video from this PC |
@@ -51,4 +54,5 @@ HomeCable is a player. It doesn't host, sell or provide any of the media it play
 - **Your media** — you're responsible for having the right to play what's in your library.
 - **Free live TV** — stations come from the public iptv-org lists of streams that broadcasters make freely available on the internet. HomeCable doesn't host or endorse them; availability, quality and content are up to each broadcaster, and some may not be available in your country.
 - **Classic movies, cartoons & TV** — public-domain titles streamed from the Internet Archive. HomeCable only imports items marked public domain.
+- **Torrents** — a torrent you add is downloaded from, and shared with, other people on the internet, and its videos play while it downloads. HomeCable comes with no torrents, finds none for you and endorses none. Only add torrents you have the right to download and share — open films, public-domain archives (the Internet Archive offers one for every item) and the like — exactly as with any other BitTorrent client.
 - **Commercial breaks** — the shipped joke ads are ON by default; the Showtime setup page and Settings both carry the off switch. HomeCable ships a small set of its own short, family-friendly interdimensional joke ads inside the app (nothing is downloaded for them). Your own ad packs are plain folders of short videos on this PC, each with its own switch. Hosted ad packs are optional and provided by whoever hosts them.

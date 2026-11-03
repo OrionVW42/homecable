@@ -25,6 +25,7 @@ const { enrichLibrary, lookupShow } = require('./metadata');
 const network = require('./network');
 const iptv = require('./iptv');
 const free = require('./freecontent');
+const { Torrents } = require('./torrents');
 const adsLib = require('./ads');
 const epg = require('./epg');
 const { Profiles, autoRating } = require('./profiles');
@@ -36,6 +37,7 @@ const BOOT = global.__hcBoot || null;
 if (!BOOT && !app.requestSingleInstanceLock()) { app.quit(); return; }
 
 let win, store, lib, sched, media, channels, settings, profiles, updater, sleepBlock = null;
+let torrents = null; // torrent sources (src/main/torrents.js); started once there are any
 const logFile = () => path.join(app.getPath('userData'), 'homecable.log');
 function log(...a) {
   const line = `[${new Date().toISOString()}] ${a.join(' ')}\n`;
@@ -974,7 +976,7 @@ function createWindow() {
 function handlers() {
   // Changing things is for grown-ups; watching is for everyone.
   const ADMIN = new Set(['channels:create', 'channels:update', 'channels:delete', 'channels:renumber', 'channels:setNumber', 'channels:addSources', 'channels:related', 'channels:logoPick', 'live:mix', 'live:renumber',
-    'iptv:add', 'iptv:auto', 'iptv:removeDead', 'iptv:checkAll', 'iptv:recheck', 'iptv:addOne', 'iptv:autoRemove', 'channels:hide', 'free:add', 'sources:add', 'sources:removeServer', 'library:scan', 'library:rescan',
+    'iptv:add', 'iptv:auto', 'iptv:removeDead', 'iptv:checkAll', 'iptv:recheck', 'iptv:addOne', 'iptv:autoRemove', 'channels:hide', 'free:add', 'sources:add', 'sources:removeServer', 'torrents:add', 'torrents:pause', 'torrents:resume', 'torrents:files', 'torrents:remove', 'torrents:openFolder', 'torrents:pickFile', 'library:scan', 'library:rescan',
     'library:removeFolder', 'library:approve', 'library:scanAll', 'library:pickFolders', 'import:legacy', 'ads:makePack', 'ads:pickFolder', 'ads:sync', 'ads:packAdd', 'ads:packsOpen', 'ads:rescanPacks', 'guides:refresh',
     'profiles:upsert', 'profiles:remove', 'profiles:setLock', 'profiles:ask', 'ondemand:useFolder', 'ondemand:pickFolder', 'art:set', 'art:candidates', 'art:pickFile', 'meta:refresh', 'meta:refreshAll', 'name:set', 'show:move', 'show:make', 'tags:set', 'items:hide', 'app:startOver', 'vault:create', 'vault:update', 'vault:remove', 'phone:enable', 'phone:pairStart', 'phone:forget', 'phone:setLevel']);
   const VIEWER_SETTINGS = new Set(['volume', 'muted', 'brightness', 'fit', 'lastChannel', 'prevChannel', 'arcadeScores', 'castAuto', 'castHinted', 'vodResume', 'vodWatched', 'castMode', 'showLast', 'subMode', 'subLang', 'audioPref', 'liveCaptions']);
@@ -1060,6 +1062,7 @@ function handlers() {
     lib.defaultPolicy = settings.newMedia;
     saveSettings();
     if ('newArrivals' in patch) ensureNewArrivals();
+    if ('torrentInterface' in patch) torrents?.setInterface(settings.torrentInterface || '').catch((e) => log('torrents', e.message));
     if (AD_KEYS.some((k) => k in patch) || 'adPacks' in patch || 'bumpersOn' in patch || 'bumperSeconds' in patch) {
       if ('adFeed' in patch || ('adsOn' in patch && settings.adsOn)) await syncAds();
       if ('adFolder' in patch && settings.adFolder) { await lib.scan([settings.adFolder], { prune: false, policy: 'auto', minBytes: 64 * 1024 }); adsLib.markFolder(lib, settings.adFolder); }
@@ -1174,6 +1177,8 @@ function handlers() {
     }
     const it = lib.items[itemId];
     if (!it) return null;
+    // A torrent that isn't reachable right now (its process starting, its interface down) is not a format problem.
+    if (it.torrent && torrents?.bound().state !== 'ready') return null;
     if (casting?.mode === 'media') {
       // Only for the TV: playback on this PC keeps its own (better) mode.
       const was = it.castForce || cast.castMode(it);
@@ -1682,7 +1687,7 @@ function handlers() {
   h('network:discover', () => (process.env.HOMECABLE_DEMO ? { thisPc: { name: 'Living Room PC', drives: [] }, dlna: [], pcs: [] } : network.discoverAll()));
   h('network:shares', (host) => network.listShares(host));
   h('sources:add', async (srcs) => {
-    // srcs: [{ type:'folder', path }] or [{ type:'dlna', server }]
+    // srcs: [{ type:'folder', path }], [{ type:'dlna', server }] or [{ type:'torrent', link }]
     const folders = srcs.filter((s) => s.type === 'folder').map((s) => s.path);
     const res = { added: 0 };
     if (folders.length) {
@@ -1693,10 +1698,24 @@ function handlers() {
       res.added += r.added || 0;
     }
     for (const s of srcs.filter((x) => x.type === 'dlna')) { const r = await lib.scanServer(s.server, { policy: settings.setupDone ? settings.newMedia : 'auto' }); res.added += r.added || 0; }
+    // Torrents: a magnet link or a .torrent file — its videos play while they download.
+    for (const s of srcs.filter((x) => x.type === 'torrent')) { const r = await torrents.add(s.link, { policy: settings.setupDone ? settings.newMedia : 'auto' }); res.added += r.added || 0; }
     res.total = lib.list().length;
     return res;
   });
-  h('sources:removeServer', (id) => { lib.removeServer(id); return libraryStats(); });
+  h('sources:removeServer', async (id) => { if (id.startsWith('torrent:')) await torrents.remove(id); else lib.removeServer(id); return libraryStats(); });
+  h('torrents:status', () => torrents?.status() || []);
+  h('torrents:interfaces', () => torrents?.interfaces() || []);
+  h('torrents:bound', () => torrents?.bound() || { state: 'idle', iface: '', address: null });
+  // The Torrents panel
+  h('torrents:list', () => torrents?.list() || []);
+  h('torrents:add', (link) => torrents.add(link, { policy: settings.setupDone ? settings.newMedia : 'auto' }));
+  h('torrents:pause', (id) => torrents.pause(id));
+  h('torrents:resume', (id) => torrents.resume(id));
+  h('torrents:files', (id, paths) => torrents.setFiles(id, Array.isArray(paths) ? paths.map(String) : []));
+  h('torrents:remove', (id, opts) => torrents.remove(id, { keepFiles: !!opts?.keepFiles }));
+  h('torrents:openFolder', (id) => { const f = torrents.folderOf(id); return fs.existsSync(f) ? shell.openPath(f) : null; });
+  h('torrents:pickFile', async () => { const r = await dialog.showOpenDialog(win, { title: 'Choose a .torrent file', filters: [{ name: 'Torrent', extensions: ['torrent'] }], properties: ['openFile'] }); return r.canceled ? null : r.filePaths[0]; });
 
   // On demand (play anything from the library, full seeking)
   h('vod:play', (itemId, t = 0, opts = {}) => {
@@ -2316,6 +2335,7 @@ app.whenReady().then(async () => {
     },
     posterFor: (id) => (id.startsWith('chlogo-') && /^[\w.-]+$/.test(id.slice(7)) && !id.includes('..') ? path.join(app.getPath('userData'), 'logos', id.slice(7))
       : id.startsWith('series-') ? path.join(posterDir(), id + '.jpg') : lib.items[id]?.poster || null),
+    remoteUrl: (it) => (it.torrent ? torrents?.remoteUrl(it) : it.url),
     mirror: (req, res) => mirrorRequest(req, res),
   });
   lib.defaultPolicy = settings.newMedia;
@@ -2365,6 +2385,9 @@ app.whenReady().then(async () => {
   }
   applyVault();
   media.item = (id) => lib.items[id] || null;
+  // Torrents play while they download; saved ones come back at start.
+  torrents = new Torrents(lib, { dir: path.join(app.getPath('userData'), 'torrents'), store, log, iface: () => settings.torrentInterface || '' });
+  if (torrents.saved.length) torrents.start().catch((e) => log('torrents', e.message));
   // What a kids/teens phone may play: everything on the channels its level can see (cached briefly).
   const phoneAllow = { at: 0, kids: null, teens: null };
   const allowedIdsFor = (level) => {
@@ -2389,7 +2412,8 @@ app.whenReady().then(async () => {
     pcName: () => (process.env.HOMECABLE_DEMO ? 'Living Room PC' : os.hostname()) });
   if (settings.phone?.enabled) phone.enable(true).catch((e) => log('phone', e.message));
   captions.setLog(log);
-  app.on('will-quit', () => captions.stop());
+  // (app.quit() — the updater, Cmd/Alt+F4 paths, test harnesses — skips window-all-closed; do the essentials here too)
+  app.on('will-quit', () => { captions.stop(); try { lib?.flush(); } catch {} torrents?.killNow(); });
   quietOnDemandFolders();
   handlers();
   // HomeCable in the TV's own media menu, when it's switched on.
@@ -2437,4 +2461,4 @@ app.whenReady().then(async () => {
 });
 
 app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
-app.on('window-all-closed', async () => { if (casting) await Promise.race([stopCasting('quit'), new Promise((r) => setTimeout(r, 2500))]); media?.stopStreams(); lib?.close(); if (sched) store.write('schedule', sched.state); app.quit(); });
+app.on('window-all-closed', async () => { if (casting) await Promise.race([stopCasting('quit'), new Promise((r) => setTimeout(r, 2500))]); media?.stopStreams(); lib?.close(); if (torrents?.child) await Promise.race([torrents.close(), new Promise((r) => setTimeout(r, 2000))]); if (sched) store.write('schedule', sched.state); app.quit(); });

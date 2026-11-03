@@ -306,7 +306,7 @@ class Library extends EventEmitter {
   resolve(src) {
     // Items waiting for review only play where you picked them by hand.
     const every = src.private ? this.listAll() : this.list(); // private: the locked section's own folder
-    const all = src.type === 'item' ? every : every.filter((it) => it.status !== 'pending' && it.kind !== 'ad');
+    const all = src.type === 'item' ? every : every.filter((it) => it.status !== 'pending' && it.kind !== 'ad' && !it.offline); // offline: a paused torrent's videos
     const ordered = (list) => list.sort((a, b) =>
       ((a.show || '') === (b.show || '') ? 0 : naturalCompare(a.show || a.title, b.show || b.title))
       || ((a.season ?? 0) - (b.season ?? 0)) || ((a.episode ?? 0) - (b.episode ?? 0)) || naturalCompare(a.path, b.path));
@@ -371,7 +371,13 @@ class Library extends EventEmitter {
     this.emit('changed');
   }
 
-  close() { for (const w of this.watchers.values()) w.close(); }
+  // A save still waiting on its debounce is written now — for a quit, or a change that must not be lost.
+  flush() {
+    if (!this._saveTimer) return;
+    clearTimeout(this._saveTimer); this._saveTimer = null;
+    this.store.write('library', { items: this.items, folders: this.folders, meta: this.meta, servers: this.servers });
+  }
+  close() { for (const w of this.watchers.values()) w.close(); this.flush(); }
 
   pendingCount() { return this.list().filter((it) => it.status === 'pending').length; }
   approve(ids) {
@@ -445,7 +451,8 @@ class Library extends EventEmitter {
     const res = { added: 0, removed: 0 };
     const loud = this.folders.filter((f) => !this.isQuiet(f));
     if (loud.length) { const r = await this.scan(loud, { remember: false, prune: true, policy }); res.added += r.added || 0; res.removed += r.removed || 0; }
-    for (const s of this.servers.filter((x) => x.kind !== 'archive')) { const r = await this.scanServer(s, { policy }); res.added += r.added || 0; res.removed += r.removed || 0; }
+    // (archive and torrent sources look after themselves)
+    for (const s of this.servers.filter((x) => x.kind !== 'archive' && x.kind !== 'torrent')) { const r = await this.scanServer(s, { policy }); res.added += r.added || 0; res.removed += r.removed || 0; }
     res.pending = this.pendingCount();
     return res;
   }

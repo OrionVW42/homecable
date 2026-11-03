@@ -18,8 +18,11 @@ const MIME = {
   flac: 'audio/flac', wav: 'audio/wav', ogv: 'video/ogg', '3gp': 'video/3gpp',
 };
 
-function startServer(lib, log = () => {}, { liveFor = () => null, thumbDir = null, posterFor = () => null, mirror = null, subtitleArgs = null } = {}) {
+function startServer(lib, log = () => {}, { liveFor = () => null, thumbDir = null, posterFor = () => null, mirror = null, subtitleArgs = null, remoteUrl = null } = {}) {
   const token = crypto.randomBytes(16).toString('hex');
+  // Where an item's bytes come from right now: a path, a media server's URL — or, for a torrent,
+  // whatever address its process has at this moment (it changes with every start and rebind).
+  const sourceOf = async (item) => (item.remote ? (remoteUrl ? await remoteUrl(item) : item.url) : item.path);
   // One picture per screen: changing channels stops that screen's previous stream —
   // the PC (and the TV it casts to) is one screen, each paired phone is its own.
   const groups = new Map();
@@ -53,10 +56,11 @@ function startServer(lib, log = () => {}, { liveFor = () => null, thumbDir = nul
   const thumbQueue = [];
   let thumbBusy = 0;
   const makeThumb = (item, out) => new Promise((resolve) => {
-    thumbQueue.push(() => {
+    thumbQueue.push(async () => {
       thumbBusy++;
       const at = Math.max(1, Math.min(item.duration * 0.2, 300));
-      const p = spawn(ffmpegPath(), ['-hide_banner', '-nostdin', '-loglevel', 'error', '-ss', String(at), '-i', item.remote ? item.url : item.path, '-frames:v', '1', '-vf', 'scale=480:-2', '-q:v', '5', '-y', out], { windowsHide: true });
+      const input = await sourceOf(item);
+      const p = spawn(ffmpegPath(), ['-hide_banner', '-nostdin', '-loglevel', 'error', '-ss', String(at), '-i', input || item.path, '-frames:v', '1', '-vf', 'scale=480:-2', '-q:v', '5', '-y', out], { windowsHide: true });
       // A failed spawn fires BOTH 'error' and 'close' — only count it once,
       // or the two-at-a-time cap drifts and the queue double-advances.
       let finished = false;
@@ -108,7 +112,9 @@ function startServer(lib, log = () => {}, { liveFor = () => null, thumbDir = nul
     if (route === 'frame') {
       // One small picture from any point in a video: the preview while you scrub.
       const t = Math.max(0, parseFloat(url.searchParams.get('t')) || 0);
-      const p = spawn(ffmpegPath(), ['-hide_banner', '-nostdin', '-loglevel', 'error', '-ss', String(t), '-i', item.remote ? item.url : item.path, '-frames:v', '1', '-vf', 'scale=320:-2', '-q:v', '6', '-f', 'mjpeg', 'pipe:1'], { windowsHide: true });
+      const input = await sourceOf(item);
+      if (!input) { res.writeHead(404); return res.end(); }
+      const p = spawn(ffmpegPath(), ['-hide_banner', '-nostdin', '-loglevel', 'error', '-ss', String(t), '-i', input, '-frames:v', '1', '-vf', 'scale=320:-2', '-q:v', '6', '-f', 'mjpeg', 'pipe:1'], { windowsHide: true });
       const kill = setTimeout(() => p.kill('SIGKILL'), 10000);
       const chunks = [];
       p.stdout.on('data', (c) => chunks.push(c));
@@ -125,7 +131,9 @@ function startServer(lib, log = () => {}, { liveFor = () => null, thumbDir = nul
 
     if (route === 'direct' && item.remote) {
       // Network media server: pass the request through (keeps Range seeking, adds CORS).
-      const up = (item.url.startsWith('https') ? require('https') : http).get(item.url, { headers: req.headers.range ? { Range: req.headers.range } : {} }, (r) => {
+      const target = await sourceOf(item);
+      if (!target) { res.writeHead(503); return res.end(); } // a torrent that isn't reachable right now
+      const up = (target.startsWith('https') ? require('https') : http).get(target, { headers: req.headers.range ? { Range: req.headers.range } : {} }, (r) => {
         const h = { 'Access-Control-Allow-Origin': '*', 'Content-Type': r.headers['content-type'] || 'application/octet-stream' };
         for (const k of ['content-length', 'content-range', 'accept-ranges']) if (r.headers[k]) h[k] = r.headers[k];
         res.writeHead(r.statusCode, h);
@@ -174,7 +182,9 @@ function startServer(lib, log = () => {}, { liveFor = () => null, thumbDir = nul
       const track = Math.max(0, parseInt(url.searchParams.get('audio'), 10) || 0);
       const mode = burn != null ? 'transcode' : url.searchParams.get('mode') === 'remux' ? 'remux' : 'transcode';
       const enc = mode === 'transcode' ? await pickEncoder() : null;
-      const args = streamArgs(item.remote ? item.url : item.path, t, mode, enc, { video: item.kind === 'music' ? null : item.vcodec || '?', audio: item.acodec, burn: burn != null ? +burn : null, track });
+      const input = await sourceOf(item);
+      if (!input) { res.writeHead(503); return res.end(); }
+      const args = streamArgs(input, t, mode, enc, { video: item.kind === 'music' ? null : item.vcodec || '?', audio: item.acodec, burn: burn != null ? +burn : null, track });
       log(`stream ${mode}${enc ? '/' + enc : ''} t=${t.toFixed(1)} ${item.path}`);
       if (url.searchParams.get('fmt') === 'ts') return spawnTo(asTs(args), res, req, 'video/mpeg', item.path, group, DLNA_LIVE);
       return spawnTo(args, res, req, item.kind === 'music' ? 'audio/mp4' : 'video/mp4', item.path, group);

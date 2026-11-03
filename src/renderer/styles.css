@@ -1072,3 +1072,14 @@ body.legend-up .toast { bottom: 76px; }
 /* Pop-out grown to guide size (a menu is open): the normal look, with the grab strip on top. */
 .app.mini-big .mini-top { height: 30px; }
 
+/* ---- torrents panel ---- */
+.modal.tor { width: min(980px, calc(100vw - 48px)); }
+.tor-card { padding: 14px 0; border-bottom: 1px solid var(--line); }
+.tor-card b { display: block; }
+.tor-bar { height: 6px; border-radius: 3px; background: rgba(255,255,255,.08); margin: 10px 0 8px; overflow: hidden; }
+.tor-bar i { display: block; height: 100%; background: var(--accent); border-radius: 3px; transition: width .4s; }
+.tor-files { margin-top: 6px; display: flex; flex-direction: column; gap: 2px; }
+.tor-file { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 8px; font-size: 13px; cursor: pointer; color: var(--dim); }
+.tor-file:hover { background: var(--raise); }
+.tor-file.on { color: var(--text); }
+.tor-file input { accent-color: var(--accent); }
