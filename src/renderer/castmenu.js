@@ -43,20 +43,22 @@ export function CastMenu({ cast, tvs, setTvs, settings, setSettings, onClose, to
         <button class="btn primary gp-default" disabled=${busy === 'stop'} onClick=${stop}>${busy === 'stop' ? 'Stopping…' : 'Stop casting'}</button></div>`}
       <div class="cast-modes">
         <button class=${'cast-mode' + (mode === 'mirror' ? ' on' : '')} disabled=${busy === 'mode'} onClick=${() => setMode('mirror')}>
-          <b>🖥️ Everything</b><span>The TV shows exactly what’s on this screen — guide, menus, banners. Use your controller and see it on the TV (about a second behind).</span></button>
+          <b>🖥️ Everything</b><span>The TV shows exactly what’s on this screen — guide, menus, banners. Use your controller and see it on the TV (about a second behind — a few seconds on older TVs).</span></button>
         <button class=${'cast-mode' + (mode === 'media' ? ' on' : '')} disabled=${busy === 'mode'} onClick=${() => setMode('media')}>
           <b>🎬 Just the picture</b><span>Sharpest video, sent straight to the TV. Menus and the guide stay on this screen.</span></button>
       </div>
       ${!cast?.on && html`<p class="muted" style="margin:0 0 14px">Pick your TV — your channels carry on there, live like cable.</p>`}
       ${cast?.on && others.length > 0 && html`<div class="tv-section-label">Switch to another TV</div>`}
 
-      ${others.map((d, i) => html`<button ref=${i === 0 ? first : null} class=${'cast-dev' + (i === 0 && !cast?.on ? ' gp-default' : '')} disabled=${!!busy} onClick=${() => start(d)}>
-        <span class="ic"><${CastGlyph} /></span>
-        <span class="grow"><b>${d.name}</b><small>${d.last ? 'Last used · ' : ''}${d.model || 'Cast device'}</small></span>
-        <span class="go">${busy === d.id ? html`<span class="spin"></span> Connecting…` : cast?.on ? 'Switch' : 'Cast'}</span></button>`)}
+      ${others.map((d, i) => html`<div class=${'cast-dev-row' + (d.online === false ? ' off' : '')}><button ref=${i === 0 ? first : null} class=${'cast-dev' + (i === 0 && !cast?.on && d.online !== false ? ' gp-default' : '')} disabled=${!!busy} onClick=${() => start(d)}>
+        <span class="ic">${d.kind === 'dlna' ? '📺' : html`<${CastGlyph} />`}</span>
+        <span class="grow"><b>${d.saved ? '★ ' : ''}${d.name}</b><small>${d.last ? 'Last used · ' : ''}${d.kind === 'dlna' ? d.label || 'Smart TV (DLNA)' : d.model ? `Chromecast · ${d.model}` : 'Chromecast / Google TV'}${d.online === false ? ' · off or not on this Wi-Fi' : ''}</small></span>
+        <span class="go">${busy === d.id ? html`<span class="spin"></span> Connecting…` : d.online === false ? 'Try' : cast?.on ? 'Switch' : 'Cast'}</span></button>
+        ${d.saved && html`<button class="cast-forget" title=${`Forget ${d.name}`} onClick=${async () => setTvs(await tv.castForget(d.id))}>✕</button>`}</div>`)}
+      ${tvs.length > 0 && html`<p class="muted small" style="margin:8px 2px 0">★ = saved (your last 10 TVs). Works with Chromecast / Google TV and smart TVs with a built-in media player (DLNA) — Samsung 2010 and later, LG, Sony, Panasonic and more.</p>`}
 
       ${!tvs.length && (looking ? html`<div class="cast-dev muted" style="cursor:default"><span class="spin"></span> Looking for TVs on your Wi-Fi…</div>`
-        : html`<div class="cast-empty"><b>No TVs found yet</b><span>Switch the TV (or Chromecast) on, and make sure it’s on the same Wi-Fi as this PC. Then press “Look again”.</span></div>`)}
+        : html`<div class="cast-empty"><b>No TVs found yet</b><span>Switch the TV (or Chromecast) on, and make sure it’s on the same Wi-Fi as this PC. Older smart TVs (Samsung AllShare and others with DLNA) show up here too. Then press “Look again”.</span></div>`)}
       ${problem && html`<div class="cast-problem">${problem}</div>`}
 
       ${settings.castLast && html`<label class="cast-auto">

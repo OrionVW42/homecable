@@ -129,3 +129,38 @@ test('only GitHub hosts outside tests', () => {
     assert.ok(!core.okHost('https://github.com.evil.example/x'));
   } finally { process.env.HOMECABLE_UPDATE_API = saved; }
 });
+
+// 1.4.11 (2026-11-02): cleaning up an old version emptied the INSTALLED ffmpeg folder
+// through the link 1.4.10 put in each version folder — nothing could play.
+test('cleaning up old versions never touches the installed program (links are only unlinked)', () => {
+  const W = fs.mkdtempSync(path.join(os.tmpdir(), 'hc-tidy-'));
+  const target = path.join(W, 'install', 'app.asar.unpacked', 'node_modules', 'ffmpeg-static');
+  fs.mkdirSync(target, { recursive: true });
+  fs.writeFileSync(path.join(target, 'ffmpeg.exe'), 'pretend ffmpeg');
+  const ver = path.join(W, 'versions');
+  const old = process.env.HOMECABLE_VERSIONS_DIR;
+  process.env.HOMECABLE_VERSIONS_DIR = ver;
+  try {
+    for (const v of ['1.4.9', '1.4.10', '1.4.11']) {
+      const d = path.join(ver, v);
+      fs.mkdirSync(d, { recursive: true });
+      fs.writeFileSync(path.join(d, 'app.asar'), 'x');
+      fs.writeFileSync(path.join(d, 'meta.json'), JSON.stringify({ version: v, shell: 'S', size: 1 }));
+      fs.symlinkSync(path.join(W, 'install', 'app.asar.unpacked'), path.join(d, 'app.asar.unpacked'), 'junction');
+    }
+    core.tidy({ keep: ['1.4.11'], shell: 'S' });
+    assert.ok(fs.existsSync(path.join(target, 'ffmpeg.exe')), 'the installed ffmpeg is still there');
+    assert.deepStrictEqual(fs.readdirSync(ver).sort(), ['1.4.10', '1.4.11'], 'only the oldest version was removed');
+    // the kept versions lose their old links too, and nothing new is linked
+    for (const v of ['1.4.10', '1.4.11']) assert.ok(!fs.existsSync(path.join(ver, v, 'app.asar.unpacked')), `${v} has no link any more`);
+    assert.ok(fs.existsSync(path.join(target, 'ffmpeg.exe')), 'still there after the links went');
+    // a REAL folder in that spot (not a link) is never emptied
+    const real = path.join(ver, '1.4.10', 'app.asar.unpacked');
+    fs.mkdirSync(real); fs.writeFileSync(path.join(real, 'keep.txt'), 'k');
+    core.dropLink(real);
+    assert.ok(fs.existsSync(path.join(real, 'keep.txt')));
+  } finally {
+    if (old == null) delete process.env.HOMECABLE_VERSIONS_DIR; else process.env.HOMECABLE_VERSIONS_DIR = old;
+    fs.rmSync(W, { recursive: true, force: true });
+  }
+});

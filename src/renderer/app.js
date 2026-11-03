@@ -117,6 +117,7 @@ function App() {
 
   const [avMenu, setAvMenu] = useState(false); // Audio & subtitles picker while watching
   const [mini, setMini] = useState(false); // pop-out always-on-top mini player
+  const miniDrag = useRef(null); // dragging the pop-out by its top edge
   useEffect(() => tv.onMini(setMini), []);
   const [ccAvail, setCcAvail] = useState(false); // the live-captions engine is installed
   useEffect(() => { tv.captionsAvailable().then(setCcAvail).catch(() => {}); }, []);
@@ -598,7 +599,25 @@ function App() {
   const idle = !chrome && !overlay && !editing && !setup;
   const live = player.current.isLive ? player.current.isLive() : true;
   const now = entryText(tuned?.entry);
-  return html`<div class=${'app' + (idle ? ' idle' : '') + (mini ? ' mini' : '')} onMouseMove=${poke} onMouseDown=${poke} onWheel=${onWheel}>
+  // Pop-out: drag the top edge to move the window (by hand, so the cursor is a grab hand).
+  const miniDragStart = (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+    const at = { x: e.screenX, y: e.screenY };
+    miniDrag.current = { at, from: null, raf: 0 };
+    tv.winPos().then(([x, y]) => { if (miniDrag.current) miniDrag.current.from = { x, y }; });
+    e.currentTarget.classList.add('dragging');
+  };
+  const miniDragMove = (e) => {
+    const d = miniDrag.current;
+    if (!d || !d.from) return;
+    const x = d.from.x + e.screenX - d.at.x, y = d.from.y + e.screenY - d.at.y;
+    if (d.raf) return;
+    d.raf = requestAnimationFrame(() => { d.raf = 0; tv.winMoveTo(x, y); });
+  };
+  const miniDragEnd = (e) => { miniDrag.current = null; e.currentTarget.classList.remove('dragging'); };
+  return html`<div class=${'app' + (idle ? ' idle' : '') + (mini ? ' mini' : '') + (overlay ? ' has-overlay' : '')} onMouseMove=${poke} onMouseDown=${poke} onWheel=${onWheel}>
     ${(channels.length > 0 || vod) && html`<${Player} tuned=${vod || tuned} settings=${settings} transitions=${settings.transitions} pip=${overlay === 'guide'} quiet=${overlay === 'arcade'} covered=${(!!overlay && overlay !== 'guide' && overlay !== 'help') || setup} bufferStart=${bufferStart.current} apiRef=${player} cast=${cast.mode === 'media' ? cast : null} onEnded=${onEnded} onFailed=${onFailed} onShift=${onShift} onCaptionsError=${() => { toast('💬 Live captions couldn’t start on this PC'); setSettings({ liveCaptions: false }); }} onVolume=${(p) => setSettings(p)} onStalled=${onStalled} onHiccup=${onHiccup} onPlaying=${onPlaying}>
       <${Banner} tuned=${vod || tuned} show=${banner && !overlay} live=${live} getBehind=${() => player.current.behind?.() || 0} getPos=${() => player.current.position?.() || 0} paused=${player.current.paused} raised=${chrome} />
       ${digits && html`<div class="number-entry">${digits.padEnd(2, '–')}<small>${channels.find((c) => c.number === +digits)?.name || ''}</small></div>`}
@@ -607,11 +626,11 @@ function App() {
     <//>`}
     ${tuned?.ondemand && !vod && !overlay && !setup && !editing && !picker && html`<${OnDemandWall} channel=${tuned.channel} isAdult=${isAdult} toast=${toast} onPlay=${(id, at, opts) => playVod(id, at, 'ondemand', opts)} />`}
     <div style="position:absolute;inset:0;z-index:2" onDblClick=${() => !overlay && (mini ? tv.miniMode(false) : tv.fullscreen().then(setFullscreen))} onClick=${() => !overlay && showBanner(settings.bannerSeconds)}></div>
-    ${mini && html`<div class="mini-top">
-      <div class="mini-drag" title="Drag to move"></div>
+    ${mini && html`<div class=${'mini-top' + (overlay ? ' on-overlay' : '')}>
+      <div class="mini-drag" title="Drag to move" onPointerDown=${miniDragStart} onPointerMove=${miniDragMove} onPointerUp=${miniDragEnd} onPointerCancel=${miniDragEnd}><span class="mini-grip">⠿⠿</span></div>
       <button class="mini-btn mini-mute" title=${settings.muted ? 'Unmute (M)' : 'Mute (M)'} onClick=${() => { setSettings({ muted: !settings.muted }); poke(); }}>${settings.muted ? '🔇' : '🔊'}</button>
-    </div>
-    <div class="mini-vol" onClick=${(e) => e.stopPropagation()} onDblClick=${(e) => e.stopPropagation()}>
+    </div>`}
+    ${mini && !overlay && html`<div class="mini-vol" onClick=${(e) => e.stopPropagation()} onDblClick=${(e) => e.stopPropagation()}>
       <span>${settings.muted || (settings.volume ?? 0.9) === 0 ? '🔇' : '🔊'}</span>
       <input type="range" min="0" max="1" step="0.05" value=${settings.muted ? 0 : settings.volume ?? 0.9} title="Volume" onInput=${(e) => { setSettings({ volume: +e.target.value, muted: false }); poke(); }} />
       <b>${settings.muted ? 0 : Math.round((settings.volume ?? 0.9) * 100)}</b>

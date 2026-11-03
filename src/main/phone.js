@@ -206,7 +206,7 @@ function createPhone({ settings, saveSettings, media, call, send, log, profiles,
         await call('cast:stop');
         return json(res, 200, { ok: true });
       }
-      case 'tvs': return json(res, 200, { tvs: (await call('cast:devices')).map((d) => ({ id: d.id, name: d.name })) });
+      case 'tvs': return json(res, 200, { tvs: (await call('cast:devices')).filter((d) => d.online !== false).map((d) => ({ id: d.id, name: d.name, kind: d.kind || 'chromecast', label: d.label || '' })) });
       case 'cast': {
         // Play something on a TV: this PC starts casting, then plays it (never the locked section).
         if (req.method !== 'POST') break;

@@ -340,10 +340,24 @@ function StartOverRow() {
 function CastSettings({ settings, setSettings, cast, tvs, onOpenCast }) {
   const last = settings.castLast;
   return html`
-    <div class="settings-row"><div class="grow"><b>📺 Watch on a TV</b><span>${cast?.on ? `Playing on ${cast.device} right now.` : tvs?.length ? `${tvs.length === 1 ? tvs[0].name + ' is' : tvs.length + ' TVs are'} ready on your Wi-Fi.` : 'Chromecast and Google TV sets on your Wi-Fi show up here.'} Press K anytime (or hold View on a controller).</span></div>
+    <div class="settings-row"><div class="grow"><b>📺 Watch on a TV</b><span>${cast?.on ? `Playing on ${cast.device} right now.` : tvs?.length ? `${tvs.length === 1 ? tvs[0].name + ' is' : tvs.length + ' TVs are'} ready on your Wi-Fi.` : 'Chromecast, Google TV and older smart TVs (DLNA, like Samsung AllShare) on your Wi-Fi show up here.'} Press K anytime (or hold View on a controller).</span></div>
       <button class="btn sm primary" onClick=${onOpenCast}>${cast?.on ? 'Casting options' : 'Choose a TV'}</button></div>
     ${last && html`<div class="settings-row"><div class="grow"><b>Start on ${last.name} automatically</b><span>When HomeCable opens and that TV is switched on, the picture goes straight to it.</span></div>
-      <button class=${'toggle' + (settings.castAuto ? ' on' : '')} onClick=${() => setSettings({ castAuto: !settings.castAuto })}></button></div>`}`;
+      <button class=${'toggle' + (settings.castAuto ? ' on' : '')} onClick=${() => setSettings({ castAuto: !settings.castAuto })}></button></div>`}
+    <${TvMenuRow} settings=${settings} setSettings=${setSettings} />`;
+}
+
+// HomeCable inside the TV's own media menu (older smart TVs: Samsung AllShare, LG, Sony…).
+function TvMenuRow({ settings, setSettings }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const flip = async () => {
+    setBusy(true); setErr('');
+    try { const r = await tv.tvMenuSet(!settings.tvMenu); setSettings({ tvMenu: r.on }); } catch (e) { setErr(String(e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')); }
+    setBusy(false);
+  };
+  return html`<div class="settings-row"><div class="grow"><b>📺 HomeCable in your TV’s own menu</b><span>Older smart TVs (Samsung AllShare, LG, Sony, Panasonic…) list “HomeCable” with their media sources — pick channels, On Demand and Stream Demand with the TV’s own remote; ▶▶| and |◀◀ go to the next or previous channel. Any TV on your Wi-Fi can see it (never the locked section).${err ? ` — ${err}` : ''}</span></div>
+    <button class=${'toggle' + (settings.tvMenu ? ' on' : '')} disabled=${busy} onClick=${flip}></button></div>`;
 }
 
 export function SettingsPanel({ settings, setSettings, onRunSetup, onShowTour, version, onEnrich, channels, onLock, stats, onOpenLibrary, toast, isAdult, profile, setProfile, onSwitch, cast, tvs, onOpenCast, vault, setVault, onOpenVault }) {

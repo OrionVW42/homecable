@@ -23,7 +23,7 @@ function startServer(lib, log = () => {}, { liveFor = () => null, thumbDir = nul
   // One picture per screen: changing channels stops that screen's previous stream —
   // the PC (and the TV it casts to) is one screen, each paired phone is its own.
   const groups = new Map();
-  const spawnTo = (args, res, req, type, label, group = 'pc') => {
+  const spawnTo = (args, res, req, type, label, group = 'pc', extra = {}) => {
     if (!groups.has(group)) groups.set(group, new Set());
     const streams = groups.get(group);
     for (const p of streams) p.kill('SIGKILL');
@@ -34,9 +34,20 @@ function startServer(lib, log = () => {}, { liveFor = () => null, thumbDir = nul
     p.stderr.on('data', (c) => { errText = (errText + c).slice(-2000); });
     p.on('close', (code) => { streams.delete(p); if (code && code !== 255 && !res.writableEnded) log(`ffmpeg exited ${code} (${label}): ${errText.trim()}`); });
     p.on('error', () => res.destroy());
-    res.writeHead(200, { 'Access-Control-Allow-Origin': '*', 'Content-Type': type, 'Cache-Control': 'no-store' });
+    res.writeHead(200, { 'Access-Control-Allow-Origin': '*', 'Content-Type': type, 'Cache-Control': 'no-store', ...extra });
     p.stdout.pipe(res);
     req.on('close', () => p.kill('SIGKILL'));
+  };
+  // Older TVs (DLNA / "Samsung cast") play MPEG-TS: the same ffmpeg job in a different
+  // wrapper (?fmt=ts), plus the DLNA headers those players look for.
+  const DLNA_LIVE = { 'transferMode.dlna.org': 'Streaming', 'contentFeatures.dlna.org': 'DLNA.ORG_OP=00;DLNA.ORG_CI=1;DLNA.ORG_FLAGS=01700000000000000000000000000000' };
+  const asTs = (args) => {
+    const a = [...args];
+    const m = a.indexOf('-movflags');
+    if (m >= 0) a.splice(m, 2);
+    const f = a.lastIndexOf('-f');
+    if (f >= 0 && a[f + 1] === 'mp4') a.splice(f, 2, '-f', 'mpegts', '-mpegts_flags', '+resend_headers');
+    return a;
   };
   // Thumbnails: one frame grabbed by ffmpeg, cached on disk, two at a time.
   const thumbQueue = [];
@@ -73,6 +84,7 @@ function startServer(lib, log = () => {}, { liveFor = () => null, thumbDir = nul
       const hls = st.audioOnly ? null : await resolveHls(st);
       log(`live ${st.mode || 'copy'}${hls ? ' (picture+sound split)' : ''} ${st.url}${who.group ? ' → ' + who.group : ''}`);
       if (req.destroyed) return; // they changed channel while we looked it up
+      if (url.searchParams.get('fmt') === 'ts') return spawnTo(asTs(liveArgs(st, st.mode || 'copy', hls)), res, req, 'video/mpeg', 'live', group, DLNA_LIVE);
       return spawnTo(liveArgs(st, st.mode || 'copy', hls), res, req, st.audioOnly ? 'audio/mp4' : 'video/mp4', 'live', group);
     }
     if (route === 'art') {
@@ -127,6 +139,9 @@ function startServer(lib, log = () => {}, { liveFor = () => null, thumbDir = nul
     if (route === 'direct') {
       const size = fs.statSync(item.path).size;
       const type = MIME[path.extname(item.path).slice(1).toLowerCase()] || 'application/octet-stream';
+      // DLNA players ask how they may fetch a file: whole, or by byte ranges (seekable).
+      if (req.headers['getcontentfeatures.dlna.org']) res.setHeader('contentFeatures.dlna.org', 'DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000');
+      if (req.headers['transfermode.dlna.org']) res.setHeader('transferMode.dlna.org', 'Streaming');
       const range = req.headers.range && req.headers.range.match(/bytes=(\d*)-(\d*)/);
       if (range) {
         const start = Math.max(0, range[1] ? +range[1] : size - +range[2]);
@@ -161,6 +176,7 @@ function startServer(lib, log = () => {}, { liveFor = () => null, thumbDir = nul
       const enc = mode === 'transcode' ? await pickEncoder() : null;
       const args = streamArgs(item.remote ? item.url : item.path, t, mode, enc, { video: item.kind === 'music' ? null : item.vcodec || '?', audio: item.acodec, burn: burn != null ? +burn : null, track });
       log(`stream ${mode}${enc ? '/' + enc : ''} t=${t.toFixed(1)} ${item.path}`);
+      if (url.searchParams.get('fmt') === 'ts') return spawnTo(asTs(args), res, req, 'video/mpeg', item.path, group, DLNA_LIVE);
       return spawnTo(args, res, req, item.kind === 'music' ? 'audio/mp4' : 'video/mp4', item.path, group);
     }
     res.writeHead(404); res.end();
@@ -182,11 +198,11 @@ function startServer(lib, log = () => {}, { liveFor = () => null, thumbDir = nul
       if (!castToken || url.searchParams.get('k') !== castToken || !['direct', 'stream', 'live', 'thumb', 'mirror'].includes(route)) { res.writeHead(403); return res.end(); }
       // Screen mirroring: the live picture of the whole HomeCable window.
       if (route === 'mirror') {
-        if (req.method === 'HEAD') { res.writeHead(200, { 'Content-Type': 'video/mp4', 'Access-Control-Allow-Origin': '*' }); return res.end(); }
+        if (req.method === 'HEAD') { res.writeHead(200, { 'Content-Type': url.searchParams.get('fmt') === 'ts' ? 'video/mpeg' : 'video/mp4', 'Access-Control-Allow-Origin': '*', ...(url.searchParams.get('fmt') === 'ts' ? DLNA_LIVE : {}) }); return res.end(); }
         log(`cast GET mirror from ${req.socket.remoteAddress}`);
         return mirror ? mirror(req, res) : (res.writeHead(404), res.end());
       }
-      if (req.method === 'HEAD' && route !== 'direct' && route !== 'thumb') { res.writeHead(200, { 'Content-Type': 'video/mp4', 'Access-Control-Allow-Origin': '*' }); return res.end(); }
+      if (req.method === 'HEAD' && route !== 'direct' && route !== 'thumb') { const ts = url.searchParams.get('fmt') === 'ts'; res.writeHead(200, { 'Content-Type': ts ? 'video/mpeg' : 'video/mp4', 'Access-Control-Allow-Origin': '*', ...(ts ? DLNA_LIVE : {}) }); return res.end(); }
       log(`cast ${req.method} ${route} from ${req.socket.remoteAddress}${req.headers.range ? ' ' + req.headers.range : ''}`);
       serve(req, res, url);
     });
@@ -261,6 +277,8 @@ function startServer(lib, log = () => {}, { liveFor = () => null, thumbDir = nul
         burnUrl: (id, n, t = 0) => `${base}/stream/${id}?k=${token}&mode=transcode&t=${(+t || 0).toFixed(2)}&burn=${+n}`,
         stopStreams: (group = 'pc') => { const s = groups.get(group); if (s) { for (const p of s) p.kill('SIGKILL'); s.clear(); } },
         openCast, closeCast,
+        // The TV menu (dms.js): a request handled like any media route, in its own stream slot.
+        serveAs: (req, res, pathAndQuery, who) => serve(req, res, new URL(pathAndQuery, 'http://x'), who),
         // Turn a player URL (127.0.0.1, window key) into one the TV can fetch.
         mirrorUrl: (lanIp) => (castServer && castToken ? `http://${lanIp}:${castServer.address().port}/mirror?k=${castToken}&t=${Date.now()}` : null),
         castUrl: (localUrl, lanIp) => {

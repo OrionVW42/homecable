@@ -3,7 +3,9 @@ import { useEffect, useRef, useState, useCallback } from 'preact/hooks';
 import { tv, fmtTime, entryText, ChannelLogo, Icon, providerOf } from './util.js';
 
 const SLOT = 30 * 60e3;
-const SPAN = 2.5 * 3600e3; // visible window
+// The visible window: 2½ hours, less in a small window (the pop-out player shows 1 hour).
+let SPAN = 2.5 * 3600e3;
+const spanFor = () => (window.innerWidth < 700 ? 3600e3 : window.innerWidth < 1100 ? 1.5 * 3600e3 : 2.5 * 3600e3);
 // Guide filters stay as you set them — closing and reopening the guide keeps
 // your search, genre and ♥ choice until you change them or restart the app
 // (the ♥ filter survives restarts too).
@@ -29,6 +31,9 @@ export function guideFilterReset() {
 // Cable-style grid guide. The live picture shrinks to the top-right corner
 // while it's open (handled by the Player's `pip` class).
 export function Guide({ channels, tunedId, onTune, onClose, mixTargets = [], toast, onHide, onFav }) {
+  SPAN = spanFor();
+  const [, reSpan] = useState(0);
+  useEffect(() => { const f = () => { if (spanFor() !== SPAN) reSpan((n) => n + 1); }; addEventListener('resize', f); return () => removeEventListener('resize', f); }, []);
   const [mix, setMix] = useState(null); // live programme being mixed into a channel
   const [q, setQ] = useState(sticky.q); // the search bar up top — kept until changed or the app restarts
   const [genre, setGenre] = useState(sticky.genre); // the genre filter beside it, same deal
@@ -167,7 +172,7 @@ export function Guide({ channels, tunedId, onTune, onClose, mixTargets = [], toa
           <button class="icon-btn" title="Later" onClick=${() => shift(1)}><${Icon.right} /></button>
           <span class="small faint" style="margin-left:6px">${new Date(start).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}</span>
         </div>
-        <div class="slots">${[0, 1, 2, 3, 4].map((i) => html`<span style=${`left:${pos(start + i * SLOT)}%`}>${fmtTime(start + i * SLOT)}</span>`)}</div>
+        <div class="slots">${[0, 1, 2, 3, 4].filter((i) => i * SLOT < SPAN).map((i) => html`<span style=${`left:${pos(start + i * SLOT)}%`}>${fmtTime(start + i * SLOT)}</span>`)}</div>
       </div>
       <div class="grid-rows" ref=${rowsRef}
         onAuxClick=${(e) => e.button === 1 && e.preventDefault()}

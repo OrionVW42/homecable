@@ -10,6 +10,7 @@ const { createUpdater } = require('./updater');
 const { suggestChannels, PALETTE } = require('./suggest');
 const { startServer } = require('./server');
 const cast = require('./cast');
+const dlna = require('./dlna');
 const artwork = require('./artwork');
 const { buildSeries, cleanName } = require('./series');
 const subtitles = require('./subtitles');
@@ -175,8 +176,11 @@ function describe(entry) {
 
 // Casting to a Chromecast: { session, device, lanIp } while a TV is connected.
 let casting = null;
+let tvMenu = null; // HomeCable in the TV's own media menu (dms.js), set up with the IPC handlers
 let castDevices = [];
-const castState = () => (casting ? { on: true, device: casting.device.name, deviceId: casting.device.id, mode: casting.mode } : { on: false, mode: settings.castMode || 'mirror' });
+const castState = () => (casting ? { on: true, device: casting.device.name, deviceId: casting.device.id, mode: casting.mode, kind: casting.device.kind || 'chromecast' } : { on: false, mode: settings.castMode || 'mirror' });
+// Older TVs (DLNA / "Samsung cast") get MPEG-TS from this PC instead of fragmented MP4.
+const castIsDlna = () => casting?.device.kind === 'dlna';
 
 function playFor(item, offset, opts = {}) {
   // The TV's built-in player (and a phone's) handles fewer formats than this PC: H.264 MP4 as
@@ -362,8 +366,18 @@ const tvSeen = new Map();
 async function lookForTvs() {
   // Automated tests: one pretend TV, and no real discovery (HOMECABLE_FAKE_TV).
   if (process.env.HOMECABLE_FAKE_TV) { castDevices = [{ id: 'fake-tv', name: 'Test TV', model: 'Fake', host: '127.0.0.1', fake: true }]; return castDevices; }
-  const found = await cast.discover().catch(() => []);
+  // Chromecasts (mDNS) and older smart TVs with a built-in DLNA player (SSDP), side by side.
+  const [cc, old] = await Promise.all([cast.discover().catch(() => []), dlna.discover().catch(() => [])]);
+  const found = [...cc, ...old];
+  // Tests: a pretend DLNA TV at a fixed address (HOMECABLE_DLNA_TEST = its description URL).
+  if (process.env.HOMECABLE_DLNA_TEST) { const d = await dlna.describe(process.env.HOMECABLE_DLNA_TEST).catch(() => null); if (d) found.push(d); }
   const now = Date.now();
+  // Saved TVs that didn't answer the broadcast: ask them directly where they were last.
+  for (const s of savedTvs()) {
+    if (found.some((d) => d.id === s.id)) continue;
+    if (s.kind === 'dlna' && s.location) { const d = await dlna.describe(s.location).catch(() => null); if (d && d.id === s.id) found.push(d); }
+    else if (s.kind !== 'dlna' && s.host && await reachable(s.host, s.port || 8009)) found.push({ id: s.id, name: s.name, model: s.model || '', host: s.host, port: s.port || 8009 });
+  }
   for (const d of found) tvSeen.set(d.id, { ...d, seen: now });
   for (const [id, d] of tvSeen) if (now - d.seen > 5 * 60e3 && casting?.device.id !== id) tvSeen.delete(id);
   const before = castDevices.map((d) => d.id).sort().join();
@@ -371,10 +385,27 @@ async function lookForTvs() {
   if (castDevices.map((d) => d.id).sort().join() !== before) send('cast-devices', publicDevices());
   return castDevices;
 }
-// The TV you used last comes first.
-const publicDevices = () => castDevices
-  .map(({ id, name, model }) => ({ id, name, model, last: settings.castLast?.id === id }))
-  .sort((a, b) => b.last - a.last || a.name.localeCompare(b.name));
+// Every TV you've cast to is remembered (up to 10, most recent first), so it's in the
+// list straight away — even while it's switched off — and found directly next time.
+const savedTvs = () => (Array.isArray(settings.castSaved) ? settings.castSaved : []);
+function rememberTv(d) {
+  const keep = { id: d.id, name: d.name, kind: d.kind || 'chromecast', model: d.model || '', label: d.label || '', host: d.host, port: d.port || null, location: d.location || null, at: Date.now() };
+  settings.castSaved = [keep, ...savedTvs().filter((x) => x.id !== d.id)].slice(0, 10);
+}
+const reachable = (host, port, ms = 1500) => new Promise((ok) => {
+  const s = require('net').connect({ host, port, timeout: ms }, () => { s.destroy(); ok(true); });
+  s.on('error', () => ok(false)); s.on('timeout', () => { s.destroy(); ok(false); });
+});
+// One list for every kind of TV: on now first (the last-used one on top), then saved TVs
+// that are off right now.
+const publicDevices = () => {
+  const saved = savedTvs();
+  const savedAt = (id) => saved.find((x) => x.id === id)?.at || 0;
+  const on = castDevices.map(({ id, name, model, kind, label }) => ({ id, name, model, kind: kind || 'chromecast', label: label || '', online: true, saved: !!savedAt(id), last: settings.castLast?.id === id }))
+    .sort((a, b) => b.last - a.last || savedAt(b.id) - savedAt(a.id) || a.name.localeCompare(b.name));
+  const off = saved.filter((s) => !castDevices.some((d) => d.id === s.id)).map((s) => ({ id: s.id, name: s.name, model: s.model, kind: s.kind, label: s.label || '', online: false, saved: true, last: settings.castLast?.id === s.id }));
+  return [...on, ...off];
+};
 
 async function startCasting(deviceId, mode = settings.castMode || 'mirror') {
   mode = mode === 'media' ? 'media' : 'mirror';
@@ -385,7 +416,7 @@ async function startCasting(deviceId, mode = settings.castMode || 'mirror') {
   if (!device) throw new Error('That TV isn’t answering — is it switched on?');
   const lanIp = device.fake ? '127.0.0.1' : cast.localAddressFor(device.host);
   if (!lanIp) throw new Error('This PC isn’t on the same network as that TV');
-  const session = device.fake ? new cast.FakeSession() : new cast.CastSession(device);
+  const session = device.fake ? new cast.FakeSession() : device.kind === 'dlna' ? new dlna.DlnaSession(device) : new cast.CastSession(device);
   await session.connect();
   await session.launch();
   await media.openCast();
@@ -404,6 +435,7 @@ async function startCasting(deviceId, mode = settings.castMode || 'mirror') {
     send('cast-state', { ...castState(), reason });
   });
   settings.castLast = { id: device.id, name: device.name };
+  if (!device.fake) rememberTv(device);
   settings.castMode = mode;
   saveSettings();
   log('casting to', device.name, device.host, 'serving from', lanIp, 'mode', mode);
@@ -432,13 +464,14 @@ function mirrorRequest(req, res) {
   const ff = spawn(require('./ffmpeg').ffmpegPath(), ['-hide_banner', '-loglevel', 'error',
     '-fflags', '+nobuffer+genpts', '-flags', 'low_delay', '-probesize', '64k', '-analyzeduration', '0',
     '-f', 'webm', '-i', 'pipe:0', '-map', '0:v:0', '-map', '0:a:0?', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '160k', '-ac', '2',
-    '-movflags', 'frag_keyframe+empty_moov+default_base_moof', '-frag_duration', '300000', '-flush_packets', '1', '-f', 'mp4', 'pipe:1'], { windowsHide: true });
+    ...(/[?&]fmt=ts/.test(req.url || '') ? ['-f', 'mpegts', '-mpegts_flags', '+resend_headers', '-flush_packets', '1', 'pipe:1'] : ['-movflags', 'frag_keyframe+empty_moov+default_base_moof', '-frag_duration', '300000', '-flush_packets', '1', '-f', 'mp4', 'pipe:1'])], { windowsHide: true });
   const m = (mirrorStream = { ff, res, bytes: 0, started: Date.now() });
   let err = '';
   ff.stderr.on('data', (c) => { err = (err + c).slice(-1000); });
   ff.on('close', (code) => { if (code && mirrorStream === m) log('mirror ffmpeg exited', code, err.trim()); });
   ff.stdin.on('error', () => {});
-  res.writeHead(200, { 'Content-Type': 'video/mp4', 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*' });
+  const ts = /[?&]fmt=ts/.test(req.url || '');
+  res.writeHead(200, { 'Content-Type': ts ? 'video/mpeg' : 'video/mp4', 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*', ...(ts ? { 'transferMode.dlna.org': 'Streaming', 'contentFeatures.dlna.org': 'DLNA.ORG_OP=00;DLNA.ORG_CI=1;DLNA.ORG_FLAGS=01700000000000000000000000000000' } : {}) });
   ff.stdout.on('data', (c) => { m.bytes += c.length; if (!m.firstByteAt) m.firstByteAt = Date.now(); });
   ff.stdout.pipe(res);
   req.on('close', () => { if (mirrorStream === m) stopMirrorStream(); });
@@ -456,8 +489,8 @@ setInterval(() => { if (mirrorStream && casting?.mode === 'mirror') casting.sess
 
 async function loadMirror() {
   if (casting?.mode !== 'mirror') return;
-  const url = media.mirrorUrl(casting.lanIp);
-  try { await casting.session.load({ url, contentType: 'video/mp4', live: true, title: 'HomeCable', subtitle: 'Your TV, live like cable' }); }
+  const url = media.mirrorUrl(casting.lanIp) + (castIsDlna() ? '&fmt=ts' : '');
+  try { await casting.session.load({ url, contentType: castIsDlna() ? 'video/mpeg' : 'video/mp4', live: true, title: 'HomeCable', subtitle: 'Your TV, live like cable' }); }
   catch (e) { log('mirror load failed', e.message); send('toast', 'The TV could not show the mirrored screen - try "Just the picture" in the cast menu'); }
 }
 async function setCastMode(mode) {
@@ -985,6 +1018,8 @@ function handlers() {
     return publicDevices();
   });
   h('cast:start', (deviceId, mode) => startCasting(deviceId, mode));
+  // Take a saved TV off the list.
+  h('cast:forget', (deviceId) => { settings.castSaved = savedTvs().filter((x) => x.id !== deviceId); if (settings.castLast?.id === deviceId) settings.castLast = null; saveSettings(); send('cast-devices', publicDevices()); return publicDevices(); });
   h('cast:mode', (mode) => setCastMode(mode === 'media' ? 'media' : 'mirror'));
   h('mirror:sourceId', () => win.getMediaSourceId());
   h('mirror:stats', () => (mirrorStream ? { behind: mirrorStream.behind ?? null, bytes: mirrorStream.bytes } : null));
@@ -993,11 +1028,13 @@ function handlers() {
   h('cast:state', () => castState()); // light — the phone app asks every couple of seconds
   h('cast:load', async (o) => {
     if (!casting) throw new Error('Not casting');
-    const url = media.castUrl(o.url, casting.lanIp);
+    let url = media.castUrl(o.url, casting.lanIp);
     if (!url) throw new Error('Can’t send that to the TV');
     const [, route, id] = new URL(o.url).pathname.split('/');
     const item = lib.items[id];
-    const contentType = route === 'direct' && item ? media.contentTypeFor(item) || 'video/mp4' : o.audioOnly ? 'audio/mp4' : 'video/mp4';
+    let contentType = route === 'direct' && item ? media.contentTypeFor(item) || 'video/mp4' : o.audioOnly ? 'audio/mp4' : 'video/mp4';
+    // Older TVs: converted and live streams as MPEG-TS (files they can read go as they are).
+    if (castIsDlna() && route !== 'direct') { url += '&fmt=ts'; contentType = 'video/mpeg'; }
     // Only pictures the TV can fetch itself (public web artwork).
     let image = /^https:\/\//.test(o.image || '') ? o.image : undefined;
     const artId = !image && /\/art\/([^/?]+)/.exec(o.image || '')?.[1];
@@ -1279,8 +1316,10 @@ function handlers() {
       if (miniBack.max) win.unmaximize();
       win.setMinimumSize(300, 170);
       const wa = screen.getPrimaryDisplay().workArea;
-      win.setBounds({ x: wa.x + wa.width - 540, y: wa.y + wa.height - 320, width: 520, height: 300 });
-      win.setAlwaysOnTop(true, 'floating');
+      // Automated checks never put a window on the screen — the pop-out included.
+      if (process.env.HOMECABLE_OFFSCREEN) win.setBounds({ x: -10000, y: -10000, width: 520, height: 300 });
+      else win.setBounds({ x: wa.x + wa.width - 540, y: wa.y + wa.height - 320, width: 520, height: 300 });
+      if (!process.env.HOMECABLE_OFFSCREEN) win.setAlwaysOnTop(true, 'floating');
     } else if (!on && miniBack) {
       win.setAlwaysOnTop(false);
       win.setMinimumSize(860, 440);
@@ -1934,6 +1973,104 @@ function handlers() {
   });
   // Phones: tune without changing what the PC remembers as its last channel.
   h('tune:phone', (id) => tune(id, undefined, { phone: true }));
+
+  // ---- HomeCable in the TV's own media menu (DLNA media server, dms.js) ----
+  // The TV browses: Channels (guide order, what's on now) · By genre · each On Demand
+  // screen. Its own remote picks; ▶▶| / |◀◀ in its player go to the next / previous channel.
+  const tvPad = (n) => String(n).padStart(3, '0');
+  const tvTime = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const tvChannels = () => sortedChannels().filter((c) => !c.ondemand && !c.hidden && !c.iptv?.dead);
+  const tvGenres = (ch) => {
+    if (ch.iptv) return [ch.iptv.genre || stationGenre(ch.name, ch.iptv.group)].filter(Boolean);
+    const prof = new Map();
+    for (const s of ch.sources) for (const it of lib.resolve(s)) { const k = it.showKeyUser || it.showKey; for (const g of (k ? lib.meta[k]?.genres : it.genres) || []) prof.set(g, (prof.get(g) || 0) + 1); }
+    return [...prof.entries()].sort((a, b) => b[1] - a[1]).slice(0, 2).map((x) => x[0]);
+  };
+  const tvTitle = (ch) => {
+    const now = Date.now();
+    let what = '';
+    try {
+      if (ch.iptv) { const e = liveEntry(ch, now); if (e.program) what = `${e.program} - till ${tvTime(e.end)}`; }
+      else { sched.ensure([ch], now); const at = sched.at(ch, now); const e = at && describe(at.entry); const t = e ? (e.show || e.title) : ''; if (t) what = `${t} - till ${tvTime(at.entry.end)}`; }
+    } catch {}
+    return `${tvPad(ch.number)} ${ch.name}${what ? ' | ' + what : ''}`;
+  };
+  const tvKind = (it) => (cast.castMode(it) === 'direct' && /^(mov|mp4)/.test(it.container || '') ? 'mp4' : 'ts');
+  const tvItem = (it, parent, title) => ({ id: 'v:' + it.id, parent, title, kind: tvKind(it), duration: it.duration || 0, size: tvKind(it) === 'mp4' ? it.size || 0 : 0 });
+  async function tvNode(id) {
+    const folder = (fid, parent, title, children) => ({ id: fid, parent, title, folder: true, children });
+    if (id === '0') return folder('0', '-1', 'HomeCable', async () => {
+      const kids = [folder('ch', '0', 'Channels - what is on now', null), folder('gen', '0', 'Channels by genre', null)];
+      for (const c of sortedChannels().filter((x) => x.ondemand)) kids.push(folder('od:' + c.id, '0', c.name, null));
+      return kids;
+    });
+    if (id === 'ch') return folder('ch', '0', 'Channels - what is on now', async () => tvChannels().map((c) => ({ id: 'c:' + c.id, parent: 'ch', title: tvTitle(c), kind: 'ts' })));
+    if (id === 'gen') return folder('gen', '0', 'Channels by genre', async () => {
+      const names = new Set();
+      for (const c of tvChannels()) for (const g of tvGenres(c)) names.add(g);
+      return [...names].sort((a, b) => a.localeCompare(b)).map((g) => folder('g:' + g, 'gen', g, null));
+    });
+    if (id.startsWith('g:')) { const g = id.slice(2); return folder(id, 'gen', g, async () => tvChannels().filter((c) => tvGenres(c).includes(g)).map((c) => ({ id: 'c:' + c.id, parent: id, title: tvTitle(c), kind: 'ts' }))); }
+    if (id.startsWith('od:')) {
+      const ch = sortedChannels().find((c) => c.id === id.slice(3) && c.ondemand);
+      if (!ch) return null;
+      return folder(id, '0', ch.name, async () => {
+        const d = onDemandList(ch, false);
+        const inShows = new Set((d.series || []).flatMap((s) => s.seasons.flatMap((x) => x.ids)));
+        const shows = (d.series || []).map((s) => folder(`s:${ch.id}:${s.key}`, id, s.name, null));
+        const movies = (d.items || []).filter((m) => !inShows.has(m.id)).map((m) => lib.items[m.id]).filter(Boolean).map((it) => tvItem(it, id, `${it.title}${it.year ? ` (${it.year})` : ''}`));
+        return [...shows, ...movies];
+      });
+    }
+    if (id.startsWith('s:')) {
+      const [, chId, key] = /^s:([^:]+):(.+)$/.exec(id) || [];
+      const ch = sortedChannels().find((c) => c.id === chId && c.ondemand);
+      const show = ch && (onDemandList(ch, false).series || []).find((s) => s.key === key);
+      if (!show) return null;
+      return folder(id, 'od:' + chId, show.name, async () => show.seasons.flatMap((se) => se.ids.map((vid, i) => { const it = lib.items[vid]; return it && tvItem(it, id, `${/^Season \d+$/.test(se.label) ? 'S' + se.label.slice(7) : se.label} E${i + 1} - ${it.epTitle || it.title}`); })).filter(Boolean));
+    }
+    if (id.startsWith('c:')) { const c = tvChannels().find((x) => x.id === id.slice(2)); return c ? { id, parent: 'ch', title: tvTitle(c), kind: 'ts' } : null; }
+    if (id.startsWith('v:')) { const it = allowedItems().find((x) => x.id === id.slice(2)); return it ? tvItem(it, '0', it.title) : null; }
+    return null;
+  }
+  // Playing something from the TV menu: its own stream slot ('tv') — the PC keeps playing.
+  function tvStream(req, res, id) {
+    const who = { group: 'tv' };
+    const head = (type) => { res.writeHead(200, { 'Content-Type': type, 'transferMode.dlna.org': 'Streaming', 'contentFeatures.dlna.org': 'DLNA.ORG_OP=00;DLNA.ORG_CI=1;DLNA.ORG_FLAGS=01700000000000000000000000000000' }); res.end(); };
+    const asTsFor = (it, t) => `/stream/${it.id}?mode=${cast.castMode(it) === 'transcode' ? 'transcode' : 'remux'}&t=${Math.max(0, t || 0).toFixed(2)}&fmt=ts`;
+    if (id.startsWith('c:')) {
+      const ch = tvChannels().find((x) => x.id === id.slice(2));
+      if (!ch) { res.writeHead(404); return res.end(); }
+      if (req.method === 'HEAD') return head('video/mpeg');
+      if (ch.iptv) return media.serveAs(req, res, `/live/${ch.id}?fmt=ts`, who);
+      const t = tune(ch.id, undefined, { phone: true });
+      const u = t?.play?.url && new URL(t.play.url);
+      if (!u) { res.writeHead(404); return res.end(); }
+      const [, route, rid] = u.pathname.split('/');
+      if (route === 'live') return media.serveAs(req, res, `/live/${rid}?fmt=ts`, who);
+      const it = lib.items[rid];
+      if (!it) { res.writeHead(404); return res.end(); }
+      return media.serveAs(req, res, asTsFor(it, t.play.startedAt || t.offset || 0), who);
+    }
+    if (id.startsWith('v:')) {
+      const it = allowedItems().find((x) => x.id === id.slice(2));
+      if (!it) { res.writeHead(404); return res.end(); }
+      if (tvKind(it) === 'mp4') return media.serveAs(req, res, `/direct/${it.id}`, who);
+      if (req.method === 'HEAD') return head('video/mpeg');
+      return media.serveAs(req, res, asTsFor(it, 0), who);
+    }
+    res.writeHead(404); res.end();
+  }
+  tvMenu = require('./dms').createDms({
+    log, node: tvNode, stream: tvStream, iconFile: path.join(__dirname, '../../assets/icon.png'),
+    name: () => `HomeCable (${process.env.HOMECABLE_DEMO ? 'Living Room PC' : os.hostname()})`,
+  });
+  h('tvmenu:set', async (on) => {
+    settings.tvMenu = !!on; saveSettings();
+    if (on) { try { await tvMenu.start(); } catch (e) { settings.tvMenu = false; saveSettings(); throw e; } } else tvMenu.stop();
+    return { on: !!settings.tvMenu, port: tvMenu.port() };
+  });
+  h('tvmenu:state', () => ({ on: !!settings.tvMenu, port: tvMenu.port() }));
   // The phone app (pairing, remote control)
   h('phone:status', () => phone.view());
   h('phone:enable', (on) => phone.enable(on));
@@ -2106,6 +2243,10 @@ function handlers() {
 
   h('win:fullscreen', (on) => { win.setFullScreen(on == null ? !win.isFullScreen() : !!on); return win.isFullScreen(); });
   h('win:minimize', () => win.minimize());
+  // Dragging the pop-out by its top edge (done by hand so the cursor can show a grab hand —
+  // Windows ignores the cursor over a built-in drag area).
+  h('win:pos', () => win.getPosition());
+  h('win:moveTo', (x, y) => { if (Number.isFinite(x) && Number.isFinite(y) && !process.env.HOMECABLE_OFFSCREEN) win.setPosition(Math.round(x), Math.round(y)); else if (process.env.HOMECABLE_OFFSCREEN) win.__testMoved = [x, y]; });
   h('win:maximize', () => { if (win.isMaximized()) win.unmaximize(); else win.maximize(); });
   h('win:close', () => win.close());
   h('openLog', () => shell.openPath(logFile()));
@@ -2232,6 +2373,8 @@ app.whenReady().then(async () => {
   app.on('will-quit', () => captions.stop());
   quietOnDemandFolders();
   handlers();
+  // HomeCable in the TV's own media menu, when it's switched on.
+  if (settings.tvMenu && !process.env.HOMECABLE_NO_CAST) tvMenu?.start().catch((e) => log('tv menu', e.message));
   createWindow();
   lib.watch();
   // Look for new media: shortly after start (catches anything added while the

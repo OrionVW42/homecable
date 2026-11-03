@@ -56,9 +56,16 @@ const pendingInstaller = (() => { try { return core.pendingInstaller(target.vers
 const lastRun = settings.lastRunVersion || null;
 const justUpdated = !!updatedArg || (lastRun && core.newer(target.version, lastRun));
 const wantCheck = settings.updateOnStart !== false && !!repo && !updatedArg;
+// The installed program lost its ffmpeg (1.4.11's cleanup bug emptied that folder):
+// nothing can play. Repair it with the full installer from the latest release — at most
+// every few hours, so an offline PC doesn't keep trying at every start.
+const ffmpegExe = app.isPackaged && process.platform === 'win32' ? path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'ffmpeg-static', 'ffmpeg.exe') : null;
+const repairFile = path.join(core.versionsDir(), 'repair.json');
+const broken = !!ffmpegExe && !fs.existsSync(ffmpegExe) && !!repo && Date.now() - (core.readJson(repairFile, {}).at || 0) > 3 * 3600e3;
+if (broken) log('ffmpeg is missing from the installed program — repairing with the full installer');
 
 // Nothing to show: start the app right now, exactly like a plain start.
-if (!wantCheck && !pendingInstaller && !justUpdated) start(target, null);
+if (!wantCheck && !pendingInstaller && !justUpdated && !broken) start(target, null);
 else app.whenReady().then(() => updaterWindow().catch((e) => { log('window:', e.stack || e.message); start(target, null); }));
 
 // ---------------------------------------------------------------------------
@@ -134,12 +141,12 @@ async function updaterWindow() {
     await sleep(1300);
   }
   if (pendingInstaller) return installNow(splash, say, pendingInstaller);
-  if (!wantCheck) { await say({ state: 'start', text: 'Starting HomeCable…', sub: '' }); return start(target, splash); }
+  if (!wantCheck && !broken) { await say({ state: 'start', text: 'Starting HomeCable…', sub: '' }); return start(target, splash); }
 
   await say({ state: 'check', text: 'Checking for updates…' });
   let info = null;
   const t0 = Date.now();
-  try { info = await core.latest({ repo, current: target.version, timeoutMs: 6000 }); }
+  try { info = await core.latest({ repo, current: target.version, timeoutMs: 6000, any: broken }); }
   catch (e) {
     log('check:', e.message);
     await say({ state: 'start', text: 'Couldn’t check for updates', sub: 'Starting anyway — it’ll try again later.' });
@@ -147,7 +154,9 @@ async function updaterWindow() {
   }
   global.__hcBootCheckedAt = Date.now();
   if (Date.now() - t0 < 500) await sleep(500 - (Date.now() - t0)); // long enough to read
-  const p = core.plan(info, shell);
+  // Repairing: the full installer of the latest version, whatever the shell says.
+  const p = broken && info?.setup?.url ? { kind: 'installer' } : core.plan(info, shell);
+  if (broken) { try { core.writeJson(repairFile, { at: Date.now(), version: info?.version || null }); } catch {} }
   const bad = (() => { try { return core.readState().bad || []; } catch { return []; } })();
   if (p?.kind === 'app' && !bad.includes(info.version)) {
     log(`v${info.version} found — downloading the app (${mb(info.app.size || 0)})`);
@@ -168,8 +177,8 @@ async function updaterWindow() {
       if (!skip.signal.aborted) { await say({ state: 'start', text: 'The update didn’t finish', sub: 'Starting this version — it’ll try again later.', skip: false }); await sleep(1300); }
     }
   } else if (p?.kind === 'installer') {
-    log(`v${info.version} found — it needs the full installer (${mb(info.setup.size || 0)})`);
-    await say({ state: 'download', text: `Downloading v${info.version}`, sub: info.setup.size ? mb(info.setup.size) : '', pct: 0, skip: true });
+    log(broken ? `repairing with the v${info.version} installer (${mb(info.setup.size || 0)})` : `v${info.version} found — it needs the full installer (${mb(info.setup.size || 0)})`);
+    await say({ state: 'download', text: broken ? 'Repairing HomeCable…' : `Downloading v${info.version}`, sub: info.setup.size ? mb(info.setup.size) : '', pct: 0, skip: true });
     try {
       const pend = await core.fetchInstaller(info, {
         current: target.version, signal: skip.signal,
