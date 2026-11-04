@@ -92,8 +92,9 @@ test.afterAll(async () => { await app?.close(); engineSrv?.close(); torznabSrv?.
 test('a Torrents tab next to Library: a notice first, then only the Internet Archive and the connector ship', async () => {
   const nav = page.locator('.nav button');
   await expect(nav.nth(1)).toHaveText(/Library/);
-  await expect(nav.nth(2)).toHaveText(/Torrents/);
-  await nav.nth(2).click();
+  await expect(nav.nth(2)).toHaveText(/Movies/);
+  await expect(nav.nth(3)).toHaveText(/Torrents/);
+  await nav.nth(3).click();
   await expect(page.locator('.overlay.tor-view')).toBeVisible();
   await expect(page.locator('.tor-tabs button')).toHaveText([/Search/, /My torrents/, /Search engines/]);
   // The notice stands in front of Search and Search engines, once; My torrents doesn't need it.

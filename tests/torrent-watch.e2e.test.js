@@ -85,7 +85,7 @@ test('moving on to the next episode clears the one before it', async () => {
   const one = await ep(1), two = await ep(2);
   await page.evaluate((id) => window.tv.vod(id, 0), two.id);
   await expect.poll(async () => (await items()).some((i) => i.id === one.id), { timeout: 40000 }).toBe(false);
-  expect(onDisk(1), 'its file is deleted').toBe(false);
+  await expect.poll(() => onDisk(1), { timeout: 15000, message: 'its file is deleted' }).toBe(false);
   expect(onDisk(2), 'the one playing stays').toBe(true);
   // ...and the next one starts arriving.
   await expect.poll(async () => (await fileOf(3)).progress, { timeout: 60000 }).toBeGreaterThan(0.1);
@@ -96,7 +96,7 @@ test('finishing clears it, and the history stays', async () => {
   const two = await ep(2);
   await page.evaluate((id) => window.tv.saveProgress({ id, pos: 195, len: 200 }), two.id);
   await expect.poll(async () => (await items()).some((i) => i.id === two.id), { timeout: 40000 }).toBe(false);
-  expect(onDisk(2)).toBe(false);
+  await expect.poll(() => onDisk(2), { timeout: 15000 }).toBe(false);
   expect((await page.evaluate(() => window.tv.state())).settings.vodWatched[two.id], 'still marked watched').toBeTruthy();
 });
 

@@ -6,6 +6,7 @@ import { Guide, guideFilter, guideFilterReset } from './guide.js';
 import { ChannelsPanel, ChannelEditor, SettingsPanel } from './panels.js';
 import { LibraryPanel, FreeTvDialog } from './libraryview.js';
 import { TorrentsView } from './torrentsview.js';
+import { CatalogView } from './catalogview.js';
 import { ControlsMap } from './controls.js';
 import { Setup } from './setup.js';
 import { startGamepad, focusDefault, pressButton } from './gamepad.js';
@@ -478,7 +479,7 @@ function App() {
   // Controllers cycle these screens with LB/RB (the Edit menu's screens included).
   useEffect(() => {
     window.__overlayCycle = {
-      list: () => (isAdultRef.current ? ['channels', 'manager', 'tags', 'library', 'torrents', 'arcade', 'settings'] : ['library', 'arcade', 'settings']),
+      list: () => (isAdultRef.current ? ['channels', 'manager', 'tags', 'library', 'catalog', 'torrents', 'arcade', 'settings'] : ['library', 'arcade', 'settings']),
       current: () => ui.current.overlay,
       open: (k) => { ui.current.overlay = k; setOverlay(k); setEditMenu(false); },
     };
@@ -671,6 +672,7 @@ function App() {
     ${overlay === 'tags' && html`<${TagsPanel} isAdult=${isAdult} toast=${toast} />`}
     ${overlay === 'freetv' && html`<${FreeTvPanel} isAdult=${isAdult} setChannels=${setChannels} toast=${toast} onTune=${(id) => { setOverlay(null); ui.current.overlay = null; tune(id); }} />`}
     ${overlay === 'library' && html`<${LibraryPanel} isAdult=${isAdult} stats=${stats} onScan=${scan} enrichProgress=${enrichProgress} channels=${channels} setChannels=${setChannels} onPlay=${playVod} onEdit=${setEditing} toast=${toast} onOpenTorrents=${() => setOverlay('torrents')} />`}
+    ${overlay === 'catalog' && html`<${CatalogView} settings=${settings} setSettings=${setSettings} onPlay=${playVod} toast=${toast} />`}
     ${overlay === 'torrents' && html`<${TorrentsView} isAdult=${isAdult} settings=${settings} setSettings=${setSettings} onPlay=${playVod} toast=${toast} />`}
     ${overlay === 'settings' && html`<${SettingsPanel} isAdult=${isAdult} profile=${profile} setProfile=${setProfile} onSwitch=${() => { setOverlay(null); setPicker(true); }} stats=${stats} onOpenLibrary=${() => setOverlay('library')} onOpenTorrents=${() => setOverlay('torrents')} toast=${toast} channels=${channels} onLock=${(id) => { setSettings({ lockChannel: id || null }); if (id) tune(id); }} settings=${settings} setSettings=${setSettings} version=${version} onShowTour=${() => { setOverlay(null); ui.current.overlay = null; setTour(true); }} onRunSetup=${() => { setOverlay(null); setSetup(true); }} onEnrich=${() => { tv.enrich().then((n) => toast(`Looked up ${n} shows`)); }} cast=${cast} tvs=${tvs} onOpenCast=${() => setOverlay('cast')} vault=${vault} setVault=${setVault} onOpenVault=${() => { setOverlay(null); ui.current.overlay = null; tune(vault.channelId, { quiet: true }); }} />`}
     ${overlay === 'cast' && html`<${CastMenu} cast=${cast} tvs=${tvs} setTvs=${setTvs} settings=${settings} setSettings=${setSettings} toast=${toast} onClose=${() => setOverlay(null)} />`}
@@ -681,7 +683,7 @@ function App() {
     <div class=${'topbar' + (idle || setup ? ' hide' : '')}>
       <div class="brand"><${Logo} size=${24} /><span>HomeCable</span></div>
       <div class="nav">
-        ${[['guide', 'Guide', Icon.guide, 'G'], ['library', 'Library', Icon.library, 'L'], ...(isAdult ? [['torrents', 'Torrents', Icon.magnet, '']] : [])].map(([k, l, I, key]) => html`
+        ${[['guide', 'Guide', Icon.guide, 'G'], ['library', 'Library', Icon.library, 'L'], ...(isAdult ? [['catalog', 'Movies', Icon.play, ''], ['torrents', 'Torrents', Icon.magnet, '']] : [])].map(([k, l, I, key]) => html`
           <button class=${overlay === k ? 'on' : ''} title=${key ? `${l} (${key})` : `${l} — search for torrents, manage yours`} onClick=${() => setOverlay((o) => (o === k ? null : k))}><${I} /><span class="l">${l}</span></button>`)}
         ${isAdult && html`<div class="nav-drop">
           <button class=${['manager', 'channels', 'tags'].includes(overlay) || editMenu ? 'on' : ''} title="Everything that edits lives here (E)" onClick=${() => setEditMenu((m) => !m)}><${Icon.edit} /><span class="l">Edit</span><span class="caret">▾</span></button>

@@ -119,7 +119,7 @@ class Torrents {
   }
 
   // A magnet link, an info hash, a .torrent link, or a .torrent file on this PC.
-  async add(link, { policy = 'auto' } = {}) {
+  async add(link, { policy = 'auto', onlyName = null, watchOnly = null } = {}) {
     await this.start();
     link = String(link || '').trim();
     let req = { src: link };
@@ -127,14 +127,22 @@ class Torrents {
       if (!/\.torrent$/i.test(link) || !fs.existsSync(link)) throw new Error('Paste a magnet link or pick a .torrent file');
       req = { b64: fs.readFileSync(link).toString('base64') };
     }
-    const t = await this._rpc('add', { ...req, deselect: this.settings().torrentWatchOnly !== false });
+    const t = await this._rpc('add', { ...req, deselect: watchOnly ?? this.settings().torrentWatchOnly !== false });
     const known = this.saved.find((s) => s.infoHash === t.infoHash);
-    const rec = known || { link, policy, added: Date.now(), ...(this.settings().torrentWatchOnly !== false ? { watchOnly: true } : {}) };
+    const rec = known || { link, policy, added: Date.now(), ...((watchOnly ?? this.settings().torrentWatchOnly !== false) ? { watchOnly: true } : {}) };
     if (known?.watchOnly) { delete known.deleted; delete known.files; delete known.watched; }
     this._remember(rec, t);
     if (known?.paused) { known.paused = false; this._save(); }
+    let only = null;
+    if (onlyName) {
+      only = t.files.filter((f) => f.name === onlyName);
+      if (!only.length) throw new Error('That quality isn’t in this film’s torrent');
+      rec.files = [...new Set([...(rec.files || []), ...only.map((f) => f.path)])];
+      this._save();
+    }
     const added = await this._register(t, rec);
-    return { serverId: serverIdOf(t.infoHash), name: t.name, added, files: t.files.length };
+    const items = only ? only.map((f) => idFor(serverIdOf(t.infoHash) + '|' + f.path)).filter((id) => this.lib.items[id]) : undefined;
+    return { serverId: serverIdOf(t.infoHash), name: t.name, added, files: t.files.length, items };
   }
 
   _remember(rec, t) {
@@ -478,7 +486,7 @@ class Torrents {
       for (const it of its) delete this.lib.items[it.id];
       const live = !rec.paused && this.child && this.state === 'ready';
       if (live) await this._rpc('remove', { infoHash, destroyStore: false }).catch(() => {});
-      for (const p of paths) await fs.promises.rm(path.join(this.folderOf(serverIdOf(infoHash)), p), { force: true }).catch(() => {});
+      for (const p of paths) await fs.promises.rm(path.join(this.folderOf(serverIdOf(infoHash)), p), { force: true, maxRetries: 8, retryDelay: 400 }).catch((e) => this.log('a cleared video could not be deleted yet:', e.code || ''));
       if (!rec.files.length) { await this.remove(serverIdOf(infoHash), { keepFiles: false }); continue; }
       if (live) await this._attach(rec).catch((e) => this.log('torrent re-attach', e.message));
     }

@@ -28,6 +28,7 @@ const free = require('./freecontent');
 const { Torrents, looksLikeLink } = require('./torrents');
 const { TorrentSearch } = require('./search');
 const vpn = require('./vpn');
+const { Catalog } = require('./catalog');
 const adsLib = require('./ads');
 const epg = require('./epg');
 const { Profiles, autoRating } = require('./profiles');
@@ -290,7 +291,7 @@ async function subsInfo(it) {
 // Once a VPN has been seen, torrents wait for it rather than quietly using the normal
 // connection when it drops (your choice: Torrents → Privacy).
 const NO_VPN = '(your VPN)';
-let vpnNow = null, vpnApplied = null;
+let vpnNow = null, vpnApplied = null, catalog = null;
 const vpnOn = () => settings.torrentVpn !== 'off' && !process.env.HOMECABLE_DEMO;
 function netIface() {
   if (settings.torrentInterface) return settings.torrentInterface;
@@ -1956,6 +1957,14 @@ function handlers() {
   });
   h('sources:removeServer', async (id) => { if (id.startsWith('torrent:')) await torrents.remove(id); else lib.removeServer(id); return libraryStats(); });
   h('torrents:status', () => torrents?.status() || []);
+  // The Movies tab
+  h('catalog:meta', () => catalog.meta());
+  h('catalog:home', () => { catalog.refreshFree().catch(() => {}); return catalog.home(); });
+  h('catalog:browse', (o) => catalog.browse(o && typeof o === 'object' ? o : {}));
+  h('catalog:art', (ids) => { catalog.art(Array.isArray(ids) ? ids : [], send); return true; });
+  h('catalog:details', (id) => catalog.details(String(id)));
+  h('catalog:sources', (id) => catalog.sources(String(id)));
+  h('catalog:open', async (id, quality) => { const r = await catalog.open(String(id), String(quality || '')); saveSettings(); send('library-changed', libraryStats()); return r; });
   h('torrents:interfaces', () => torrents?.interfaces() || []);
   h('torrents:vpn', () => ({ setting: settings.torrentVpn || 'auto', providers: vpn.PROVIDERS, found: vpnNow && { provider: vpnNow.provider, name: vpnNow.name }, manual: settings.torrentInterface || '', required: !!settings.torrentVpnRequired, waiting: netIface() === NO_VPN, warn: settings.torrentVpnWarn !== false, protectedBy: settings.torrentInterface || vpnNow?.name || '', encryption: settings.torrentEncryption || 'require' }));
   h('torrents:publicInfo', async () => { const j = await search.publicInfo(); return { org: String(j.org || '').replace(/^AS\d+\s*/, ''), country: j.country || '', city: j.city || '' }; });
@@ -2693,6 +2702,7 @@ app.whenReady().then(async () => {
   vpnNow = vpnOn() ? vpn.detectNow(settings.torrentVpn || 'auto') : null;
   checkVpn().catch(() => {}).finally(() => { if (torrents.saved.length) torrents.start().catch((e) => log('torrents', e.message)); });
   setInterval(() => checkVpn().catch(() => {}), 10000).unref?.();
+  catalog = new Catalog({ store, settings: () => settings, log, items: () => lib.list(), torrents: () => torrents, lib });
   // Torrent search: engines that run on the torrent network interface, started when first used.
   search = new TorrentSearch({ dir: path.join(app.getPath('userData'), 'search-engines'), builtinDir: path.join(__dirname, 'searchEngines'), store, settings: () => settings, save: saveSettings, log, iface: () => netIface(), send });
   // What a kids/teens phone may play: everything on the channels its level can see (cached briefly).
