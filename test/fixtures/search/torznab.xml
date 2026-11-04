@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:torznab="http://torznab.com/schemas/2015/feed">
+<channel><atom:link href="http://127.0.0.1:9117/" rel="self" type="application/rss+xml" /><title>Jackett</title>
+<item>
+  <title>Sintel.2010.1080p.BluRay.x264</title>
+  <guid>https://indexer.example/details/1</guid>
+  <jackettindexer id="x">X</jackettindexer>
+  <comments>https://indexer.example/details/1</comments>
+  <pubDate>Sun, 30 Apr 2023 16:58:51 +0000</pubDate>
+  <size>1234567890</size>
+  <link>http://127.0.0.1:9117/dl/x/?jackett_apikey=k&amp;path=abc&amp;file=Sintel.torrent</link>
+  <category>2000</category>
+  <enclosure url="http://127.0.0.1:9117/dl/x/?jackett_apikey=k&amp;path=abc&amp;file=Sintel.torrent" length="1234567890" type="application/x-bittorrent" />
+  <torznab:attr name="category" value="2000" />
+  <torznab:attr name="seeders" value="12" />
+  <torznab:attr name="peers" value="20" />
+  <torznab:attr name="infohash" value="08ada5a7a6183aae1e09d831df6748d566095a10" />
+  <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:08ada5a7a6183aae1e09d831df6748d566095a10&amp;dn=Sintel.2010.1080p.BluRay.x264&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337" />
+</item>
+<item>
+  <title><![CDATA[Big Buck Bunny (2008) 1080p]]></title>
+  <guid>https://indexer.example/details/2</guid>
+  <pubDate>Fri, 01 Dec 2023 06:26:37 +0000</pubDate>
+  <link>http://127.0.0.1:9117/dl/x/?jackett_apikey=k&amp;path=abc&amp;file=Big+Buck+Bunny.torrent</link>
+  <enclosure url="http://127.0.0.1:9117/dl/x/?jackett_apikey=k&amp;path=abc&amp;file=Big+Buck+Bunny.torrent" length="276445467" type="application/x-bittorrent" />
+  <torznab:attr name="seeders" value="3" />
+  <torznab:attr name="peers" value="4" />
+</item>
+</channel></rss>

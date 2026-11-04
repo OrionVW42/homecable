@@ -172,11 +172,13 @@ test('pins torrent traffic to the chosen network interface, and stops when it le
   expect(play.at).toBeGreaterThanOrEqual(102);
 });
 
-test('the Torrents panel lists, picks files, pauses and forgets', async () => {
+test('the Torrents tab lists, picks files, pauses and forgets', async () => {
   test.setTimeout(240000);
   await page.keyboard.press('Escape');
-  await page.keyboard.press('s'); // Settings
+  await page.keyboard.press('s'); // Settings → Manage torrents opens the Torrents tab, on My torrents
   await page.getByRole('button', { name: /Manage torrents/ }).click();
+  await expect(page.locator('.overlay.tor-view')).toBeVisible();
+  await page.locator('.tor-tabs button', { hasText: 'My torrents' }).click();
   const card = (name) => page.locator('.tor-card', { hasText: name });
   await expect(card('Sintel')).toBeVisible();
   await expect(card('Big Buck Bunny')).toBeVisible();
@@ -208,7 +210,6 @@ test('the Torrents panel lists, picks files, pauses and forgets', async () => {
   await expect(card('Big Buck Bunny')).toHaveCount(0);
   await expect.poll(() => fs.readdirSync(path.join(data, 'torrents')).length, { timeout: 15000 }).toBe(1);
   expect((await libraryItems()).some((i) => i.path.startsWith('Torrents/Big Buck Bunny'))).toBe(false);
-  await page.locator('.modal.tor .icon-btn').click();
   await page.keyboard.press('Escape');
 });
 

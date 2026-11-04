@@ -25,6 +25,14 @@ streams that broadcasters themselves make freely available; classic movies
 come from the Internet Archive's public-domain collections. Availability and
 content are up to each broadcaster. HomeCable hosts none of it.
 
+TORRENTS AND SEARCH
+HomeCable can download and share torrents you add, and search sources you
+choose. It comes with one search source, the Internet Archive, limited to items
+marked public domain or Creative Commons. It hosts no torrents and does not
+supply, list or recommend any other source. You alone are responsible for any
+source you add and for having the right to download and share what you add.
+Torrents share what you download with other people.
+
 NO WARRANTY
 This software is provided "as is", without warranty of any kind. The full MIT
 license follows.

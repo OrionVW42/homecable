@@ -39,6 +39,7 @@ export const CONTROL_MAP = [
     ['Subtitles: next track / off', ['T'], null, 'Auto turns them on for foreign-language audio'],
     ['Program guide', ['G'], ['MENU']],
     ['Menus (Channels · Library · Settings)', ['C', 'L', 'S'], ['Y']],
+    ['Torrents tab (search, yours, engines)', ['click Torrents'], ['LB', 'RB']],
     ['Arcade (retro games)', ['A'], null, 'controller: Y, then RB to the Arcade tab'],
     ['Fullscreen on / off', ['F'], ['VIEW'], 'keyboard: also F11 or double-click · Esc leaves'],
     ['Picture size: Fit / Fill / Stretch', ['Z'], ['RS']],

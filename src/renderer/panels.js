@@ -1,6 +1,5 @@
 import { html } from 'htm/preact';
 import { useEffect, useMemo, useState } from 'preact/hooks';
-import { TorrentsPanel } from './torrents.js';
 import { tv, fmtDur, ChannelLogo, Icon, ORDER_LABEL, PALETTE } from './util.js';
 import { LookEditor } from './look.js';
 import { VaultSettings } from './vault.js';
@@ -361,7 +360,7 @@ function TvMenuRow({ settings, setSettings }) {
     <button class=${'toggle' + (settings.tvMenu ? ' on' : '')} disabled=${busy} onClick=${flip}></button></div>`;
 }
 
-export function SettingsPanel({ settings, setSettings, onRunSetup, onShowTour, version, onEnrich, channels, onLock, stats, onOpenLibrary, toast, isAdult, profile, setProfile, onSwitch, cast, tvs, onOpenCast, vault, setVault, onOpenVault }) {
+export function SettingsPanel({ settings, setSettings, onRunSetup, onShowTour, version, onEnrich, channels, onLock, stats, onOpenLibrary, onOpenTorrents, toast, isAdult, profile, setProfile, onSwitch, cast, tvs, onOpenCast, vault, setVault, onOpenVault }) {
   const [freeOpen, setFreeOpen] = useState(false);
   const [notices, setNotices] = useState(null);
   const Toggle = ({ k }) => html`<button class=${'toggle' + (settings[k] ? ' on' : '')} onClick=${() => setSettings({ [k]: !settings[k] })}></button>`;
@@ -388,7 +387,7 @@ export function SettingsPanel({ settings, setSettings, onRunSetup, onShowTour, v
       <div class="settings-row"><div class="grow"><b>“New Arrivals” channel</b><span>Plays whatever was added in the last two weeks.</span></div><${Toggle} k="newArrivals" /></div>
       <div class="settings-row"><div class="grow"><b>Sources</b><span>${(stats?.folders.length || 0)} folders · ${(stats?.servers || []).length} media servers. Add network shares, NAS boxes and media servers.</span></div><button class="btn sm" onClick=${onOpenLibrary}>Manage in Library</button></div>
       <div class="settings-row"><div class="grow"><b>Free TV</b><span>Free live IPTV stations and public-domain classic movies, cartoons and TV.</span></div><button class="btn sm" onClick=${() => setFreeOpen(true)}>📡 Add free channels</button></div>
-      <${TorrentSettings} settings=${settings} setSettings=${setSettings} toast=${toast} />
+      <${TorrentSettings} settings=${settings} setSettings=${setSettings} toast=${toast} onOpenTorrents=${onOpenTorrents} />
       <${AdsSettings} settings=${settings} setSettings=${setSettings} toast=${toast} />
       <div class="section-title">Watching</div>
       <${PhoneSettings} toast=${toast} />
@@ -506,11 +505,10 @@ function NumberBox({ ch, onSet }) {
 // Torrents: what's downloading, and which network interface the torrent client is pinned to —
 // like qBittorrent's "Network interface" setting. Pick a VPN adapter and peers, trackers and the DHT
 // only ever use it; if the VPN drops, torrents stop instead of falling back to the normal connection.
-export function TorrentSettings({ settings, setSettings, toast }) {
+export function TorrentSettings({ settings, setSettings, toast, onOpenTorrents }) {
   const [ifaces, setIfaces] = useState([]);
   const [bound, setBound] = useState(null);
   const [list, setList] = useState([]);
-  const [open, setOpen] = useState(false);
   useEffect(() => {
     let on = true;
     tv.torrentInterfaces().then((x) => on && setIfaces(x)).catch(() => {});
@@ -531,6 +529,5 @@ export function TorrentSettings({ settings, setSettings, toast }) {
       ${ifaces.map((i) => html`<option value=${i.name}>${i.name} — ${i.address}</option>`)}
       ${cur && !ifaces.some((i) => i.name === cur) && html`<option value=${cur}>${cur} — not connected</option>`}
     </select>
-    <button class="btn sm" onClick=${() => setOpen(true)}>🧲 Manage torrents</button>
-    ${open && html`<${TorrentsPanel} onClose=${() => setOpen(false)} toast=${toast} settings=${settings} setSettings=${setSettings} />`}</div>`;
+    <button class="btn sm" onClick=${onOpenTorrents}>🧲 Manage torrents</button></div>`;
 }

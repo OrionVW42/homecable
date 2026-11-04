@@ -8,9 +8,6 @@
 // torrenting stops instead of falling back. Only the little media HTTP server
 // stays on 127.0.0.1 for the TV window. src/main/torrents.js is the other end
 // (over process.parentPort); it owns the library, this owns the sockets.
-const net = require('net');
-const dgram = require('dgram');
-const os = require('os');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -19,46 +16,9 @@ const port = process.parentPort;
 const send = (m) => { try { port.postMessage(m); } catch {} };
 const log = (...a) => send({ event: 'log', text: a.join(' ') });
 
-// ---- pin every socket this process opens to one address ----
-let bound = null; // null = any interface
-const origConnect = net.Socket.prototype.connect;
-net.Socket.prototype.connect = function (...args) {
-  if (bound) {
-    // (options[, cb]), an already-normalized [options, cb] from net.connect(), or (port[, host][, cb])
-    const opts = Array.isArray(args[0]) ? args[0][0] : args[0] && typeof args[0] === 'object' ? args[0] : null;
-    if (opts) { if (!opts.path && !opts.localAddress) opts.localAddress = bound; }
-    else if (typeof args[0] === 'number') {
-      const cb = args.find((a) => typeof a === 'function');
-      args = [{ port: args[0], host: typeof args[1] === 'string' ? args[1] : undefined, localAddress: bound }, cb].filter((a) => a !== undefined);
-    }
-  }
-  return origConnect.apply(this, args);
-};
-const origListen = net.Server.prototype.listen;
-net.Server.prototype.listen = function (...args) {
-  if (bound) {
-    // A port with no host → the bound address. (The media server names 127.0.0.1 itself and is left alone.)
-    if (typeof args[0] === 'number' && typeof args[1] !== 'string') args.splice(1, 0, bound);
-    else if (args[0] && typeof args[0] === 'object' && args[0].port != null && !args[0].host && !args[0].path) args[0] = { ...args[0], host: bound };
-  }
-  return origListen.apply(this, args);
-};
-const origBind = dgram.Socket.prototype.bind;
-dgram.Socket.prototype.bind = function (...args) {
-  if (bound) {
-    // Explicit binds (the DHT) and the implicit bind Node does on a socket's first send() (UDP trackers).
-    if (args[0] && typeof args[0] === 'object') { if (!args[0].address) args[0] = { ...args[0], address: bound }; }
-    else if (typeof args[1] !== 'string') { const hasPort = typeof args[0] === 'number'; args = [hasPort ? args[0] : 0, bound, ...(hasPort ? args.slice(1) : args)]; }
-  }
-  return origBind.apply(this, args);
-};
-
-// The IPv4 address an interface has right now (null: it's down, or has none).
-function addressOf(iface) {
-  if (!iface) return null;
-  const list = os.networkInterfaces()[iface] || [];
-  return list.find((a) => a.family === 'IPv4' || a.family === 4)?.address || null;
-}
+// Every socket this process opens is bound to the chosen interface (pinSockets.js).
+const { pin, addressOf } = require('./pinSockets');
+let bound = null; // the address everything is bound to right now (null = any interface)
 
 // ---- the client ----
 const MIN_FILE = 1; // main decides which files matter; here every file is listed
@@ -82,8 +42,8 @@ async function bringUp() {
   await tearDown();
   const want = cfg.iface || '';
   const addr = want ? addressOf(want) : null;
-  if (want && !addr) { bound = null; state = 'waiting'; log(`waiting for "${want}" — it has no address right now`); send({ event: 'waiting', iface: want }); return view(); }
-  bound = addr;
+  if (want && !addr) { bound = pin(null); state = 'waiting'; log(`waiting for "${want}" — it has no address right now`); send({ event: 'waiting', iface: want }); return view(); }
+  bound = pin(addr);
   if (!WebTorrent) [{ default: WebTorrent }, { default: parseTorrent }] = await Promise.all([import('webtorrent'), import('parse-torrent')]);
   fs.mkdirSync(cfg.dir, { recursive: true });
   // No UPnP / NAT-PMP (never asks the router to open a port); uTP off (TCP peers are plenty and need no
@@ -117,7 +77,7 @@ async function add({ src, b64 }) {
   let id = b64 ? Buffer.from(b64, 'base64') : src;
   if (typeof id === 'string' && /^https?:/i.test(id)) {
     // Fetched here, so it goes through the bound interface like everything else.
-    const r = await fetch(id, { signal: AbortSignal.timeout(20000), headers: { 'User-Agent': 'HomeCable (home media player)' } });
+    const r = await fetch(id, { signal: AbortSignal.timeout(20000), headers: { 'User-Agent': 'HomeCable (home media player)', Connection: 'close' } });
     if (!r.ok) throw new Error(`Couldn’t fetch that .torrent (${r.status})`);
     id = Buffer.from(await r.arrayBuffer());
   }

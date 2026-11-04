@@ -1,7 +1,7 @@
-// The Torrents panel: every torrent in the library in one place — add one, watch
-// it download, pause it, pick which of its files to download, open its folder,
-// forget it (with or without its files) — and which network interface they use.
-// Opened from Settings and from the Library.
+// My torrents: every torrent in the library in one place — add one, watch it
+// download, pause it, pick which of its files to download, open its folder,
+// forget it (with or without its files) — and which network interface they use,
+// the storage limit, the queue. The middle part of the Torrents tab (torrentsview.js).
 import { html } from 'htm/preact';
 import { useEffect, useState } from 'preact/hooks';
 import { tv, Icon } from './util.js';
@@ -12,7 +12,7 @@ const eta = (ms) => { const s = ms / 1000; return !isFinite(s) || s <= 0 ? '' : 
 const stateOf = (t) => (t.stopped ? (t.done ? 'Stopped · plays from this PC' : 'Stopped') : t.paused ? 'Paused' : t.busy ? 'Starting…' : t.waiting ? 'Waiting for the network interface' : t.queued ? 'Queued — waiting its turn' : t.done ? 'Done · sharing' : t.progress > 0 ? 'Downloading' : 'Looking for peers');
 
 // settings / setSettings come from the Settings panel; opened elsewhere it looks after the setting itself.
-export function TorrentsPanel({ onClose, toast, onPlay, isAdult = true, settings = null, setSettings = null }) {
+export function TorrentsBody({ toast, onPlay, isAdult = true, settings = null, setSettings = null }) {
   const [list, setList] = useState(null);
   const [bound, setBound] = useState(null);
   const [ifaces, setIfaces] = useState([]);
@@ -67,11 +67,9 @@ export function TorrentsPanel({ onClose, toast, onPlay, isAdult = true, settings
     : bound?.state === 'ready' && iface ? `Bound to ${bound.address}: peers, trackers and the DHT only ever use this adapter. If it drops, torrents stop.`
       : 'Pin torrents to your VPN adapter and they never use anything else — if the VPN drops, they stop instead of falling back.';
 
-  return html`<div class="modal-bg" onClick=${(e) => e.target === e.currentTarget && onClose()}><div class="modal tor">
-    <div class="modal-head"><h3>🧲 Torrents</h3>
-      ${list?.length > 0 && html`<span class="muted small">${list.length} torrent${list.length === 1 ? '' : 's'} · ${sum('peers')} peers · ↓ ${rate(sum('downloadSpeed'))} · ↑ ${rate(sum('uploadSpeed'))}</span>`}
-      <button class="icon-btn" title="Close" onClick=${onClose}><${Icon.close} /></button></div>
-    <div class="modal-body">
+  return html`<div class="tor-body">
+    ${list?.length > 0 && html`<p class="muted small tor-sum">${list.length} torrent${list.length === 1 ? '' : 's'} · ${sum('peers')} peers · ↓ ${rate(sum('downloadSpeed'))} · ↑ ${rate(sum('uploadSpeed'))}</p>`}
+    <div class="tor-main">
       ${isAdult && html`
         <div class="row" style="flex-wrap:wrap">
           <input class="input grow" style="min-width:260px" placeholder="Magnet link, info hash or .torrent link" value=${link} onInput=${(e) => setLink(e.target.value)} onKeyDown=${(e) => e.key === 'Enter' && add()} disabled=${busy} />
@@ -145,5 +143,5 @@ export function TorrentsPanel({ onClose, toast, onPlay, isAdult = true, settings
         <button class="btn" onClick=${() => forget(confirm, true)}>Remove, keep files</button>
         <button class="btn danger" onClick=${() => forget(confirm, false)}>Remove & delete files</button></div>
     </div></div>`}
-  </div></div>`;
+  </div>`;
 }

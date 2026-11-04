@@ -25,7 +25,8 @@ const { enrichLibrary, lookupShow } = require('./metadata');
 const network = require('./network');
 const iptv = require('./iptv');
 const free = require('./freecontent');
-const { Torrents } = require('./torrents');
+const { Torrents, looksLikeLink } = require('./torrents');
+const { TorrentSearch } = require('./search');
 const adsLib = require('./ads');
 const epg = require('./epg');
 const { Profiles, autoRating } = require('./profiles');
@@ -38,6 +39,7 @@ if (!BOOT && !app.requestSingleInstanceLock()) { app.quit(); return; }
 
 let win, store, lib, sched, media, channels, settings, profiles, updater, sleepBlock = null;
 let torrents = null; // torrent sources (src/main/torrents.js); started once there are any
+let search = null; // torrent search (src/main/search.js); its process starts on first use
 let nowPlayingItem = null; // the video on screen right now (the torrent clean-up never removes it)
 // Running an updated version (app-versions\<v>\app.asar)? Its native parts (ffmpeg, the torrent
 // engine's add-ons) must sit beside it — an older launcher may not have put a copy there (1.6.0's
@@ -55,7 +57,7 @@ function log(...a) {
   if (!app.isPackaged) process.stdout.write(line);
 }
 
-const DEFAULT_SETTINGS = { torrentLimitGB: 100, torrentMaxActive: 3, torrentCleanSeries: 'watched', torrentCleanMovies: 'watched', torrentStopSeeding: false, torrentToOnDemand: true, torrentKeep: [], setupDone: false, onlineMeta: true, transitions: true, showClock: true, volume: 0.9, muted: false, lastChannel: null, prevChannel: null, bannerSeconds: 5, lockChannel: null, startFullscreen: false, brightness: 1, fit: 'fit',
+const DEFAULT_SETTINGS = { torrentLimitGB: 100, torrentMaxActive: 3, torrentCleanSeries: 'watched', torrentCleanMovies: 'watched', torrentStopSeeding: false, torrentToOnDemand: true, torrentKeep: [], searchEngines: {}, searchEngineOptions: {}, searchRecent: [], setupDone: false, onlineMeta: true, transitions: true, showClock: true, volume: 0.9, muted: false, lastChannel: null, prevChannel: null, bannerSeconds: 5, lockChannel: null, startFullscreen: false, brightness: 1, fit: 'fit',
   // auto / manual / in-between
   newMedia: 'auto',          // 'auto' = onto channels · 'review' = inbox first · 'library' = library only
   scanInterval: '6h',        // 'off' | '1h' | '6h' | '24h' (folders are also watched live)
@@ -1124,7 +1126,7 @@ function createWindow() {
 function handlers() {
   // Changing things is for grown-ups; watching is for everyone.
   const ADMIN = new Set(['channels:create', 'channels:update', 'channels:delete', 'channels:renumber', 'channels:setNumber', 'channels:addSources', 'channels:related', 'channels:logoPick', 'live:mix', 'live:renumber',
-    'iptv:add', 'iptv:auto', 'iptv:removeDead', 'iptv:checkAll', 'iptv:recheck', 'iptv:addOne', 'iptv:autoRemove', 'channels:hide', 'free:add', 'sources:add', 'sources:removeServer', 'torrents:add', 'torrents:pause', 'torrents:resume', 'torrents:stop', 'torrents:keep', 'torrents:priority', 'edit:onDemand', 'torrents:files', 'torrents:remove', 'torrents:openFolder', 'torrents:pickFile', 'library:scan', 'library:rescan',
+    'iptv:add', 'iptv:auto', 'iptv:removeDead', 'iptv:checkAll', 'iptv:recheck', 'iptv:addOne', 'iptv:autoRemove', 'channels:hide', 'free:add', 'sources:add', 'sources:removeServer', 'torrents:add', 'torrents:pause', 'torrents:resume', 'torrents:stop', 'torrents:keep', 'torrents:priority', 'edit:onDemand', 'torrents:files', 'torrents:remove', 'torrents:openFolder', 'torrents:pickFile', 'search:run', 'search:cancel', 'search:add', 'search:enable', 'search:options', 'search:install', 'search:remove', 'search:update', 'search:openFolder', 'search:pickFile', 'library:scan', 'library:rescan',
     'library:removeFolder', 'library:approve', 'library:scanAll', 'library:pickFolders', 'import:legacy', 'ads:makePack', 'ads:pickFolder', 'ads:sync', 'ads:packAdd', 'ads:packsOpen', 'ads:rescanPacks', 'guides:refresh',
     'profiles:upsert', 'profiles:remove', 'profiles:setLock', 'profiles:ask', 'ondemand:useFolder', 'ondemand:pickFolder', 'art:set', 'art:candidates', 'art:pickFile', 'meta:refresh', 'meta:refreshAll', 'name:set', 'show:move', 'show:make', 'tags:set', 'items:hide', 'app:startOver', 'vault:create', 'vault:update', 'vault:remove', 'phone:enable', 'phone:pairStart', 'phone:forget', 'phone:setLevel']);
   const VIEWER_SETTINGS = new Set(['volume', 'muted', 'brightness', 'fit', 'lastChannel', 'prevChannel', 'arcadeScores', 'castAuto', 'castHinted', 'vodResume', 'vodWatched', 'castMode', 'showLast', 'subMode', 'subLang', 'audioPref', 'liveCaptions']);
@@ -1210,7 +1212,7 @@ function handlers() {
     lib.defaultPolicy = settings.newMedia;
     saveSettings();
     if ('newArrivals' in patch) ensureNewArrivals();
-    if ('torrentInterface' in patch) torrents?.setInterface(settings.torrentInterface || '').catch((e) => log('torrents', e.message));
+    if ('torrentInterface' in patch) { torrents?.setInterface(settings.torrentInterface || '').catch((e) => log('torrents', e.message)); search?.setInterface(settings.torrentInterface || '').catch((e) => log('search', e.message)); }
     if ('torrentMaxActive' in patch) torrents?._schedule().catch(() => {});
     if ('torrentLimitGB' in patch || 'torrentCleanSeries' in patch || 'torrentCleanMovies' in patch) torrents?.enforceLimit().catch((e) => log('torrents', e.message));
     if (patch.torrentToOnDemand) torrentsToOnDemand().catch(() => {});
@@ -1950,6 +1952,26 @@ function handlers() {
   h('torrents:remove', (id, opts) => torrents.remove(id, { keepFiles: !!opts?.keepFiles }));
   h('torrents:openFolder', (id) => { const f = torrents.folderOf(id); return fs.existsSync(f) ? shell.openPath(f) : null; });
   h('torrents:pickFile', async () => { const r = await dialog.showOpenDialog(win, { title: 'Choose a .torrent file', filters: [{ name: 'Torrent', extensions: ['torrent'] }], properties: ['openFile'] }); return r.canceled ? null : r.filePaths[0]; });
+  // Torrent search (src/main/search.js): the engines, the searches, and adding what they find.
+  h('search:engines', () => search?.engines() || []);
+  h('search:bound', () => search?.bound() || { state: 'idle', iface: '', address: null });
+  h('search:run', (q, category) => search.search(q, { category: String(category || 'all') }));
+  h('search:cancel', (id) => search.cancel(String(id || '')));
+  h('search:enable', (id, on) => search.setEnabled(String(id), !!on));
+  h('search:options', (id, patch) => search.setOptions(String(id), patch && typeof patch === 'object' ? patch : {}));
+  h('search:install', (src) => search.install(String(src || '')));
+  h('search:remove', (id) => search.remove(String(id)));
+  h('search:update', () => search.checkUpdates());
+  h('search:openFolder', () => shell.openPath(search.folder()));
+  h('search:pickFile', async () => { const r = await dialog.showOpenDialog(win, { title: 'Choose a search engine (.js file)', filters: [{ name: 'Search engine', extensions: ['js'] }], properties: ['openFile'] }); return r.canceled ? null : r.filePaths[0]; });
+  // A search result becomes a torrent in the library: its link fetched from the torrent's page if
+  // the site gives it no other way, a .torrent file downloaded through the pinned connection.
+  h('search:add', async (engineId, result) => {
+    let link = await search.resolve(String(engineId), result && typeof result === 'object' ? result : {});
+    if (!looksLikeLink(link)) link = await search.download(link);
+    const r = await torrents.add(link, { policy: settings.setupDone ? settings.newMedia : 'auto' });
+    return { ...r, link };
+  });
 
   // On demand (play anything from the library, full seeking)
   h('vod:play', (itemId, t = 0, opts = {}) => {
@@ -2629,6 +2651,8 @@ app.whenReady().then(async () => {
     onNew: () => { if (settings.torrentToOnDemand !== false) torrentsToOnDemand().catch((e) => log('torrents → On Demand', e.message)); },
   });
   if (torrents.saved.length) torrents.start().catch((e) => log('torrents', e.message));
+  // Torrent search: engines that run on the torrent network interface, started when first used.
+  search = new TorrentSearch({ dir: path.join(app.getPath('userData'), 'search-engines'), builtinDir: path.join(__dirname, 'searchEngines'), store, settings: () => settings, save: saveSettings, log, iface: () => settings.torrentInterface || '', send });
   // What a kids/teens phone may play: everything on the channels its level can see (cached briefly).
   const phoneAllow = { at: 0, kids: null, teens: null };
   const allowedIdsFor = (level) => {
@@ -2654,7 +2678,7 @@ app.whenReady().then(async () => {
   if (settings.phone?.enabled) phone.enable(true).catch((e) => log('phone', e.message));
   captions.setLog(log);
   // (app.quit() — the updater, Cmd/Alt+F4 paths, test harnesses — skips window-all-closed; do the essentials here too)
-  app.on('will-quit', () => { captions.stop(); try { lib?.flush(); } catch {} torrents?.killNow(); });
+  app.on('will-quit', () => { captions.stop(); try { lib?.flush(); } catch {} torrents?.killNow(); search?.killNow(); });
   quietOnDemandFolders();
   handlers();
   // HomeCable in the TV's own media menu, when it's switched on.
@@ -2702,4 +2726,4 @@ app.whenReady().then(async () => {
 });
 
 app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
-app.on('window-all-closed', async () => { if (casting) await Promise.race([stopCasting('quit'), new Promise((r) => setTimeout(r, 2500))]); media?.stopStreams(); lib?.close(); if (torrents?.child) await Promise.race([torrents.close(), new Promise((r) => setTimeout(r, 2000))]); if (sched) store.write('schedule', sched.state); app.quit(); });
+app.on('window-all-closed', async () => { if (casting) await Promise.race([stopCasting('quit'), new Promise((r) => setTimeout(r, 2500))]); media?.stopStreams(); lib?.close(); search?.killNow(); if (torrents?.child) await Promise.race([torrents.close(), new Promise((r) => setTimeout(r, 2000))]); if (sched) store.write('schedule', sched.state); app.quit(); });

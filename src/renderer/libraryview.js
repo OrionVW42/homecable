@@ -2,7 +2,6 @@
 // a show opens to its seasons and episodes, movie series are grouped. Drag anything onto
 // a channel; right-click hides; ✏ Edit opens the full editor.
 import { html } from 'htm/preact';
-import { TorrentsPanel } from './torrents.js';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { tv, fmtDur, ChannelLogo, Icon, epLabel } from './util.js';
 import { SourcesPicker, FreeTvPicker, DEFAULT_FREE, freeFromSettings, applyFreeTv } from './sources.js';
@@ -112,7 +111,7 @@ function DropRail({ channels, onDrop, onNew }) {
   </aside>`;
 }
 
-export function LibraryPanel({ stats, channels, setChannels, onPlay, onEdit, toast, isAdult = true }) {
+export function LibraryPanel({ stats, channels, setChannels, onPlay, onEdit, toast, isAdult = true, onOpenTorrents = () => {} }) {
   const [data, setData] = useState(null);
   const [view, setView] = useState('all');
   const [source, setSource] = useState(null); // filter by folder / server
@@ -122,7 +121,7 @@ export function LibraryPanel({ stats, channels, setChannels, onPlay, onEdit, toa
   const [open, setOpen] = useState(null);     // details page: { type: 'show' | 'movie' | 'collection', key|id }
   const [episodes, setEpisodes] = useState([]);
   const [season, setSeason] = useState(null);
-  const [dialog, setDialog] = useState(null); // 'sources' | 'free' | 'torrents' | { addTo: sources }
+  const [dialog, setDialog] = useState(null); // 'sources' | 'free' | { addTo: sources }
   const [edit, setEdit] = useState(null);     // the Edit dialog (name, pictures, tags, where it shows)
   const [tagging, setTagging] = useState(false); // "Find covers & tags" is running
   const [limit, setLimit] = useState(180);
@@ -412,7 +411,7 @@ export function LibraryPanel({ stats, channels, setChannels, onPlay, onEdit, toa
       ${isAdult && html`<button class="btn" onClick=${() => tv.scanAll().then((r) => toast(r.busy ? 'Already scanning…' : `Scan done — ${r.added || 0} new`))} disabled=${stats.scanning}><${Icon.refresh} /> Scan now</button>
       <button class="btn" disabled=${tagging} title="Look every show and movie up by name — covers, tags, summaries" onClick=${tagAll}>${tagging ? 'Looking everything up…' : '🏷 Find covers & tags'}</button>
       ${data.vault && html`<button class=${'btn' + (data.locked ? ' on' : '')} title=${data.locked ? 'Hide the locked videos again' : `Show ${data.vault.name}'s videos here, for tagging — needs the PIN`} onClick=${toggleLocked}>${data.locked ? '🔓 Hide locked' : '🔒 Show locked'}</button>`}
-      <button class="btn" onClick=${() => setDialog('torrents')}>🧲 Torrents</button>
+      <button class="btn" onClick=${onOpenTorrents}>🧲 Torrents</button>
       <button class="btn" onClick=${() => setDialog('free')}>📡 Free TV</button>
       <button class="btn primary" onClick=${() => setDialog('sources')}><${Icon.plus} /> Add sources</button>`}
     </div>
@@ -489,7 +488,6 @@ export function LibraryPanel({ stats, channels, setChannels, onPlay, onEdit, toa
 
     ${dialog === 'sources' && html`<${AddSourcesDialog} onClose=${() => setDialog(null)} toast=${toast} />`}
     ${dialog === 'free' && html`<${FreeTvDialog} onClose=${() => setDialog(null)} toast=${toast} />`}
-    ${dialog === 'torrents' && html`<${TorrentsPanel} onClose=${() => { setDialog(null); load(); }} toast=${toast} onPlay=${onPlay} isAdult=${isAdult} />`}
     ${pin && html`<div class="modal-bg" onClick=${(e) => e.target === e.currentTarget && setPin(null)}><div class="modal narrow">
       <div class="modal-head"><h3>🔒 Show ${data.vault?.name || 'locked'} videos</h3><button class="icon-btn" onClick=${() => setPin(null)}><${Icon.close} /></button></div>
       <form class="modal-body" onSubmit=${(e) => { e.preventDefault(); tryPin(); }}>
