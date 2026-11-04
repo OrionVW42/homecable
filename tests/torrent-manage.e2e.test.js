@@ -16,6 +16,9 @@ const BUNNY = 'magnet:?xt=urn:btih:dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c&dn=B
 const STEEL = 'magnet:?xt=urn:btih:209c8226b299b308beaf2b9cd3fb49212dbd13ec&dn=Tears+of+Steel' + TR + WS + '&xs=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2Ftears-of-steel.torrent';
 
 test.describe.configure({ mode: 'serial' });
+// Internet traffic: on a machine with a VPN, only through it. Elsewhere set HOMECABLE_ALLOW_NO_VPN=1.
+test.skip(!require('../src/main/vpn').detectNow('auto') && !process.env.HOMECABLE_ALLOW_NO_VPN, 'torrent tests run only with a VPN up');
+
 test.skip(!!process.env.HOMECABLE_NO_NET, 'needs the internet');
 
 let app, page, data, sintel, sintelServer;
@@ -24,7 +27,7 @@ const items = () => page.evaluate(() => window.tv.browse().then((b) => b.items))
 
 test.beforeAll(async () => {
   data = fs.mkdtempSync(path.join(os.tmpdir(), 'homecable-torrent2-'));
-  fs.writeFileSync(path.join(data, 'settings.json'), JSON.stringify({ updateOnStart: false, updateEvery: 'off', setupDone: true, tourDone: true, torrentVpn: 'off', torrentVpnWarn: false, seedDefault173: true, torrentStopSeeding: false }));
+  fs.writeFileSync(path.join(data, 'settings.json'), JSON.stringify({ updateOnStart: false, updateEvery: 'off', setupDone: true, tourDone: true, torrentWatchOnly: false, torrentVpn: 'off', torrentVpnWarn: false, seedDefault173: true, torrentStopSeeding: false }));
   app = await electron.launch({ ...(process.env.HOMECABLE_EXE ? { executablePath: process.env.HOMECABLE_EXE, args: [] } : { args: [path.join(__dirname, '..')] }),
     env: { ...process.env, HOMECABLE_DATA: data, HOMECABLE_MUTE: '1', HOMECABLE_NO_INSTALL: '1', HOMECABLE_OFFSCREEN: '1', HOMECABLE_NO_CAST: '1' } });
   page = await app.firstWindow();

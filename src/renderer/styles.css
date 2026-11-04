@@ -1136,6 +1136,8 @@ details.od-tag-more > .od-tags { margin: 6px 0 4px; }
 .vpn-banner small { flex-basis: 100%; }
 .tor-privacy select { margin-left: 6px; }
 
+.tor-tag-temp { margin-left: 8px; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; background: rgba(108,140,255,.18); }
+
 /* ---- Library, Netflix-style (1.6.2) ---- */
 .lib-main.nf { padding: 14px 28px 60px; scroll-behavior: smooth; }
 .nf-bar { margin-bottom: 12px; gap: 10px; }

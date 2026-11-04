@@ -43,7 +43,7 @@ class Torrents {
     this.settings = settings; this.send = send; this.onNew = onNew; this.playing = playing;
     this._cleanT = setInterval(() => this.enforceLimit().catch((e) => this.log('torrents: clean-up', e.message)), 5 * 60e3);
     this._cleanT.unref?.();
-    this._queueT = setInterval(() => this._status().then(() => this._schedule()).catch(() => {}), 15000);
+    this._queueT = setInterval(() => this._status().then(() => this._schedule()).then(() => this.sweep()).catch(() => {}), 15000);
     this._queueT.unref?.();
     // [{ infoHash, name, link, torrentFile (base64), policy, added, length, fileList, files?: [paths picked], paused?, progress? }]
     this.saved = store.read('torrents', []);
@@ -92,6 +92,7 @@ class Torrents {
         this._attachPass = this._attachAll().catch((e) => this.log('torrents: resume', e.message));
         break;
       case 'done': {
+        if (this.saved.find((r) => r.infoHash === m.infoHash)?.watchOnly) { this._watchOnlyDone(m.infoHash).catch(() => {}); break; }
         this.log('a torrent finished');
         const s = this.lib.servers.find((x) => x.id === serverIdOf(m.infoHash));
         if (s) { s.detail = `Torrent · downloaded · ${size(m.length)}`; this.lib.save(); this.lib.emit('changed'); }
@@ -126,9 +127,10 @@ class Torrents {
       if (!/\.torrent$/i.test(link) || !fs.existsSync(link)) throw new Error('Paste a magnet link or pick a .torrent file');
       req = { b64: fs.readFileSync(link).toString('base64') };
     }
-    const t = await this._rpc('add', req);
+    const t = await this._rpc('add', { ...req, deselect: this.settings().torrentWatchOnly !== false });
     const known = this.saved.find((s) => s.infoHash === t.infoHash);
-    const rec = known || { link, policy, added: Date.now() };
+    const rec = known || { link, policy, added: Date.now(), ...(this.settings().torrentWatchOnly !== false ? { watchOnly: true } : {}) };
+    if (known?.watchOnly) { delete known.deleted; delete known.files; delete known.watched; }
     this._remember(rec, t);
     if (known?.paused) { known.paused = false; this._save(); }
     const added = await this._register(t, rec);
@@ -144,7 +146,7 @@ class Torrents {
   async _attach(rec) {
     this._busy.add(rec.infoHash);
     try {
-      const t = await this._rpc('add', rec.torrentFile ? { b64: rec.torrentFile } : { src: rec.link });
+      const t = await this._rpc('add', { ...(rec.torrentFile ? { b64: rec.torrentFile } : { src: rec.link }), deselect: !!rec.watchOnly });
       this._remember(rec, t);
       return await this._register(t, rec);
     } finally { this._busy.delete(rec.infoHash); }
@@ -161,12 +163,21 @@ class Torrents {
   // Which of a torrent's files are wanted: the ones picked by hand, else every video.
   _chosen(rec, files) { return rec.files ? files.filter((f) => rec.files.includes(f.path)) : files.filter(isMedia); }
 
+  // Which files download. "Watch without keeping" torrents fetch only what you're watching
+  // and the next episode; the others fetch everything that's ticked.
+  _dlIndexes(rec, files) {
+    const chosen = this._chosen(rec, files);
+    if (!rec.watchOnly) return chosen.map((f) => f.index);
+    const wanted = new Set(rec.wanted || []);
+    return chosen.filter((f) => wanted.has(f.path)).map((f) => f.index);
+  }
+
   // The wanted videos become library items (the rest are never downloaded). Returns how many are new.
   async _register(t, rec) {
     if (!this.saved.some((s) => s.infoHash === t.infoHash)) return 0; // forgotten while this was in flight
     const serverId = serverIdOf(t.infoHash);
     const chosen = this._chosen(rec, t.files);
-    await this._rpc('select', { infoHash: t.infoHash, indexes: chosen.map((f) => f.index) });
+    await this._rpc('select', { infoHash: t.infoHash, indexes: this._dlIndexes(rec, t.files) });
     let added = 0;
     for (const f of t.files.filter(isMedia)) {
       const id = idFor(serverId + '|' + f.path);
@@ -178,7 +189,7 @@ class Torrents {
         continue;
       }
       const info = await probe(f.url, 60000); // reads the head and the index at the tail — those pieces come first
-      if (!info || !(info.duration >= 5)) { this.log('torrent: no readable video in', f.path); continue; }
+      if (!info || !(info.duration >= 5)) { this.log('a torrent file has no readable video'); continue; }
       // "Torrents/Show Name/Season 1/…" so the show / season / episode naming rules apply.
       const pseudo = 'Torrents/' + f.path.split(/[\\/]/).join('/');
       const it = this.lib.buildItem({ id, path: pseudo, type: mediaType(f.name), size: f.length, mtime: 0 }, info);
@@ -227,7 +238,7 @@ class Torrents {
       const chosen = new Set(this._chosen(rec, files).map((f) => f.path));
       const serverId = serverIdOf(rec.infoHash);
       return {
-        id: serverId, name: rec.name, added: rec.added, paused: !!rec.paused && !rec.stopped, stopped: !!rec.stopped, priority: rec.priority || 'normal', queued: !!rec._queued && !rec.paused, waiting: !rec.paused && this.state !== 'ready', busy: this._busy.has(rec.infoHash), kept: this.isKept({ torrent: { infoHash: rec.infoHash } }),
+        id: serverId, name: rec.name, added: rec.added, watchOnly: !!rec.watchOnly, paused: !!rec.paused && !rec.stopped, stopped: !!rec.stopped, priority: rec.priority || 'normal', queued: !!rec._queued && !rec.paused, waiting: !rec.paused && this.state !== 'ready', busy: this._busy.has(rec.infoHash), kept: this.isKept({ torrent: { infoHash: rec.infoHash } }),
         length: live?.length ?? rec.length ?? 0, progress: live ? live.progress : rec.progress ?? 0, done: live ? live.done : (rec.progress ?? 0) >= 1,
         downloaded: live?.downloaded ?? Math.round((rec.progress ?? 0) * (rec.length ?? 0)), uploaded: live?.uploaded ?? 0,
         downloadSpeed: live?.downloadSpeed ?? 0, uploadSpeed: live?.uploadSpeed ?? 0, peers: live?.peers ?? 0, encrypted: live?.encrypted ?? 0, webSeeds: live?.webSeeds ?? 0, timeRemaining: live?.timeRemaining ?? 0,
@@ -302,11 +313,71 @@ class Torrents {
         if (!!rec._queued === queued) continue;
         rec._queued = queued;
         const live = this._live.get(rec.infoHash);
-        const indexes = queued ? [] : this._chosen(rec, live.files).map((f) => f.index);
+        const indexes = queued ? [] : this._dlIndexes(rec, live.files);
         await this._rpc('select', { infoHash: rec.infoHash, indexes }, 10000).catch((e) => this.log('torrent queue', e.message));
         this.log(`a torrent is ${queued ? 'queued' : 'downloading'}`);
       }
     } finally { this._scheduling = false; }
+  }
+
+  // A watch-only movie that has fully arrived stops sharing like any other (if that's on). A
+  // pack keeps running, because its other episodes may still be wanted.
+  async _watchOnlyDone(infoHash) {
+    const rec = this.saved.find((r) => r.infoHash === infoHash);
+    if (!rec || !this.settings().torrentStopSeeding) return;
+    await this._status();
+    const live = this._live.get(infoHash);
+    const chosen = live ? this._chosen(rec, live.files) : [];
+    if (chosen.length === 1 && (chosen[0].progress ?? 0) >= 0.999) await this.stop(serverIdOf(infoHash));
+  }
+
+  // ---- "Watch without keeping" ----
+  _tempRec(it) { const rec = it?.torrent && this.saved.find((s) => s.infoHash === it.torrent.infoHash); return rec?.watchOnly ? rec : null; }
+  // Watched to the credits or the end, or moved on from: its files can go once it's off screen.
+  noteWatched(itemId) {
+    const it = this.lib.items[itemId];
+    const rec = this._tempRec(it);
+    if (!rec) return;
+    rec.watched = [...new Set([...(rec.watched || []), it.torrent.file])];
+    this._save();
+    setTimeout(() => this.sweep().catch(() => {}), 500);
+  }
+  // Clear what's been watched, then keep the cache under its limit. Watch history and resume
+  // points live in settings, so they stay. Anything kept (📌) and what's on screen stay too.
+  async sweep() {
+    if (this._sweeping) return;
+    this._sweeping = true;
+    try {
+      const playing = this.playing();
+      const temp = Object.values(this.lib.items).filter((it) => this._tempRec(it) && !this.isKept(it) && it.id !== playing);
+      const done = temp.filter((it) => (this._tempRec(it).watched || []).includes(it.torrent.file));
+      if (done.length) { this.log('watched videos cleared from the cache:', done.length); await this._dropItems(done); }
+      await this.enforceCache();
+    } finally { this._sweeping = false; }
+  }
+  cacheBytes() {
+    return Object.values(this.lib.items).filter((it) => this._tempRec(it)).reduce((n, it) => n + this._fileBytes(it), 0);
+  }
+  // Over the limit: unstarted videos go first, half-watched ones last, oldest first. Nearly
+  // empty ones are skipped (their entry would go, with nothing freed).
+  async enforceCache() {
+    const gb = this.settings().torrentCacheGB ?? 50;
+    if (!(gb > 0)) return;
+    await this._status();
+    const limit = gb * 1e9;
+    let used = this.cacheBytes();
+    if (used <= limit) return;
+    const playing = this.playing();
+    const playingRec = this.lib.items[playing]?.torrent?.infoHash;
+    const resume = this.settings().vodResume || {};
+    const safe = (it) => it.id !== playing && !this.isKept(it) && !(it.torrent.infoHash === playingRec && (this._tempRec(it).wanted || []).includes(it.torrent.file));
+    const cands = Object.values(this.lib.items).filter((it) => this._tempRec(it) && safe(it) && this._fileBytes(it) >= 1e6)
+      .sort((a, b) => (+!!resume[a.id] - +!!resume[b.id]) || (a.added || 0) - (b.added || 0));
+    const drop = [];
+    for (const it of cands) { if (used <= limit) break; used -= this._fileBytes(it); drop.push(it); }
+    if (!drop.length) return;
+    await this._dropItems(drop);
+    this.send('toast', `🧹 The watch cache was over its ${gb} GB limit — cleared ${drop.length} video${drop.length === 1 ? '' : 's'}. Add the torrent again to watch ${drop.length === 1 ? 'it' : 'them'}.`);
   }
 
   // Stop: out of the swarm for good (no downloading, no sharing) — but what's finished keeps
@@ -350,7 +421,8 @@ class Torrents {
       }
     }
     const gb = this.settings().torrentLimitGB ?? 100;
-    return { bytes, limitBytes: gb > 0 ? gb * 1e9 : 0 };
+    const cacheGb = this.settings().torrentCacheGB ?? 50;
+    return { bytes, limitBytes: gb > 0 ? gb * 1e9 : 0, cacheBytes: this.cacheBytes(), cacheLimitBytes: cacheGb > 0 ? cacheGb * 1e9 : 0 };
   }
   _fileBytes(it) {
     const rec = this.saved.find((s) => s.infoHash === it.torrent?.infoHash);
@@ -419,12 +491,22 @@ class Torrents {
   // behind it — so episode 2 is ready when episode 1 ends.
   async focus(itemId) {
     const it = this.lib.items[itemId];
-    if (!it?.torrent || !this.child || this.state !== 'ready') return;
+    if (!it?.torrent) return;
+    const eps = it.showKey ? this.lib.episodesOf(it.showKey) : [];
+    const i = eps.findIndex((e) => e.id === it.id);
+    // Moved on to the next episode: the one before it is finished with.
+    if (this._lastFocus && this._lastFocus !== itemId && i > 0 && eps[i - 1].id === this._lastFocus) this.noteWatched(this._lastFocus);
+    this._lastFocus = itemId;
+    if (!this.child || this.state !== 'ready') return;
+    const rec = this._tempRec(it);
     const want = [[it, 2]];
-    if (it.showKey) {
-      const eps = this.lib.episodesOf(it.showKey);
-      const i = eps.findIndex((e) => e.id === it.id);
-      for (const nx of eps.slice(i + 1, i + 3)) if (nx.torrent) want.push([nx, 1]);
+    for (const nx of i >= 0 ? eps.slice(i + 1, i + (rec ? 2 : 3)) : []) if (nx.torrent) want.push([nx, 1]);
+    if (rec) {
+      rec.wanted = want.filter(([x]) => x.torrent.infoHash === rec.infoHash).map(([x]) => x.torrent.file);
+      this._save();
+      await this._status();
+      const live = this._live.get(rec.infoHash);
+      if (live) await this._rpc('select', { infoHash: rec.infoHash, indexes: this._dlIndexes(rec, live.files) }, 10000).catch(() => {});
     }
     for (const [x, priority] of want) await this._rpc('prioritize', { infoHash: x.torrent.infoHash, path: x.torrent.file, priority }, 5000).catch(() => {});
   }

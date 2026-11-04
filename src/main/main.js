@@ -58,7 +58,7 @@ function log(...a) {
   if (!app.isPackaged) process.stdout.write(line);
 }
 
-const DEFAULT_SETTINGS = { torrentLimitGB: 100, torrentMaxActive: 3, torrentCleanSeries: 'watched', torrentCleanMovies: 'watched', torrentStopSeeding: true, torrentEncryption: 'require', torrentVpn: 'auto', torrentVpnWarn: true, torrentToOnDemand: true, torrentKeep: [], searchEngines: {}, searchEngineOptions: {}, searchRecent: [], setupDone: false, onlineMeta: true, transitions: true, showClock: true, volume: 0.9, muted: false, lastChannel: null, prevChannel: null, bannerSeconds: 5, lockChannel: null, startFullscreen: false, brightness: 1, fit: 'fit',
+const DEFAULT_SETTINGS = { torrentLimitGB: 100, torrentMaxActive: 3, torrentCleanSeries: 'watched', torrentCleanMovies: 'watched', torrentStopSeeding: true, torrentWatchOnly: true, torrentCacheGB: 50, torrentEncryption: 'require', torrentVpn: 'auto', torrentVpnWarn: true, torrentToOnDemand: true, torrentKeep: [], searchEngines: {}, searchEngineOptions: {}, searchRecent: [], setupDone: false, onlineMeta: true, transitions: true, showClock: true, volume: 0.9, muted: false, lastChannel: null, prevChannel: null, bannerSeconds: 5, lockChannel: null, startFullscreen: false, brightness: 1, fit: 'fit',
   // auto / manual / in-between
   newMedia: 'auto',          // 'auto' = onto channels · 'review' = inbox first · 'library' = library only
   scanInterval: '6h',        // 'off' | '1h' | '6h' | '24h' (folders are also watched live)
@@ -1241,6 +1241,7 @@ function handlers() {
     if ('torrentInterface' in patch || 'torrentVpn' in patch || 'torrentVpnRequired' in patch) await checkVpn();
     if ('torrentEncryption' in patch) torrents?.setEncryption().catch((e) => log('torrents', e.message));
     if ('torrentMaxActive' in patch) torrents?._schedule().catch(() => {});
+    if ('torrentCacheGB' in patch) torrents?.sweep().catch(() => {});
     if ('torrentLimitGB' in patch || 'torrentCleanSeries' in patch || 'torrentCleanMovies' in patch) torrents?.enforceLimit().catch((e) => log('torrents', e.message));
     if (patch.torrentToOnDemand) torrentsToOnDemand().catch(() => {});
     if (AD_KEYS.some((k) => k in patch) || 'adPacks' in patch || 'bumpersOn' in patch || 'bumperSeconds' in patch) {
@@ -2279,6 +2280,7 @@ function handlers() {
       if (ks.length > 2000) for (const k of ks.slice(0, ks.length - 2000)) delete seen[k];
     }
     settings.vodResume = resume; settings.vodWatched = seen;
+    if (watched && !started) torrents?.noteWatched(id);
     if (showKey) settings.showLast = { ...(settings.showLast || {}), [showKey]: { id, done: started ? false : watched } };
     saveSettings();
     send('progress-changed', { vodResume: settings.vodResume, vodWatched: settings.vodWatched, showLast: settings.showLast });

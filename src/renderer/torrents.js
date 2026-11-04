@@ -126,6 +126,8 @@ export function TorrentsBody({ toast, onPlay, isAdult = true, settings = null, s
         </div>`}
       ${isAdult && html`<${PrivacyCard} cfg=${cfg} setCfg=${setCfg} toast=${toast} />`}
       ${isAdult && html`<div class="tor-store">
+        <label class="tor-opt" style="margin-top:0"><button class=${'toggle' + (cfg.torrentWatchOnly !== false ? ' on' : '')} onClick=${() => setCfg({ torrentWatchOnly: cfg.torrentWatchOnly === false })}></button><span><b>Watch without keeping</b><small class="muted">Saves disk space. Torrents you add from now on fetch only what you’re watching and the next episode, then delete a video once it’s finished. Half-watched videos stay so you can pick up where you left off, and your watch history is kept. 📌 Keep saves one for good.</small></span></label>
+        <div class="row" style="flex-wrap:wrap;gap:10px;margin-bottom:12px"><label class="muted small">Watch cache limit: <input class="input" type="number" min="1" style="width:90px;margin:0 6px" value=${cfg.torrentCacheGB ?? 50} onChange=${(e) => setCfg({ torrentCacheGB: Math.max(0, +e.target.value || 0) })} /> GB</label><span class="muted small">${usage ? `${(usage.cacheBytes / 1e9).toFixed(1)} GB in use` : ''}. Over the limit, videos you haven’t started clear first and half-watched ones last.</span></div>
         <div class="row" style="flex-wrap:wrap;gap:8px">
           <b>💾 Space for torrents</b>
           <span class="muted small grow">${usage ? `${mb(usage.bytes)} used${usage.limitBytes ? ` of ${mb(usage.limitBytes)}` : ' · no limit'}` : ''}</span>
