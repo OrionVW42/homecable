@@ -12,6 +12,45 @@ const eta = (ms) => { const s = ms / 1000; return !isFinite(s) || s <= 0 ? '' : 
 const stateOf = (t) => (t.stopped ? (t.done ? 'Stopped · plays from this PC' : 'Stopped') : t.paused ? 'Paused' : t.busy ? 'Starting…' : t.waiting ? 'Waiting for the network interface' : t.queued ? 'Queued — waiting its turn' : t.done ? 'Done · sharing' : t.progress > 0 ? 'Downloading' : 'Looking for peers');
 
 // settings / setSettings come from the Settings panel; opened elsewhere it looks after the setting itself.
+const VPNS = [['Proton VPN', 'https://protonvpn.com/download'], ['NordVPN', 'https://nordvpn.com/download/'], ['Malwarebytes', 'https://www.malwarebytes.com/vpn']];
+// Up top on every Torrents view while no VPN is in use.
+export function VpnBanner({ toast }) {
+  const [v, setV] = useState(null);
+  useEffect(() => { const go = () => tv.torrentVpn().then(setV).catch(() => {}); go(); const t = setInterval(go, 5000); return () => clearInterval(t); }, []);
+  if (!v) return null;
+  if (v.waiting) return html`<div class="vpn-banner bad"><b>⏸ Torrents are paused: your VPN is off.</b><span>Turn it back on and they carry on by themselves. To stop waiting for it, change “Pause torrents if the VPN is off” under Privacy.</span></div>`;
+  if (v.protectedBy || v.setting === 'off' || !v.warn) return null;
+  return html`<div class="vpn-banner"><b>⚠ No VPN found. We strongly recommend a good one.</b><span>Without a VPN, your internet provider can see your torrent connections, and other people sharing a torrent can see your IP address. HomeCable can’t protect you from what you choose to download: what you do is your responsibility, and a VPN doesn’t make downloading copyrighted material legal.</span>
+    ${VPNS.map(([n, u]) => html`<a class="btn sm" href=${u} target="_blank" rel="noreferrer">${n}</a>`)}
+    <button class="btn sm ghost" onClick=${() => tv.setSettings({ torrentVpnWarn: false }).then(() => setV({ ...v, warn: false })).catch((e) => toast?.(String(e.message || e)))}>Don’t remind me</button>
+    <small class="muted">HomeCable finds these and most other VPNs by itself. Free VPN plans usually aren’t enough: choose a paid plan that allows torrent sharing (P2P).</small></div>`;
+}
+
+// Torrents → Privacy: encryption, your VPN, and a check of where you appear to be.
+function PrivacyCard({ cfg, setCfg, toast }) {
+  const [v, setV] = useState(null);
+  const [info, setInfo] = useState(null);
+  const [checking, setChecking] = useState(false);
+  const load = () => tv.torrentVpn().then(setV).catch(() => {});
+  useEffect(() => { load(); const t = setInterval(load, 4000); return () => clearInterval(t); }, []);
+  const set = (p) => { setCfg(p); setTimeout(load, 400); };
+  const check = async () => { setChecking(true); setInfo(null); try { setInfo(await tv.torrentPublicInfo()); } catch (e) { toast(`Couldn’t check: ${String(e.message || e).replace(/^.*Error: /, '')}`); } setChecking(false); };
+  const enc = cfg.torrentEncryption || 'require';
+  const on = (cfg.torrentVpn || 'auto') !== 'off';
+  const toggle = (val, fn, title, text) => html`<label class="tor-opt"><button class=${'toggle' + (val ? ' on' : '')} onClick=${fn}></button><span><b>${title}</b><small class="muted">${text}</small></span></label>`;
+  return html`<div class="tor-store tor-privacy">
+    <b>🛡 Privacy</b>
+    ${toggle(enc !== 'off', () => set({ torrentEncryption: enc === 'off' ? 'require' : 'off' }), 'Encrypt connections to other people', 'Scrambles what you exchange with other people’s torrent apps, using the one standard they all share (RC4). It’s harder to read on the network, but your provider can still tell you’re connecting to them. It doesn’t hide your IP address.')}
+    ${enc !== 'off' && toggle(enc === 'require', () => set({ torrentEncryption: enc === 'require' ? 'prefer' : 'require' }), 'Encrypted connections only', 'Refuses anyone who can’t encrypt. If a torrent finds nobody or crawls, turn this off and try again.')}
+    ${toggle(on, () => set({ torrentVpn: on ? 'off' : 'auto' }), 'Use my VPN automatically', v?.manual ? `You picked a network adapter by hand (${v.manual}), so that’s used instead.` : v?.found ? `✓ ${v.provider} found: torrents and search use only “${v.found.name}”. If torrents don’t connect, choose a server that allows P2P in your VPN’s app.` : 'No VPN running right now. When one is on, torrents and search use it.')}
+    ${on && html`<label class="muted small" style="margin-left:52px">My VPN: <select class="select" value=${cfg.torrentVpn || 'auto'} onChange=${(e) => set({ torrentVpn: e.target.value })}><option value="auto">Find it automatically</option>${(v?.providers || []).map((p) => html`<option value=${p.id}>${p.name}</option>`)}</select></label>
+    ${toggle(!!v?.required, () => set({ torrentVpnRequired: !v?.required }), 'Pause torrents if the VPN is off', 'Instead of carrying on over your normal connection. Turns on by itself the first time a VPN is found.')}`}
+    <div class="row" style="gap:10px;flex-wrap:wrap;margin-top:8px"><button class="btn sm" disabled=${checking} onClick=${check}>${checking ? 'Checking…' : '🔍 Where do my torrents appear from?'}</button>
+      ${info && html`<span class="small"><b>${info.org || 'Unknown network'}</b>${info.city || info.country ? ` · ${[info.city, info.country].filter(Boolean).join(', ')}` : ''}. If this is your own internet provider, you’re not protected by a VPN.</span>`}</div>
+    <p class="muted small" style="margin:8px 0 0">For privacy from your internet provider, a VPN does far more: it encrypts everything with modern ciphers and hides who you connect to. Neither one makes downloading copyrighted material legal.</p>
+  </div>`;
+}
+
 export function TorrentsBody({ toast, onPlay, isAdult = true, settings = null, setSettings = null }) {
   const [list, setList] = useState(null);
   const [bound, setBound] = useState(null);
@@ -85,6 +124,7 @@ export function TorrentsBody({ toast, onPlay, isAdult = true, settings = null, s
           </select>
           <span class="muted small grow">${ifaceNote}</span>
         </div>`}
+      ${isAdult && html`<${PrivacyCard} cfg=${cfg} setCfg=${setCfg} toast=${toast} />`}
       ${isAdult && html`<div class="tor-store">
         <div class="row" style="flex-wrap:wrap;gap:8px">
           <b>💾 Space for torrents</b>
@@ -104,7 +144,7 @@ export function TorrentsBody({ toast, onPlay, isAdult = true, settings = null, s
           <label class="muted small">Downloads at once: <select class="select" value=${String(cfg.torrentMaxActive ?? 3)} onChange=${(e) => setCfg({ torrentMaxActive: +e.target.value })}>${[1, 2, 3, 4, 5, 8].map((n) => html`<option value=${n}>${n}</option>`)}<option value="0">All</option></select></label>
           <span class="muted small">The rest queue up by priority (⬆ High first). What you're watching always downloads.</span>
         </div>
-        <label class="tor-opt"><button class=${'toggle' + (cfg.torrentStopSeeding ? ' on' : '')} onClick=${() => setCfg({ torrentStopSeeding: !cfg.torrentStopSeeding })}></button><span><b>Stop sharing when a download finishes</b><small>Off: it keeps sharing, and a note up top lets you stop it.</small></span></label>
+        <label class="tor-opt"><button class=${'toggle' + (cfg.torrentStopSeeding !== false ? ' on' : '')} onClick=${() => setCfg({ torrentStopSeeding: cfg.torrentStopSeeding === false })}></button><span><b>Stop sharing when a download finishes</b><small>Off: it keeps sharing, and a note up top lets you stop it.</small></span></label>
         <label class="tor-opt"><button class=${'toggle' + (cfg.torrentToOnDemand !== false ? ' on' : '')} onClick=${() => setCfg({ torrentToOnDemand: cfg.torrentToOnDemand === false })}></button><span><b>Put torrent shows in Stream Demand and movies in On Demand</b><small>They're looked up by name too: real titles, posters, genres and tags.</small></span></label>
       </div>`}
       ${list === null ? html`<p class="muted">Loading…</p>`

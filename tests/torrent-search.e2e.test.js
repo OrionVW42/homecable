@@ -61,7 +61,7 @@ const statusOf = async (engine) => (await page.locator('.sr-status span', { hasT
 test.beforeAll(async () => {
   data = fs.mkdtempSync(path.join(os.tmpdir(), 'homecable-search-'));
   engineDir = fs.mkdtempSync(path.join(os.tmpdir(), 'homecable-engine-'));
-  fs.writeFileSync(path.join(data, 'settings.json'), JSON.stringify({ updateOnStart: false, updateEvery: 'off', setupDone: true, tourDone: true }));
+  fs.writeFileSync(path.join(data, 'settings.json'), JSON.stringify({ updateOnStart: false, updateEvery: 'off', setupDone: true, tourDone: true, torrentVpn: 'off', torrentVpnWarn: false, seedDefault173: true, torrentStopSeeding: false }));
   fs.writeFileSync(path.join(engineDir, 'testengine.js'), ENGINE('1.0'));
   // The engine, served over HTTP (install from a link, then an update).
   engineSrv = http.createServer((req, res) => { res.setHeader('Content-Type', 'text/javascript'); res.end(req.url.startsWith('/test-engine.js') ? ENGINE(engineVersion) : 'not here'); });

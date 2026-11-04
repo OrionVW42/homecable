@@ -209,11 +209,11 @@ function startServer(lib, log = () => {}, { liveFor = () => null, thumbDir = nul
       // Screen mirroring: the live picture of the whole HomeCable window.
       if (route === 'mirror') {
         if (req.method === 'HEAD') { res.writeHead(200, { 'Content-Type': url.searchParams.get('fmt') === 'ts' ? 'video/mpeg' : 'video/mp4', 'Access-Control-Allow-Origin': '*', ...(url.searchParams.get('fmt') === 'ts' ? DLNA_LIVE : {}) }); return res.end(); }
-        log(`cast GET mirror from ${req.socket.remoteAddress}`);
+        log('cast GET mirror');
         return mirror ? mirror(req, res) : (res.writeHead(404), res.end());
       }
       if (req.method === 'HEAD' && route !== 'direct' && route !== 'thumb') { const ts = url.searchParams.get('fmt') === 'ts'; res.writeHead(200, { 'Content-Type': ts ? 'video/mpeg' : 'video/mp4', 'Access-Control-Allow-Origin': '*', ...(ts ? DLNA_LIVE : {}) }); return res.end(); }
-      log(`cast ${req.method} ${route} from ${req.socket.remoteAddress}${req.headers.range ? ' ' + req.headers.range : ''}`);
+      log(`cast ${req.method} ${route}${req.headers.range ? ' ' + req.headers.range : ''}`);
       serve(req, res, url);
     });
     castServer.on('error', (e) => { castServer = null; castToken = null; reject(e); });

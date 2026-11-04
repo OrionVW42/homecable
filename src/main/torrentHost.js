@@ -48,13 +48,14 @@ async function bringUp() {
   fs.mkdirSync(cfg.dir, { recursive: true });
   // No UPnP / NAT-PMP (never asks the router to open a port); uTP off (TCP peers are plenty and need no
   // native addon); local discovery off while bound (it's multicast, which can't be pinned to an address).
-  client = new WebTorrent({ natUpnp: false, natPmp: false, utp: false, lsd: !bound });
+  // secure: 0 = plain, 1 = encrypt when the other side can, 2 = encrypted connections only (BitTorrent's RC4 standard).
+  client = new WebTorrent({ natUpnp: false, natPmp: false, utp: false, lsd: !bound, secure: cfg.secure ?? 1 });
   client.on('error', (e) => log('client', e.message));
   server = client.createServer({ pathname: '/t-' + crypto.randomBytes(12).toString('hex') }, 'node');
   await new Promise((resolve, reject) => { server.server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
   base = `http://127.0.0.1:${server.address().port}`;
   state = 'ready';
-  log(`streaming from ${base}${bound ? ` · bound to ${want} (${bound})` : ''}`);
+  log(`ready${bound ? ' · bound to the chosen adapter' : ''}`);
   send({ event: 'ready', ...view() });
   return view();
 }
@@ -63,7 +64,7 @@ async function bringUp() {
 setInterval(() => {
   if (!cfg.iface) return;
   const now = addressOf(cfg.iface);
-  if (state === 'ready' && now !== bound) { log(`"${cfg.iface}" changed (${bound} → ${now || 'gone'})`); bringUp().catch((e) => log('rebind', e.message)); }
+  if (state === 'ready' && now !== bound) { log(`"${cfg.iface}" changed its address`); bringUp().catch((e) => log('rebind', e.message)); }
   else if (state === 'waiting' && now) bringUp().catch((e) => log('rebind', e.message));
 }, 10000).unref();
 
@@ -87,7 +88,7 @@ async function add({ src, b64 }) {
   if (inflight.has(infoHash)) return describe(await inflight.get(infoHash));
   const p = (async () => {
     const t = client.add(id, { path: path.join(cfg.dir, infoHash.slice(0, 16)), strategy: 'sequential' });
-    t.on('error', (e) => log('torrent', t.name || infoHash, e.message));
+    t.on('error', (e) => log('a torrent had an error:', String(e.message).replace(/d{1,3}(.d{1,3}){3}/g, '(address)').slice(0, 120)));
     await new Promise((resolve, reject) => {
       if (t.metadata) return resolve();
       const timer = setTimeout(() => { t.destroy(); reject(new Error('Nobody answered for this torrent — is the link right, and does it still have seeds?')); }, METADATA_MS);
@@ -102,7 +103,8 @@ async function add({ src, b64 }) {
 }
 
 const handlers = {
-  async init({ dir, iface }) { cfg.dir = dir; cfg.iface = iface || ''; return bringUp(); },
+  async init({ dir, iface, secure }) { cfg.dir = dir; cfg.iface = iface || ''; cfg.secure = secure ?? 1; return bringUp(); },
+  async setEncryption({ secure }) { cfg.secure = secure ?? 1; return bringUp(); },
   async setInterface({ iface }) { cfg.iface = iface || ''; return bringUp(); },
   add,
   // Which files to download: the rest never are.
@@ -132,7 +134,7 @@ const handlers = {
       infoHash: t.infoHash, name: t.name, progress: t.progress, done: t.done, length: t.length, downloaded: t.downloaded, uploaded: t.uploaded,
       downloadSpeed: t.downloadSpeed, uploadSpeed: t.uploadSpeed, timeRemaining: t.timeRemaining,
       // "peers" are people; a web seed (plain HTTP mirror named in the torrent) is counted separately.
-      peers: t.wires.filter((w) => w.type !== 'webSeed').length, webSeeds: t.wires.filter((w) => w.type === 'webSeed').length,
+      peers: t.wires.filter((w) => w.type !== 'webSeed').length, encrypted: t.wires.filter((w) => w.type !== 'webSeed' && w._encryptionMethod === 2).length, webSeeds: t.wires.filter((w) => w.type === 'webSeed').length,
       files: t.files.map((f, index) => ({ index, path: f.path, name: f.name, length: f.length, progress: f.progress, downloaded: f.downloaded })),
     })) };
   },

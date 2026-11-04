@@ -137,9 +137,6 @@ class TorrentSearch {
     const run = fits.filter((e) => e.ready);
     const searchId = `s${Date.now().toString(36)}-${++this._seq}`;
     this._running.set(searchId, { query, category, at: Date.now() });
-    const s = this.settings();
-    s.searchRecent = [query, ...(s.searchRecent || []).filter((q) => q.toLowerCase() !== query.toLowerCase())].slice(0, 20);
-    this.save();
     if (run.length) await this._rpc('search', { searchId, query, category, engines: run.map((e) => ({ id: e.id, file: e.file, options: e.values })) });
     // Engines that can't run say so, after the caller has the search id.
     setTimeout(() => {
@@ -198,7 +195,7 @@ class TorrentSearch {
       if (source) this.meta.sources[id] = source; else delete this.meta.sources[id];
       this._saveMeta();
       if (onlyIfNewerThan == null) await this.setEnabled(id, true); // you installed it on purpose: it starts on
-      this.log('search engine installed:', d.name, d.version || '', source || fileName);
+      this.log('a search engine was installed');
       return { ...d, id, enabled: true, source };
     } finally { fs.rmSync(tmp, { force: true }); }
   }
@@ -227,6 +224,8 @@ class TorrentSearch {
     }
     return out;
   }
+  // Where the torrent connection appears to come from (asked only when you press the button).
+  async publicInfo() { await this.start(); return JSON.parse(await this._rpc('fetchText', { url: 'https://ipinfo.io/json' })); }
   folder() { fs.mkdirSync(this.dir, { recursive: true }); return this.dir; }
 
   _saveMeta() {

@@ -119,6 +119,8 @@ contextBridge.exposeInMainWorld('tv', {
   removeServer: call('sources:removeServer'),
   torrents: call('torrents:status'),
   torrentInterfaces: call('torrents:interfaces'),
+  torrentVpn: call('torrents:vpn'),
+  torrentPublicInfo: call('torrents:publicInfo'),
   torrentBound: call('torrents:bound'),
   torrentsList: call('torrents:list'),
   torrentAdd: call('torrents:add'),

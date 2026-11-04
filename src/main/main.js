@@ -27,6 +27,7 @@ const iptv = require('./iptv');
 const free = require('./freecontent');
 const { Torrents, looksLikeLink } = require('./torrents');
 const { TorrentSearch } = require('./search');
+const vpn = require('./vpn');
 const adsLib = require('./ads');
 const epg = require('./epg');
 const { Profiles, autoRating } = require('./profiles');
@@ -57,7 +58,7 @@ function log(...a) {
   if (!app.isPackaged) process.stdout.write(line);
 }
 
-const DEFAULT_SETTINGS = { torrentLimitGB: 100, torrentMaxActive: 3, torrentCleanSeries: 'watched', torrentCleanMovies: 'watched', torrentStopSeeding: false, torrentToOnDemand: true, torrentKeep: [], searchEngines: {}, searchEngineOptions: {}, searchRecent: [], setupDone: false, onlineMeta: true, transitions: true, showClock: true, volume: 0.9, muted: false, lastChannel: null, prevChannel: null, bannerSeconds: 5, lockChannel: null, startFullscreen: false, brightness: 1, fit: 'fit',
+const DEFAULT_SETTINGS = { torrentLimitGB: 100, torrentMaxActive: 3, torrentCleanSeries: 'watched', torrentCleanMovies: 'watched', torrentStopSeeding: true, torrentEncryption: 'require', torrentVpn: 'auto', torrentVpnWarn: true, torrentToOnDemand: true, torrentKeep: [], searchEngines: {}, searchEngineOptions: {}, searchRecent: [], setupDone: false, onlineMeta: true, transitions: true, showClock: true, volume: 0.9, muted: false, lastChannel: null, prevChannel: null, bannerSeconds: 5, lockChannel: null, startFullscreen: false, brightness: 1, fit: 'fit',
   // auto / manual / in-between
   newMedia: 'auto',          // 'auto' = onto channels · 'review' = inbox first · 'library' = library only
   scanInterval: '6h',        // 'off' | '1h' | '6h' | '24h' (folders are also watched live)
@@ -284,6 +285,31 @@ async function subsInfo(it) {
   const p = subtitles.subtitlesFor(it, { lang: settings.subLang || 'eng', mode: settings.subMode || 'auto', videosInFolder: perFolder });
   subsCache.set(it.id, { m: it.mtime || 0, p });
   return p;
+}
+// Which network adapter torrents and search use: the one you picked by hand, else your VPN.
+// Once a VPN has been seen, torrents wait for it rather than quietly using the normal
+// connection when it drops (your choice: Torrents → Privacy).
+const NO_VPN = '(your VPN)';
+let vpnNow = null, vpnApplied = null;
+const vpnOn = () => settings.torrentVpn !== 'off' && !process.env.HOMECABLE_DEMO;
+function netIface() {
+  if (settings.torrentInterface) return settings.torrentInterface;
+  if (!vpnOn()) return '';
+  if (vpnNow) return vpnNow.name;
+  return settings.torrentVpnRequired ? NO_VPN : '';
+}
+function applyNetIface() {
+  const want = netIface();
+  if (want === vpnApplied) return;
+  vpnApplied = want;
+  log('torrent network:', want || 'any interface');
+  torrents?.setInterface(want).catch((e) => log('torrents', e.message));
+  search?.setInterface(want).catch((e) => log('search', e.message));
+}
+async function checkVpn() {
+  vpnNow = vpnOn() ? await vpn.detect(settings.torrentVpn || 'auto').catch(() => null) : null;
+  if (vpnNow && settings.torrentVpnRequired === undefined) { settings.torrentVpnRequired = true; saveSettings(); }
+  applyNetIface();
 }
 const posterDir = () => path.join(app.getPath('userData'), 'posters');
 const RETRY_TAGS_MS = 7 * 24 * 3600e3; // a movie Wikipedia doesn't know waits a week before another try
@@ -1212,7 +1238,8 @@ function handlers() {
     lib.defaultPolicy = settings.newMedia;
     saveSettings();
     if ('newArrivals' in patch) ensureNewArrivals();
-    if ('torrentInterface' in patch) { torrents?.setInterface(settings.torrentInterface || '').catch((e) => log('torrents', e.message)); search?.setInterface(settings.torrentInterface || '').catch((e) => log('search', e.message)); }
+    if ('torrentInterface' in patch || 'torrentVpn' in patch || 'torrentVpnRequired' in patch) await checkVpn();
+    if ('torrentEncryption' in patch) torrents?.setEncryption().catch((e) => log('torrents', e.message));
     if ('torrentMaxActive' in patch) torrents?._schedule().catch(() => {});
     if ('torrentLimitGB' in patch || 'torrentCleanSeries' in patch || 'torrentCleanMovies' in patch) torrents?.enforceLimit().catch((e) => log('torrents', e.message));
     if (patch.torrentToOnDemand) torrentsToOnDemand().catch(() => {});
@@ -1929,6 +1956,8 @@ function handlers() {
   h('sources:removeServer', async (id) => { if (id.startsWith('torrent:')) await torrents.remove(id); else lib.removeServer(id); return libraryStats(); });
   h('torrents:status', () => torrents?.status() || []);
   h('torrents:interfaces', () => torrents?.interfaces() || []);
+  h('torrents:vpn', () => ({ setting: settings.torrentVpn || 'auto', providers: vpn.PROVIDERS, found: vpnNow && { provider: vpnNow.provider, name: vpnNow.name }, manual: settings.torrentInterface || '', required: !!settings.torrentVpnRequired, waiting: netIface() === NO_VPN, warn: settings.torrentVpnWarn !== false, protectedBy: settings.torrentInterface || vpnNow?.name || '', encryption: settings.torrentEncryption || 'require' }));
+  h('torrents:publicInfo', async () => { const j = await search.publicInfo(); return { org: String(j.org || '').replace(/^AS\d+\s*/, ''), country: j.country || '', city: j.city || '' }; });
   h('torrents:bound', () => torrents?.bound() || { state: 'idle', iface: '', address: null });
   // The Torrents panel
   h('torrents:list', () => torrents?.list() || []);
@@ -2572,6 +2601,14 @@ app.whenReady().then(async () => {
   store = new Store(app.getPath('userData'));
   channels = store.read('channels', []);
   settings = { ...DEFAULT_SETTINGS, ...store.read('settings', {}) };
+  // 1.7.3: stop sharing when a download finishes became the default, for everyone once.
+  if (!settings.seedDefault173) { settings.torrentStopSeeding = true; settings.seedDefault173 = true; }
+  // Older versions saved torrent searches and logged addresses and torrent names: gone, once.
+  if (!settings.privacyClean173) {
+    delete settings.searchRecent; settings.privacyClean173 = true; saveSettings();
+    try { fs.writeFileSync(path.join(app.getPath('userData'), 'homecable.log'), ''); } catch {}
+    for (const f of ['settings.json.bak']) try { fs.rmSync(path.join(app.getPath('userData'), f), { force: true }); } catch {}
+  }
   // Background update checks + "Update now" (installing happens in the
   // launcher's updater window at start — never on close).
   updater = createUpdater({ app, log, send, settings: () => settings, saveSettings });
@@ -2644,15 +2681,18 @@ app.whenReady().then(async () => {
   media.item = (id) => lib.items[id] || null;
   // Torrents play while they download; saved ones come back at start.
   torrents = new Torrents(lib, {
-    dir: path.join(app.getPath('userData'), 'torrents'), store, log, iface: () => settings.torrentInterface || '',
+    dir: path.join(app.getPath('userData'), 'torrents'), store, log, iface: () => netIface(),
     settings: () => settings, send, playing: () => nowPlayingItem,
     // New torrent videos: shows go to Stream Demand, movies to On Demand (Settings → Torrents),
     // then everything there is looked up by name — posters, genres, tags.
     onNew: () => { if (settings.torrentToOnDemand !== false) torrentsToOnDemand().catch((e) => log('torrents → On Demand', e.message)); },
   });
-  if (torrents.saved.length) torrents.start().catch((e) => log('torrents', e.message));
+  // The VPN check comes first, so nothing starts on the normal connection by accident.
+  vpnNow = vpnOn() ? vpn.detectNow(settings.torrentVpn || 'auto') : null;
+  checkVpn().catch(() => {}).finally(() => { if (torrents.saved.length) torrents.start().catch((e) => log('torrents', e.message)); });
+  setInterval(() => checkVpn().catch(() => {}), 10000).unref?.();
   // Torrent search: engines that run on the torrent network interface, started when first used.
-  search = new TorrentSearch({ dir: path.join(app.getPath('userData'), 'search-engines'), builtinDir: path.join(__dirname, 'searchEngines'), store, settings: () => settings, save: saveSettings, log, iface: () => settings.torrentInterface || '', send });
+  search = new TorrentSearch({ dir: path.join(app.getPath('userData'), 'search-engines'), builtinDir: path.join(__dirname, 'searchEngines'), store, settings: () => settings, save: saveSettings, log, iface: () => netIface(), send });
   // What a kids/teens phone may play: everything on the channels its level can see (cached briefly).
   const phoneAllow = { at: 0, kids: null, teens: null };
   const allowedIdsFor = (level) => {

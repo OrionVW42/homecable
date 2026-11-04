@@ -1130,6 +1130,12 @@ details.od-tag-more > .od-tags { margin: 6px 0 4px; }
 .sr-terms { max-width: 620px; margin: 40px auto; }
 .sr-terms p { margin: 0 0 12px; }
 
+.vpn-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 14px; padding: 12px 16px; border-radius: 12px; background: rgba(255,181,71,.1); border: 1px solid rgba(255,181,71,.35); }
+.vpn-banner.bad { background: rgba(255,93,108,.12); border-color: rgba(255,93,108,.45); }
+.vpn-banner span { flex: 1; min-width: 280px; }
+.vpn-banner small { flex-basis: 100%; }
+.tor-privacy select { margin-left: 6px; }
+
 /* ---- Library, Netflix-style (1.6.2) ---- */
 .lib-main.nf { padding: 14px 28px 60px; scroll-behavior: smooth; }
 .nf-bar { margin-bottom: 12px; gap: 10px; }

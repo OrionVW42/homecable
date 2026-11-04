@@ -85,7 +85,7 @@ ${iconFile ? '<iconList><icon><mimetype>image/png</mimetype><width>120</width><h
     if (p.startsWith('/dms/event/')) { res.writeHead(200, { SID: 'uuid:' + crypto.randomUUID(), TIMEOUT: 'Second-1800' }); return res.end(); }
     if (p.startsWith('/dms/play/')) {
       const id = decodeURIComponent(p.slice('/dms/play/'.length)).replace(/\.(ts|mp4)$/, '');
-      log(`tv menu: ${req.method} ${id} from ${req.socket.remoteAddress}`);
+      log(`tv menu: ${req.method}`);
       return stream(req, res, id);
     }
     if (req.method === 'POST' && p.startsWith('/dms/control/')) {

@@ -67,7 +67,7 @@ class Torrents {
         if (this.child === child) { this.child = null; this._starting = null; this.state = 'idle'; this.base = ''; this._live.clear(); }
       });
       await hello;
-      await this._rpc('init', { dir: this.dir, iface: this.iface() || '' });
+      await this._rpc('init', { dir: this.dir, iface: this.iface() || '', secure: this._secure() });
     })();
     this._starting.catch(() => { this._starting = null; });
     return this._starting;
@@ -92,12 +92,12 @@ class Torrents {
         this._attachPass = this._attachAll().catch((e) => this.log('torrents: resume', e.message));
         break;
       case 'done': {
-        this.log('torrent complete', m.name);
+        this.log('a torrent finished');
         const s = this.lib.servers.find((x) => x.id === serverIdOf(m.infoHash));
         if (s) { s.detail = `Torrent · downloaded · ${size(m.length)}`; this.lib.save(); this.lib.emit('changed'); }
         const rec = this.saved.find((r) => r.infoHash === m.infoHash);
         if (rec) { rec.progress = 1; rec.doneAt = rec.doneAt || Date.now(); this._save(); }
-        // "Stop sharing when a download finishes" (off unless you turn it on) — else ask, up top.
+        // "Stop sharing when a download finishes" (on unless you turn it off) — else ask, up top.
         if (this.settings().torrentStopSeeding) this.stop(serverIdOf(m.infoHash)).then(() => this.send('toast', `✅ ${m.name} finished downloading — sharing stopped (Settings → Torrents)`)).catch((e) => this.log('torrent stop', e.message));
         else this.send('torrent-done', { id: serverIdOf(m.infoHash), name: m.name, length: m.length });
         this.enforceLimit().catch(() => {});
@@ -154,7 +154,7 @@ class Torrents {
     // Library entries for torrents that are no longer saved (a forget that didn't reach disk) go first.
     for (const s of this.lib.servers.filter((x) => x.kind === 'torrent' && !this.saved.some((r) => serverIdOf(r.infoHash) === x.id))) { this.log('torrents: dropping', s.name, '(no longer saved)'); this.lib.removeServer(s.id); }
     for (const rec of this.saved.filter((r) => !r.paused)) {
-      try { await this._attach(rec); } catch (e) { this.log('torrent resume', rec.name || rec.link, e.message); }
+      try { await this._attach(rec); } catch (e) { this.log('a torrent could not resume'); }
     }
   }
 
@@ -194,7 +194,7 @@ class Torrents {
       added++;
     }
     if (!this.lib.servers.some((s) => s.id === serverId)) this.lib.servers.push({ id: serverId, name: t.name, kind: 'torrent', detail: `Torrent · ${size(t.length)}` });
-    this.log('torrent', t.name, `${chosen.length} of ${t.files.length} files, ${added} new video${added === 1 ? '' : 's'} · ${size(t.length)}`);
+    this.log('a torrent was added');
     this.lib.groupShows();
     this.lib.save();
     this.lib.emit('changed');
@@ -230,7 +230,7 @@ class Torrents {
         id: serverId, name: rec.name, added: rec.added, paused: !!rec.paused && !rec.stopped, stopped: !!rec.stopped, priority: rec.priority || 'normal', queued: !!rec._queued && !rec.paused, waiting: !rec.paused && this.state !== 'ready', busy: this._busy.has(rec.infoHash), kept: this.isKept({ torrent: { infoHash: rec.infoHash } }),
         length: live?.length ?? rec.length ?? 0, progress: live ? live.progress : rec.progress ?? 0, done: live ? live.done : (rec.progress ?? 0) >= 1,
         downloaded: live?.downloaded ?? Math.round((rec.progress ?? 0) * (rec.length ?? 0)), uploaded: live?.uploaded ?? 0,
-        downloadSpeed: live?.downloadSpeed ?? 0, uploadSpeed: live?.uploadSpeed ?? 0, peers: live?.peers ?? 0, webSeeds: live?.webSeeds ?? 0, timeRemaining: live?.timeRemaining ?? 0,
+        downloadSpeed: live?.downloadSpeed ?? 0, uploadSpeed: live?.uploadSpeed ?? 0, peers: live?.peers ?? 0, encrypted: live?.encrypted ?? 0, webSeeds: live?.webSeeds ?? 0, timeRemaining: live?.timeRemaining ?? 0,
         folder: this.folderOf(serverId),
         files: files.map((f) => {
           const id = idFor(serverId + '|' + f.path);
@@ -304,7 +304,7 @@ class Torrents {
         const live = this._live.get(rec.infoHash);
         const indexes = queued ? [] : this._chosen(rec, live.files).map((f) => f.index);
         await this._rpc('select', { infoHash: rec.infoHash, indexes }, 10000).catch((e) => this.log('torrent queue', e.message));
-        this.log(`torrent ${queued ? 'queued' : 'downloading'}:`, rec.name, `(${rec.priority || 'normal'})`);
+        this.log(`a torrent is ${queued ? 'queued' : 'downloading'}`);
       }
     } finally { this._scheduling = false; }
   }
@@ -464,6 +464,9 @@ class Torrents {
     }
     return out.sort((x, y) => (x.internal - y.internal) || x.name.localeCompare(y.name));
   }
+
+  _secure() { return { off: 0, prefer: 1 }[this.settings().torrentEncryption] ?? 2; }
+  async setEncryption() { if (this.child) await this._rpc('setEncryption', { secure: this._secure() }); }
 
   // Settings changed the interface: rebind now (its 'ready' re-adds every saved torrent on the new address).
   async setInterface(iface) {

@@ -5,7 +5,7 @@
 import { html } from 'htm/preact';
 import { useEffect, useState } from 'preact/hooks';
 import { tv } from './util.js';
-import { TorrentsBody } from './torrents.js';
+import { TorrentsBody, VpnBanner } from './torrents.js';
 
 const CATEGORIES = [['all', 'Everything'], ['movies', 'Movies'], ['tv', 'TV shows'], ['anime', 'Anime'], ['music', 'Music'], ['games', 'Games'], ['software', 'Software'], ['books', 'Books']];
 const catLabel = (k) => CATEGORIES.find(([c]) => c === k)?.[1] || k;
@@ -45,6 +45,7 @@ export function TorrentsView({ toast, onPlay, isAdult = true, settings = null, s
       <span class="grow"></span>
     </div>
     <div class="overlay-body">
+      ${isAdult && html`<${VpnBanner} toast=${toast} />`}
       ${needsOk && html`<div class="sr-empty sr-terms"><h3>Before you search</h3><p>HomeCable doesn’t host, list or recommend torrents. It comes with the Internet Archive’s free items, and anything else you search is a source you added yourself.</p><p><b>Only download and share what you have the right to.</b> Downloading or sharing copyrighted material without permission may be illegal where you live, and a torrent shares what you download with other people. What you search for and add is your responsibility.</p>${isAdult ? html`<button class="btn primary" onClick=${accept}>I understand</button>` : html`<p class="muted">Ask a grown-up to set this up.</p>`}</div>`}
       ${!needsOk && S.tab === 'search' && html`<${SearchTab} toast=${toast} isAdult=${isAdult} onEngines=${() => setTab('engines')} onMine=${() => setTab('mine')} />`}
       ${S.tab === 'mine' && html`<${TorrentsBody} toast=${toast} onPlay=${onPlay} isAdult=${isAdult} settings=${settings} setSettings=${setSettings} />`}
@@ -56,10 +57,9 @@ export function TorrentsView({ toast, onPlay, isAdult = true, settings = null, s
 function SearchTab({ toast, isAdult, onEngines, onMine }) {
   useTick();
   const [engines, setEngines] = useState(null);
-  const [recent, setRecent] = useState([]);
+  const [recent, setRecent] = useState(() => S.recent || []); // this session only: searches are never saved
   useEffect(() => {
     tv.searchEngines().then((l) => { setEngines(l); for (const e of l) S.names[e.id] = e.name; notify(); }).catch((e) => toast(plain(e)));
-    tv.state().then((s) => setRecent(s.settings.searchRecent || [])).catch(() => {});
   }, []);
   const on = (engines || []).filter((e) => e.enabled && !e.error);
   const run = async () => {
@@ -72,7 +72,7 @@ function SearchTab({ toast, isAdult, onEngines, onMine }) {
       const r = await tv.searchRun(q, S.cat);
       S.searchId = r.searchId; S.skipped = r.skipped || []; S.needSetup = r.needSetup || [];
       for (const m of pending.splice(0)) if (m.searchId === r.searchId) take(m);
-      setRecent((l) => [q, ...l.filter((x) => x.toLowerCase() !== q.toLowerCase())].slice(0, 20));
+      S.recent = [q, ...(S.recent || []).filter((x) => x.toLowerCase() !== q.toLowerCase())].slice(0, 20); setRecent(S.recent);
     } catch (e) { S.running = false; toast(plain(e)); }
     notify();
   };

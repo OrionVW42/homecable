@@ -30,7 +30,7 @@ function bind() {
   else { pin(addr); state = 'ready'; address = addr; }
   return { state, iface: want, address };
 }
-setInterval(() => { if (!cfg.iface) return; const was = `${state}/${address}`; bind(); if (`${state}/${address}` !== was) log(`"${cfg.iface}": ${state}${address ? ` (${address})` : ''}`); }, 10000).unref();
+setInterval(() => { if (!cfg.iface) return; const was = `${state}/${address}`; bind(); if (`${state}/${address}` !== was) log(`"${cfg.iface}": ${state}`); }, 10000).unref();
 
 // An engine module, reloaded when its file changes (an update, or one you're writing).
 function load(file) {

@@ -24,7 +24,7 @@ const items = () => page.evaluate(() => window.tv.browse().then((b) => b.items))
 
 test.beforeAll(async () => {
   data = fs.mkdtempSync(path.join(os.tmpdir(), 'homecable-torrent2-'));
-  fs.writeFileSync(path.join(data, 'settings.json'), JSON.stringify({ updateOnStart: false, updateEvery: 'off', setupDone: true, tourDone: true }));
+  fs.writeFileSync(path.join(data, 'settings.json'), JSON.stringify({ updateOnStart: false, updateEvery: 'off', setupDone: true, tourDone: true, torrentVpn: 'off', torrentVpnWarn: false, seedDefault173: true, torrentStopSeeding: false }));
   app = await electron.launch({ ...(process.env.HOMECABLE_EXE ? { executablePath: process.env.HOMECABLE_EXE, args: [] } : { args: [path.join(__dirname, '..')] }),
     env: { ...process.env, HOMECABLE_DATA: data, HOMECABLE_MUTE: '1', HOMECABLE_NO_INSTALL: '1', HOMECABLE_OFFSCREEN: '1', HOMECABLE_NO_CAST: '1' } });
   page = await app.firstWindow();
