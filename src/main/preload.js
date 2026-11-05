@@ -153,6 +153,7 @@ contextBridge.exposeInMainWorld('tv', {
   searchRun: call('search:run'),
   searchCancel: call('search:cancel'),
   searchAdd: call('search:add'),
+  searchPlay: call('search:play'),
   searchEnable: call('search:enable'),
   searchOptions: call('search:options'),
   searchInstall: call('search:install'),

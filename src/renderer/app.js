@@ -5,7 +5,7 @@ import { Player, Banner } from './player.js';
 import { Guide, guideFilter, guideFilterReset } from './guide.js';
 import { ChannelsPanel, ChannelEditor, SettingsPanel } from './panels.js';
 import { LibraryPanel, FreeTvDialog } from './libraryview.js';
-import { TorrentsView } from './torrentsview.js';
+import { TorrentsView, requestTorrentSearch } from './torrentsview.js';
 import { CatalogView } from './catalogview.js';
 import { ControlsMap } from './controls.js';
 import { Setup } from './setup.js';
@@ -680,7 +680,7 @@ function App() {
     ${overlay === 'tags' && html`<${TagsPanel} isAdult=${isAdult} toast=${toast} />`}
     ${overlay === 'freetv' && html`<${FreeTvPanel} isAdult=${isAdult} setChannels=${setChannels} toast=${toast} onTune=${(id) => { setOverlay(null); ui.current.overlay = null; tune(id); }} />`}
     ${overlay === 'library' && html`<${LibraryPanel} isAdult=${isAdult} stats=${stats} onScan=${scan} enrichProgress=${enrichProgress} channels=${channels} setChannels=${setChannels} onPlay=${playVod} onEdit=${setEditing} toast=${toast} onOpenTorrents=${() => setOverlay('torrents')} torrentsOn=${!!settings.torrentsOn} />`}
-    ${overlay === 'catalog' && settings.moviesOn && html`<${CatalogView} settings=${settings} setSettings=${setSettings} onPlay=${playVod} toast=${toast} />`}
+    ${overlay === 'catalog' && settings.moviesOn && html`<${CatalogView} settings=${settings} setSettings=${setSettings} onPlay=${playVod} toast=${toast} onFullSearch=${(title) => { requestTorrentSearch(title, 'all'); setOverlay('torrents'); }} />`}
     ${overlay === 'torrents' && settings.torrentsOn && html`<${TorrentsView} isAdult=${isAdult} settings=${settings} setSettings=${setSettings} onPlay=${playVod} toast=${toast} />`}
     ${overlay === 'settings' && html`<${SettingsPanel} onOpenMovies=${() => setOverlay('catalog')} lockAsk=${lockAsk} onLockAsked=${() => setLockAsk(false)} isAdult=${isAdult} profile=${profile} setProfile=${setProfile} onSwitch=${() => { setOverlay(null); setPicker(true); }} stats=${stats} onOpenLibrary=${() => setOverlay('library')} onOpenTorrents=${() => setOverlay('torrents')} toast=${toast} channels=${channels} onLock=${(id) => { setSettings({ lockChannel: id || null }); if (id) tune(id); }} settings=${settings} setSettings=${setSettings} version=${version} onShowTour=${() => { setOverlay(null); ui.current.overlay = null; setTour(true); }} onRunSetup=${() => { setOverlay(null); setSetup(true); }} onEnrich=${() => { tv.enrich().then((n) => toast(`Looked up ${n} shows`)); }} cast=${cast} tvs=${tvs} onOpenCast=${() => setOverlay('cast')} vault=${vault} setVault=${setVault} onOpenVault=${() => { setOverlay(null); ui.current.overlay = null; tune(vault.channelId, { quiet: true }); }} />`}
     ${overlay === 'cast' && html`<${CastMenu} cast=${cast} tvs=${tvs} setTvs=${setTvs} settings=${settings} setSettings=${setSettings} toast=${toast} onClose=${() => setOverlay(null)} />`}

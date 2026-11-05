@@ -1216,7 +1216,7 @@ function createWindow() {
 function handlers() {
   // Changing things is for grown-ups; watching is for everyone.
   const ADMIN = new Set(['channels:create', 'channels:update', 'channels:delete', 'channels:renumber', 'channels:setNumber', 'channels:addSources', 'channels:related', 'channels:logoPick', 'live:mix', 'live:renumber',
-    'iptv:add', 'iptv:auto', 'iptv:removeDead', 'iptv:checkAll', 'iptv:recheck', 'iptv:addOne', 'iptv:autoRemove', 'channels:hide', 'free:add', 'sources:add', 'sources:removeServer', 'torrents:add', 'torrents:pause', 'torrents:resume', 'torrents:stop', 'torrents:keep', 'torrents:priority', 'edit:onDemand', 'torrents:files', 'torrents:remove', 'torrents:openFolder', 'torrents:pickFile', 'search:run', 'search:cancel', 'search:add', 'search:enable', 'search:options', 'search:install', 'search:remove', 'search:update', 'search:openFolder', 'search:pickFile', 'library:scan', 'library:rescan',
+    'iptv:add', 'iptv:auto', 'iptv:removeDead', 'iptv:checkAll', 'iptv:recheck', 'iptv:addOne', 'iptv:autoRemove', 'channels:hide', 'free:add', 'sources:add', 'sources:removeServer', 'torrents:add', 'torrents:pause', 'torrents:resume', 'torrents:stop', 'torrents:keep', 'torrents:priority', 'edit:onDemand', 'torrents:files', 'torrents:remove', 'torrents:openFolder', 'torrents:pickFile', 'search:run', 'search:cancel', 'search:add', 'search:play', 'search:enable', 'search:options', 'search:install', 'search:remove', 'search:update', 'search:openFolder', 'search:pickFile', 'library:scan', 'library:rescan',
     'library:removeFolder', 'library:approve', 'library:scanAll', 'library:pickFolders', 'import:legacy', 'ads:makePack', 'ads:pickFolder', 'ads:sync', 'ads:packAdd', 'ads:packsOpen', 'ads:rescanPacks', 'guides:refresh',
     'profiles:upsert', 'profiles:remove', 'profiles:setLock', 'profiles:ask', 'ondemand:useFolder', 'ondemand:pickFolder', 'art:set', 'art:candidates', 'art:pickFile', 'meta:refresh', 'meta:refreshAll', 'name:set', 'show:move', 'show:make', 'tags:set', 'items:hide', 'app:startOver', 'vault:create', 'vault:update', 'vault:remove', 'phone:enable', 'phone:pairStart', 'phone:forget', 'phone:setLevel']);
   const VIEWER_SETTINGS = new Set(['volume', 'muted', 'brightness', 'fit', 'lastChannel', 'prevChannel', 'arcadeScores', 'castAuto', 'castHinted', 'vodResume', 'vodWatched', 'castMode', 'showLast', 'subMode', 'subLang', 'audioPref', 'liveCaptions']);
@@ -2115,6 +2115,16 @@ function handlers() {
     if (!looksLikeLink(link)) link = await search.download(link);
     const r = await torrents.add(link, { policy: settings.setupDone ? settings.newMedia : 'auto' });
     return { ...r, link };
+  });
+  // Add a search result and hand back its main video to play — the Movies tab's torrent
+  // play path, so a free film starts and plays like an Internet Archive stream.
+  h('search:play', async (engineId, result) => {
+    let link = await search.resolve(String(engineId), result && typeof result === 'object' ? result : {});
+    if (!looksLikeLink(link)) link = await search.download(link);
+    const r = await torrents.add(link, { policy: settings.setupDone ? settings.newMedia : 'auto' });
+    const t = (await torrents.list() || []).find((x) => x.id === r.serverId);
+    const vids = (t?.files || []).filter((f) => f.media && f.itemId).sort((a, b) => (b.length || 0) - (a.length || 0));
+    return { ...r, link, itemId: vids[0]?.itemId || null };
   });
 
   // On demand (play anything from the library, full seeking)

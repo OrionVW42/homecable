@@ -32,6 +32,13 @@ const take = (m) => {
 tv.onTorrentSearch?.((m) => { if (m.searchId === S.searchId) take(m); else { pending.push(m); if (pending.length > 100) pending.shift(); } });
 function useTick() { const [, set] = useState(0); useEffect(() => { const l = () => set((n) => n + 1); listeners.add(l); return () => listeners.delete(l); }, []); }
 
+// Open the Search tab with a query filled in (from the Movies tab's "search all sources"
+// button). SearchTab runs it once its engines have loaded.
+export function requestTorrentSearch(query, cat = 'all') {
+  S.tab = 'search'; S.cat = cat; S.q = query; S.pendingQuery = query;
+  notify();
+}
+
 export function TorrentsView({ toast, onPlay, isAdult = true, settings = null, setSettings = null }) {
   useTick();
   const setTab = (t) => { S.tab = t; notify(); };
@@ -77,6 +84,8 @@ function SearchTab({ toast, isAdult, onEngines, onMine }) {
     notify();
   };
   const stop = () => { if (S.searchId) tv.searchCancel(S.searchId).catch(() => {}); S.running = false; notify(); };
+  // A search asked for from the Movies tab runs once the engines are ready.
+  useEffect(() => { if (engines && S.pendingQuery) { S.pendingQuery = null; run(); } });
   const add = async (r) => {
     S.adding[r.key] = true; notify();
     try {
