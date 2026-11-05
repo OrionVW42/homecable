@@ -34,6 +34,8 @@ test('nothing but the built-in sources can supply a stream', () => {
   assert.doesNotMatch(src, /searchEngines|TorrentSearch|require\('\.\/search'\)/);
   const cat = require('fs').readFileSync(require('path').join(__dirname, '..', 'src', 'main', 'catalog.js'), 'utf8');
   assert.doesNotMatch(cat, /TorrentSearch|require\('\.\/search'\)/);
+  const guide = require('fs').readFileSync(require('path').join(__dirname, '..', 'src', 'main', 'showguide.js'), 'utf8');
+  assert.doesNotMatch(guide, /TorrentSearch|require\('\.\/(search|torrents)'\)|magnet:/);
 });
 
 // Playing a free film: from the web unless you chose torrents AND torrents are on.

@@ -13,14 +13,14 @@ export function MoviesConsent({ ticks, setTicks }) {
   return html`<div class="consent">
     <div class="consent-box"><b>🧪 This is a beta</b>
       <span>It’s new and still being worked on. Things may be wrong or missing, or may stop working, and it could change or go away in an update.</span></div>
-    <div class="consent-box"><b>🎬 It’s a list of films, not a streaming service</b>
-      <span>Most films listed won’t play. HomeCable doesn’t host any films, and a film being listed doesn’t mean you have the right to watch or copy it. Films you own and free Internet Archive films play; everything else says “No streams available”.</span></div>
+    <div class="consent-box"><b>🎬 It’s a list of films, TV shows and anime, not a streaming service</b>
+      <span>Most of what’s listed won’t play. HomeCable doesn’t host any of it, and a title being listed doesn’t mean you have the right to watch or copy it. On TV shows and anime, only what you own and free Internet Archive copies play; everything else says “No streams available”.</span></div>
     <div class="consent-box bad"><b>⚖️ “Free” isn’t a promise</b>
       <span>The Internet Archive’s public-domain and Creative Commons labels are mostly typed in by whoever uploaded the film, and they can be wrong. HomeCable checks what it can, but it can’t be sure. If you know a film isn’t really free, don’t play it.</span></div>
     <div class="consent-box"><b>👪 Not checked for children</b>
       <span>It lists grown-up films, with their covers and stories, and has no rating filter yet. Only grown-up profiles can see this tab.</span></div>
     <div class="consent-box"><b>🌐 It goes online</b>
-      <span>Film names are sent to look up covers, stories and free copies, and free films stream from the Internet Archive, which can see your internet address, like any website. What you watch stays on this PC. The details are in Privacy, content & licenses.</span></div>
+      <span>Titles are sent to look up covers, stories, episode lists and free copies, and free films stream from the Internet Archive, which can see your internet address, like any website. What you watch stays on this PC. The details are in Privacy, content & licenses.</span></div>
     <div class="consent-box"><b>🤝 It’s up to you</b>
       <span>You alone choose what you play and are responsible for having the right to play it. HomeCable and the people who make it are not responsible for how you use this feature.</span></div>
     ${tick('rights', 'I will only play films I have the right to watch.')}
@@ -79,12 +79,12 @@ export function BetaSettings({ settings, setSettings, toast, onOpenMovies = () =
     catch (e) { toast?.(String(e.message || e)); }
   };
   return html`
-    <div class="settings-row"><div class="grow"><b>🎬 Movies tab</b>
-      <span>${on ? 'On. Browse American films from 1950 to today. Films you own and free Internet Archive films play; anything else says “No streams available”.' : 'Off, and hidden everywhere. A list of American films from 1950 to today, with covers and stories. Turning it on shows you what you need to know first.'}</span></div>
-      ${on && html`<button class="btn sm" onClick=${onOpenMovies}>Open</button>`}
-      ${on ? html`<button class="btn sm" onClick=${off}>Turn off</button>` : html`<button class="btn sm" onClick=${() => setAsk(true)}>Turn on…</button>`}
-      ${ask && html`<${MoviesDialog} toast=${toast} onClose=${() => setAsk(false)} onEnabled=${() => { setAsk(false); setSettings({ moviesOn: true }); toast?.('The Movies tab is on. Find it in the top bar.'); }} />`}</div>
-    ${on && html`
+    <div class="settings-row"><div class="grow"><b>🎬 Movies, TV shows and anime</b>
+      <span>${!torrentsOn ? 'Hidden until you turn on Torrents, in the section above.' : on ? 'On. Find them under HCtorrents in the top bar.' : 'Off, and hidden everywhere. A list of films, TV shows and anime, with covers, stories and episode guides. Turning it on shows you what you need to know first.'}</span></div>
+      ${on && torrentsOn && html`<button class="btn sm" onClick=${onOpenMovies}>Open</button>`}
+      ${on ? html`<button class="btn sm" onClick=${off}>Turn off</button>` : html`<button class="btn sm" disabled=${!torrentsOn} onClick=${() => setAsk(true)}>Turn on…</button>`}
+      ${ask && html`<${MoviesDialog} toast=${toast} onClose=${() => setAsk(false)} onEnabled=${() => { setAsk(false); setSettings({ moviesOn: true }); toast?.('Turned on. Find them under HCtorrents in the top bar.'); }} />`}</div>
+    ${on && torrentsOn && html`
       <div class="settings-row"><div class="grow"><b>Look for free films</b>
         <span>When you open a film, ask the Internet Archive for a copy marked public domain or Creative Commons. Only the film’s name is sent. Those labels can be wrong. Turn this off and only films you own will play.</span></div>
         <${Toggle} on=${free} label="Look for free films" onClick=${() => setSettings({ moviesFree: !free })} /></div>

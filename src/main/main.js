@@ -406,9 +406,38 @@ function groupKeys(key) { return showGroups().find((g) => g.keys.includes(key))?
 // and every movie is identified by name (several spellings, several sources). Things that
 // really can't be identified are marked, so the Library can put them in their own row.
 let enrichRun = null;
+// Tags and years from the built-in index for what's in the library, including whether a show is
+// anime. It only adds what's missing or known to be missing, and never touches what you set.
+function tagFromIndex() {
+  if (!catalog) return;
+  let changed = 0;
+  for (const g of showGroups()) {
+    const hit = catalog.matchShow(g.name);
+    if (!hit) continue;
+    const add = hit.kind === 'anime' ? ['Anime', ...hit.genres] : hit.genres;
+    for (const k of g.keys) {
+      const m = lib.meta[k] || {};
+      if (m.genresUser) continue;
+      const genres = [...new Set([...(m.genres || []), ...add])];
+      if (genres.length !== (m.genres || []).length || !m.indexId) { lib.meta[k] = { ...m, genres, indexId: hit.id, year: m.year || hit.year }; changed++; }
+    }
+  }
+  for (const it of lib.list().filter((i) => i.kind === 'movie' && !i.catalogOnly && !String(i.server || '').startsWith('archive:'))) {
+    if (it.indexId || it.genresUser) continue;
+    const hit = catalog.matchMovie(it.titleUser || it.title, it.year || null);
+    if (!hit) continue;
+    it.indexId = hit.id;
+    if (!(it.genres || []).length) it.genres = hit.kind === 'anime' ? ['Anime', ...hit.genres] : hit.genres;
+    if (!it.year && !it.yearFound) it.yearFound = hit.year;
+    delete it.unidentified;
+    changed++;
+  }
+  if (changed) { lib.save(); send('library-changed', libraryStats()); }
+}
 function enrichLibraryAll({ force = false } = {}) {
   if (enrichRun) return enrichRun;
   enrichRun = (async () => {
+    try { tagFromIndex(); } catch (e) { log('index tags', e.message); }
     if (!settings.onlineMeta && !force) return { shows: 0, movies: 0 };
     let shows = 0, movies = 0, lastSend = 0;
     const tick = () => { if (Date.now() - lastSend > 2000) { lastSend = Date.now(); lib.save(); send('library-changed', libraryStats()); } };
@@ -452,6 +481,7 @@ function enrichLibraryAll({ force = false } = {}) {
       tick();
       await new Promise((ok) => setTimeout(ok, 250));
     }
+    try { tagFromIndex(); } catch (e) { log('index tags', e.message); } // an online lookup replaces a show's tags
     lib.save();
     send('library-changed', libraryStats());
     return { shows, movies };
@@ -948,6 +978,7 @@ function itemSummary(i) {
 async function scanEverything() {
   if (lib.scanning) return { busy: true };
   const r = await lib.rescanAll({ policy: settings.newMedia });
+  try { tagFromIndex(); } catch (e) { log('index tags', e.message); }
   settings.lastScan = Date.now();
   saveSettings();
   ensureNewArrivals();
@@ -1223,7 +1254,7 @@ function handlers() {
   const h = (name, fn) => (handlerFns[name] = fn, ipcMain.handle(name, async (_e, ...a) => {
     if ((ADMIN.has(name) || name === 'torrentsLock:set') && !profiles.isAdult()) throw new Error('Ask a grown-up to do that');
     if (/^(torrents|search):/.test(name) && name !== 'torrents:vpn' && !settings.torrentsOn) throw new Error('Torrents are turned off. You can turn them on in Settings.');
-    if (name.startsWith('catalog:') && !settings.moviesOn) throw new Error('The Movies tab is turned off. You can turn it on in Settings → Beta.');
+    if (name.startsWith('catalog:') && !(settings.moviesOn && settings.torrentsOn)) throw new Error('Movies, TV and anime are turned off. Turn on Torrents, then Settings → Beta.');
     if (name === 'settings:set' && !profiles.isAdult() && Object.keys(a[0] || {}).some((k) => !VIEWER_SETTINGS.has(k))) throw new Error('Ask a grown-up to change settings');
     try { return await fn(...a); } catch (err) { log('ipc', name, err.stack || err); throw err; }
   }));
@@ -1459,6 +1490,7 @@ function handlers() {
   h('library:scan', async (kind) => {
     const roots = Array.isArray(kind) ? kind : kind === 'deep' ? deepScanRoots() : quickScanRoots();
     const r = await lib.scan(roots, { prune: true });
+    try { tagFromIndex(); } catch (e) { log('index tags', e.message); }
     return r;
   });
   h('library:rescan', () => lib.scan(lib.folders, { prune: true }));
@@ -2044,6 +2076,7 @@ function handlers() {
   // The Movies tab, in Settings → Beta. Turning it on needs its warning accepted.
   h('moviesLock:set', (on, accepted) => {
     if (on && accepted !== true) throw new Error('The Movies tab can only be turned on after accepting the warning.');
+    if (on && !settings.torrentsOn) throw new Error('Turn on Torrents first.');
     settings.moviesOn = !!on;
     if (on) settings.moviesAccepted = true;
     saveSettings();
@@ -2063,8 +2096,10 @@ function handlers() {
   });
   h('torrents:status', () => torrents?.status() || []);
   // The Movies tab
-  h('catalog:meta', () => catalog.meta());
-  h('catalog:home', () => { catalog.refreshFree().catch(() => {}); return catalog.home(); });
+  h('catalog:meta', (kind) => catalog.meta(String(kind || 'movie')));
+  h('catalog:home', (kind, likes) => { catalog.refreshFree().catch(() => {}); return catalog.home(String(kind || 'movie'), likes); });
+  h('catalog:guide', (id, o) => catalog.guide(String(id), { fresh: !!o?.fresh }));
+  h('catalog:openEpisode', async (id, key) => { const r = await catalog.openEpisode(String(id), String(key || '')); saveSettings(); send('library-changed', libraryStats()); return r; });
   h('catalog:browse', (o) => catalog.browse(o && typeof o === 'object' ? o : {}));
   h('catalog:art', (ids) => { catalog.art(Array.isArray(ids) ? ids : [], send); return true; });
   h('catalog:details', (id) => catalog.details(String(id)));
@@ -2826,6 +2861,7 @@ app.whenReady().then(async () => {
   if (settings.torrentsOn) checkVpn().catch(() => {}).finally(() => { if (torrents.saved.length) torrents.start().catch((e) => log('torrents', e.message)); });
   setInterval(() => { if (settings.torrentsOn) checkVpn().catch(() => {}); }, 10000).unref?.();
   catalog = new Catalog({ store, settings: () => settings, log, items: () => lib.list(), torrents: () => torrents, lib });
+  setTimeout(() => { try { tagFromIndex(); } catch (e) { log('index tags', e.message); } }, 5000).unref?.();
   // Torrent search: engines that run on the torrent network interface, started when first used.
   search = new TorrentSearch({ dir: path.join(app.getPath('userData'), 'search-engines'), builtinDir: path.join(__dirname, 'searchEngines'), store, settings: () => settings, save: saveSettings, log, iface: () => netIface(), send });
   // What a kids/teens phone may play: everything on the channels its level can see (cached briefly).

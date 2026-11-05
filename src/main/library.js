@@ -281,13 +281,13 @@ class Library extends EventEmitter {
         });
       }
     }
-    for (const it of this.listAll()) if (it.show) it.showKey = showKey(it.show);
+    for (const it of this.listAll()) if (it.show && !it.catalogOnly) it.showKey = showKey(it.show); // an episode from the index isn't a show you have
   }
 
   shows() {
     const map = new Map();
     for (const it of this.list()) {
-      if (it.kind !== 'episode' || !it.showKey || !it.show) continue;
+      if (it.kind !== 'episode' || !it.showKey || !it.show || it.catalogOnly) continue;
       let s = map.get(it.showKey);
       if (!s) { s = { key: it.showKey, name: it.show, count: 0, duration: 0, seasons: new Set(), folders: new Set(), meta: this.meta[it.showKey] || null }; map.set(it.showKey, s); }
       s.count++; s.duration += it.duration; s.seasons.add(it.season); s.folders.add(it.folder);

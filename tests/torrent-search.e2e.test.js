@@ -46,7 +46,7 @@ const engines = () => page.evaluate(() => window.tv.searchEngines());
 const torrents = () => page.evaluate(() => window.tv.torrentsList());
 const TAB = { Search: '🔍 Search', 'My torrents': '🧲 My torrents', 'Search engines': '⚙ Search engines' };
 const openTab = async (which) => {
-  if (!(await page.locator('.overlay.tor-view').count())) await page.locator('.nav button', { hasText: 'Torrents' }).click();
+  if (!(await page.locator('.overlay.tor-view').count())) { await page.locator('.nav button', { hasText: 'HCtorrents' }).click(); await page.locator('.drop-menu button', { hasText: 'HCtorrents' }).click(); }
   await expect(page.locator('.overlay.tor-view')).toBeVisible();
   await page.locator('.tor-tabs').getByRole('button', { name: TAB[which], exact: true }).click();
 };
@@ -89,12 +89,13 @@ test.beforeAll(async () => {
 });
 test.afterAll(async () => { await app?.close(); engineSrv?.close(); torznabSrv?.close(); });
 
-test('a Torrents tab next to Library: a notice first, then only the Internet Archive and the connector ship', async () => {
+test('HCtorrents next to Library: a notice first, then only the Internet Archive and the connector ship', async () => {
   const nav = page.locator('.nav button');
   await expect(nav.nth(1)).toHaveText(/Library/);
   await expect(nav.filter({ hasText: 'Movies' }), 'hidden until turned on').toHaveCount(0);
-  await expect(nav.nth(2)).toHaveText(/Torrents/);
+  await expect(nav.nth(2)).toHaveText(/HCtorrents/);
   await nav.nth(2).click();
+  await page.locator('.drop-menu button', { hasText: 'HCtorrents' }).click();
   await expect(page.locator('.overlay.tor-view')).toBeVisible();
   await expect(page.locator('.tor-tabs button')).toHaveText([/Search/, /My torrents/, /Search engines/]);
   // The notice stands in front of Search and Search engines, once; My torrents doesn't need it.

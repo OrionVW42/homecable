@@ -129,6 +129,8 @@ contextBridge.exposeInMainWorld('tv', {
   catalogDetails: call('catalog:details'),
   catalogSources: call('catalog:sources'),
   catalogOpen: call('catalog:open'),
+  catalogGuide: call('catalog:guide'),
+  catalogOpenEpisode: call('catalog:openEpisode'),
   onCatalogArt: on('catalog-art'),
   torrentInterfaces: call('torrents:interfaces'),
   torrentVpn: call('torrents:vpn'),

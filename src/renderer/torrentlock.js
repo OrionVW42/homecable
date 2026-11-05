@@ -65,9 +65,9 @@ export function TorrentLockRow({ settings, setSettings, toast, askOpen = false, 
     catch (e) { toast(String(e.message || e)); }
   };
   return html`<div class="settings-row"><div class="grow"><b>🧲 Torrents</b>
-      <span>${settings.torrentsOn ? 'On. The Torrents tab is in the top bar. Please use them legally, and always with a VPN.' : 'Off, and hidden everywhere. Most people never need them. Turning them on shows you what you need to know first.'}</span></div>
+      <span>${settings.torrentsOn ? 'On. HCtorrents is in the top bar. Please use them legally, and always with a VPN.' : 'Off, and hidden everywhere. Most people never need them. Turning them on shows you what you need to know first.'}</span></div>
     ${settings.torrentsOn ? html`<button class="btn sm" onClick=${() => setAskOff(true)}>Turn off…</button>` : html`<button class="btn sm" onClick=${() => setAsk(true)}>Turn on…</button>`}
-    ${ask && html`<${TorrentLockDialog} toast=${toast} onClose=${() => setAsk(false)} onEnabled=${() => { setAsk(false); setSettings({ torrentsOn: true, torrentsLockNote: null }); toast('Torrents are on. Find them in the top bar.'); }} />`}
+    ${ask && html`<${TorrentLockDialog} toast=${toast} onClose=${() => setAsk(false)} onEnabled=${() => { setAsk(false); setSettings({ torrentsOn: true, torrentsLockNote: null }); toast('Torrents are on. Find HCtorrents in the top bar.'); }} />`}
     ${askOff && html`<div class="modal-bg" onClick=${(e) => e.target === e.currentTarget && setAskOff(false)}><div class="modal"><div class="modal-head"><h3>Turn off torrents?</h3></div>
       <div class="modal-body"><p>Everything downloading or sharing stops, and torrent videos leave your channels and Library. Their files stay on this PC and come back if you turn torrents on again. To delete them, use My torrents first.</p>
         <div class="row" style="justify-content:flex-end;gap:10px"><button class="btn" onClick=${() => setAskOff(false)}>Keep them on</button><button class="btn primary" onClick=${off}>Turn off</button></div></div></div></div>`}

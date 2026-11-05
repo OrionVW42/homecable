@@ -1,4 +1,4 @@
-// The Torrents tab: search the sources you've chosen, see and manage every torrent in
+// HCtorrents: search the sources you've chosen, see and manage every torrent in
 // the library, and manage search engines (docs/search-engines.md). HomeCable ships only
 // the Internet Archive and a connector for your own server; it lists and links to no
 // torrent sites. What a search finds is added like any other torrent.
@@ -47,7 +47,7 @@ export function TorrentsView({ toast, onPlay, isAdult = true, settings = null, s
   const needsOk = S.tab !== 'mine' && S.accepted === false;
   return html`<div class="overlay tor-view">
     <div class="overlay-head">
-      <h2>Torrents</h2>
+      <h2>HCtorrents</h2>
       <div class="seg tor-tabs">${[['search', '🔍 Search'], ['mine', '🧲 My torrents'], ['engines', '⚙ Search engines']].map(([k, l]) => html`<button class=${S.tab === k ? 'on' : ''} onClick=${() => setTab(k)}>${l}</button>`)}</div>
       <span class="grow"></span>
     </div>

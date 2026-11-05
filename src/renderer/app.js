@@ -6,7 +6,7 @@ import { Guide, guideFilter, guideFilterReset } from './guide.js';
 import { ChannelsPanel, ChannelEditor, SettingsPanel } from './panels.js';
 import { LibraryPanel, FreeTvDialog } from './libraryview.js';
 import { TorrentsView, requestTorrentSearch } from './torrentsview.js';
-import { CatalogView } from './catalogview.js';
+import { CatalogView, KINDS } from './catalogview.js';
 import { ControlsMap } from './controls.js';
 import { Setup } from './setup.js';
 import { startGamepad, focusDefault, pressButton } from './gamepad.js';
@@ -294,6 +294,8 @@ function App() {
   }, []);
   // Live stations that keep dropping get spaced-out retries (never abandoned).
   const liveDrops = useRef({});
+  const [hcMenu, setHcMenu] = useState(false);
+  const [catalogKind, setCatalogKind] = useState('movie');
   const signalToast = useRef({}); // "lost its signal" said at most every 5 min per channel
   const offAir = (t, why) => setTuned({ ...t, play: null, entry: { ...t.entry, type: 'offair', live: false, title: why || 'This station is off the air', reason: why || null }, next: null });
   const onEnded = useCallback((t) => {
@@ -307,6 +309,13 @@ function App() {
       if (t.from === 'ondemand') {
         if (t.queue) { const [nx, ...rest] = t.queue; if (nx) playVod(nx.id, 0, 'ondemand', { queue: rest, seriesKey: t.entry.showKey, label: nx.label, title: nx.title }); else exitVod(); return; }
         if (t.next) playVod(t.next.id, 0, 'ondemand'); else exitVod();
+        return;
+      }
+      // From Movies, TV & Anime: on to the next thing in watch order, else back there.
+      if (t.from === 'catalog') {
+        const [nx, ...rest] = t.queue || [];
+        if (nx) playVod(nx.id, 0, 'catalog', { queue: rest, seriesKey: t.entry.showKey, label: nx.label, title: nx.title });
+        else { exitVod(); setOverlay('catalog'); }
         return;
       }
       // On demand: roll into the next episode, like a binge; otherwise back to the library.
@@ -478,11 +487,11 @@ function App() {
   isAdultRef.current = isAdult;
   ui.current = { overlay, editing, setup: setup || picker, digits };
   window.__torrentsOn = !!settings.torrentsOn;
-  window.__moviesOn = !!settings.moviesOn;
+  window.__moviesOn = !!settings.moviesOn && !!settings.torrentsOn;
   // Controllers cycle these screens with LB/RB (the Edit menu's screens included).
   useEffect(() => {
     window.__overlayCycle = {
-      list: () => (isAdultRef.current ? ['channels', 'manager', 'tags', 'library', ...(window.__moviesOn ? ['catalog'] : []), ...(window.__torrentsOn ? ['torrents'] : []), 'arcade', 'settings'] : ['library', 'arcade', 'settings']),
+      list: () => (isAdultRef.current ? ['channels', 'manager', 'tags', 'library', ...(window.__torrentsOn ? ['torrents'] : []), ...(window.__moviesOn ? ['catalog'] : []), 'arcade', 'settings'] : ['library', 'arcade', 'settings']),
       current: () => ui.current.overlay,
       open: (k) => { ui.current.overlay = k; setOverlay(k); setEditMenu(false); },
     };
@@ -503,9 +512,9 @@ function App() {
         return;
       }
       if (vodRef.current && !overlay && !editing && (k === 'Escape' || k === 'Backspace')) {
-        const fromWall = vodRef.current.from === 'ondemand';
+        const from = vodRef.current.from;
         exitVod();
-        if (!fromWall) { setOverlay('library'); ui.current.overlay = 'library'; }
+        if (from !== 'ondemand') { const back = from === 'catalog' ? 'catalog' : 'library'; setOverlay(back); ui.current.overlay = back; }
         e.preventDefault(); return;
       }
       if (k === 'Dismiss') { setBanner(false); setDigits(''); return; }
@@ -680,7 +689,7 @@ function App() {
     ${overlay === 'tags' && html`<${TagsPanel} isAdult=${isAdult} toast=${toast} />`}
     ${overlay === 'freetv' && html`<${FreeTvPanel} isAdult=${isAdult} setChannels=${setChannels} toast=${toast} onTune=${(id) => { setOverlay(null); ui.current.overlay = null; tune(id); }} />`}
     ${overlay === 'library' && html`<${LibraryPanel} isAdult=${isAdult} stats=${stats} onScan=${scan} enrichProgress=${enrichProgress} channels=${channels} setChannels=${setChannels} onPlay=${playVod} onEdit=${setEditing} toast=${toast} onOpenTorrents=${() => setOverlay('torrents')} torrentsOn=${!!settings.torrentsOn} />`}
-    ${overlay === 'catalog' && settings.moviesOn && html`<${CatalogView} settings=${settings} setSettings=${setSettings} onPlay=${playVod} toast=${toast} onFullSearch=${(title) => { requestTorrentSearch(title, 'all'); setOverlay('torrents'); }} />`}
+    ${overlay === 'catalog' && settings.moviesOn && settings.torrentsOn && html`<${CatalogView} kind=${catalogKind} setKind=${setCatalogKind} onPlayEpisode=${(r) => playVod(r.itemId, 0, 'catalog', { queue: r.queue, seriesKey: r.seriesKey, label: r.label, title: r.title })} settings=${settings} setSettings=${setSettings} onPlay=${playVod} toast=${toast} onFullSearch=${(title) => { requestTorrentSearch(title, 'all'); setOverlay('torrents'); }} />`}
     ${overlay === 'torrents' && settings.torrentsOn && html`<${TorrentsView} isAdult=${isAdult} settings=${settings} setSettings=${setSettings} onPlay=${playVod} toast=${toast} />`}
     ${overlay === 'settings' && html`<${SettingsPanel} onOpenMovies=${() => setOverlay('catalog')} lockAsk=${lockAsk} onLockAsked=${() => setLockAsk(false)} isAdult=${isAdult} profile=${profile} setProfile=${setProfile} onSwitch=${() => { setOverlay(null); setPicker(true); }} stats=${stats} onOpenLibrary=${() => setOverlay('library')} onOpenTorrents=${() => setOverlay('torrents')} toast=${toast} channels=${channels} onLock=${(id) => { setSettings({ lockChannel: id || null }); if (id) tune(id); }} settings=${settings} setSettings=${setSettings} version=${version} onShowTour=${() => { setOverlay(null); ui.current.overlay = null; setTour(true); }} onRunSetup=${() => { setOverlay(null); setSetup(true); }} onEnrich=${() => { tv.enrich().then((n) => toast(`Looked up ${n} shows`)); }} cast=${cast} tvs=${tvs} onOpenCast=${() => setOverlay('cast')} vault=${vault} setVault=${setVault} onOpenVault=${() => { setOverlay(null); ui.current.overlay = null; tune(vault.channelId, { quiet: true }); }} />`}
     ${overlay === 'cast' && html`<${CastMenu} cast=${cast} tvs=${tvs} setTvs=${setTvs} settings=${settings} setSettings=${setSettings} toast=${toast} onClose=${() => setOverlay(null)} />`}
@@ -691,8 +700,16 @@ function App() {
     <div class=${'topbar' + (idle || setup ? ' hide' : '')}>
       <div class="brand"><${Logo} size=${24} /><span>HomeCable</span></div>
       <div class="nav">
-        ${[['guide', 'Guide', Icon.guide, 'G'], ['library', 'Library', Icon.library, 'L'], ...(isAdult && settings.moviesOn ? [['catalog', 'Movies', Icon.play, '']] : []), ...(isAdult && settings.torrentsOn ? [['torrents', 'Torrents', Icon.magnet, '']] : [])].map(([k, l, I, key]) => html`
-          <button class=${overlay === k ? 'on' : ''} title=${key ? `${l} (${key})` : k === 'catalog' ? 'Movies: browse films, play your own and free ones' : `${l} — search for torrents, manage yours`} onClick=${() => setOverlay((o) => (o === k ? null : k))}><${I} /><span class="l">${l}</span></button>`)}
+        ${[['guide', 'Guide', Icon.guide, 'G'], ['library', 'Library', Icon.library, 'L']].map(([k, l, I, key]) => html`
+          <button class=${overlay === k ? 'on' : ''} title=${`${l} (${key})`} onClick=${() => setOverlay((o) => (o === k ? null : k))}><${I} /><span class="l">${l}</span></button>`)}
+        ${isAdult && settings.torrentsOn && html`<div class="nav-drop">
+          <button class=${['torrents', 'catalog'].includes(overlay) || hcMenu ? 'on' : ''} title="HCtorrents, and Movies, TV shows and anime" onClick=${() => setHcMenu((m) => !m)}><${Icon.magnet} /><span class="l">HCtorrents</span><span class="caret">▾</span></button>
+          ${hcMenu && html`<div class="drop-bg" onClick=${() => setHcMenu(false)}></div>
+          <div class="drop-menu">
+            <button onClick=${() => { setHcMenu(false); setOverlay('torrents'); }}><b>🧲 HCtorrents</b><span>Search for torrents and manage yours</span></button>
+            ${settings.moviesOn && html`<div class="drop-sep"></div>${KINDS.map(([k, l]) => html`<button onClick=${() => { setHcMenu(false); setCatalogKind(k); setOverlay('catalog'); }}><b>${k === 'movie' ? '🎬' : k === 'tv' ? '📺' : '🌸'} ${l}</b><span>${k === 'movie' ? 'Browse films' : k === 'tv' ? 'Seasons and episodes' : 'Series, movies and OVAs in watch order'}</span></button>`)}`}
+          </div>`}
+        </div>`}
         ${isAdult && html`<div class="nav-drop">
           <button class=${['manager', 'channels', 'tags'].includes(overlay) || editMenu ? 'on' : ''} title="Everything that edits lives here (E)" onClick=${() => setEditMenu((m) => !m)}><${Icon.edit} /><span class="l">Edit</span><span class="caret">▾</span></button>
           ${editMenu && html`<div class="drop-bg" onClick=${() => setEditMenu(false)}></div>

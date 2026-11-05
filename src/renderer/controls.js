@@ -39,7 +39,7 @@ export const CONTROL_MAP = [
     ['Subtitles: next track / off', ['T'], null, 'Auto turns them on for foreign-language audio'],
     ['Program guide', ['G'], ['MENU']],
     ['Menus (Channels · Library · Settings)', ['C', 'L', 'S'], ['Y']],
-    ['Torrents tab (search, yours, engines)', ['click Torrents'], ['LB', 'RB']],
+    ['HCtorrents (search, yours, engines)', ['click HCtorrents'], ['LB', 'RB']],
     ['Arcade (retro games)', ['A'], null, 'controller: Y, then RB to the Arcade tab'],
     ['Fullscreen on / off', ['F'], ['VIEW'], 'keyboard: also F11 or double-click · Esc leaves'],
     ['Picture size: Fit / Fill / Stretch', ['Z'], ['RS']],
@@ -80,7 +80,7 @@ export function PadButton({ name, kind }) {
 
 // Settings → Controls: one tab per device.
 export function ControlsMap({ initial }) {
-  const hide = (row) => row[0].startsWith('Torrents tab') && !window.__torrentsOn;
+  const hide = (row) => row[0].startsWith('HCtorrents') && !window.__torrentsOn;
   // Opens on whatever you used last (keyboard, Xbox or PS5) and follows along.
   const [tab, setTab] = useState(initial || window.__inputKind || 'keyboard');
   useEffect(() => {

@@ -145,7 +145,7 @@ export function Setup({ settings, setSettings, progress, onDone, onCancel, canCa
     // Torrents: on only if they ticked the boxes on that screen.
     const wantTor = !!opts.torrents && consentDone(torTicks);
     if (wantTor !== !!settings.torrentsOn) await tv.torrentsLock(wantTor, wantTor);
-    const wantMovies = !!opts.movies && moviesConsentDone(movieTicks);
+    const wantMovies = wantTor && !!opts.movies && moviesConsentDone(movieTicks); // hidden unless torrents are on
     if (wantMovies !== !!settings.moviesOn) await tv.moviesLock(wantMovies, wantMovies);
     let list = planToChannels(plan, inv, { odFolder: opts.onDemand ? odFolder : null, seriesFolder: opts.series ? seriesFolder : null });
     // Re-running setup: the On Demand / Stream Demand channels already exist (their
@@ -392,15 +392,16 @@ export function Setup({ settings, setSettings, progress, onDone, onCancel, canCa
       ${nav()}`}
 
     ${step === 'beta' && html`
-      <h1 style="font-size:34px">A Movies tab (beta)</h1>
+      <h1 style="font-size:34px">Movies, TV shows and anime (beta)</h1>
       <p class="lead" style="margin-bottom:14px"><b>It’s new, so it stays off unless you want it.</b> While it’s off, it’s hidden and nothing about it runs. You can turn it on later in Settings → Beta.</p>
-      <div class="opt-choices">
+      ${!opts.torrents && html`<p class="muted">This only appears with Torrents on, so it’ll stay off and hidden. You can go back a step, or turn it on later.</p>`}
+      ${opts.torrents && html`<div class="opt-choices">
         <${Choice} on=${!opts.movies} title="Leave it off" desc="You won’t see it anywhere in HomeCable." onClick=${() => set({ movies: false })} />
-        <${Choice} on=${opts.movies} title="I want to try it" desc="A list of American films from 1950 to today, for grown-up profiles." onClick=${() => set({ movies: true })} />
-      </div>
-      ${opts.movies && html`<p class="muted" style="margin:14px 0 10px">Please read this first.</p>
+        <${Choice} on=${opts.movies} title="I want to try it" desc="A list of films, TV shows and anime, for grown-up profiles." onClick=${() => set({ movies: true })} />
+      </div>`}
+      ${opts.torrents && opts.movies && html`<p class="muted" style="margin:14px 0 10px">Please read this first.</p>
         <${MoviesConsent} ticks=${movieTicks} setTicks=${setMovieTicks} />`}
-      ${nav(opts.movies && !moviesConsentDone(movieTicks))}`}
+      ${nav(opts.torrents && opts.movies && !moviesConsentDone(movieTicks))}`}
     ${step === 'torrents' && html`
       <h1 style="font-size:34px">Torrents</h1>
       <p class="lead" style="margin-bottom:14px"><b>Most people should leave this off.</b> While it’s off, torrents are hidden everywhere and nothing about them runs. You can turn them on later in Settings.</p>

@@ -37,6 +37,8 @@ const watching = () => page.waitForFunction(() => {
 }, null, { timeout: 45000, polling: 250 });
 
 test('setup wizard: choose sources, options and lineup', async () => {
+  await page.locator('.terms-tick input').check();
+
   await page.getByText('I’ll do it myself', { exact: true }).click();
   // Who watches? (people can be added later — keep the single grown-up)
   await expect(page.getByText('Who watches?')).toBeVisible();
@@ -73,7 +75,7 @@ test('setup wizard: choose sources, options and lineup', async () => {
   await expect(page.getByText('How should channels play?')).toBeVisible();
   // Back to back: something is always playing (cable timing can sit on "Up next" until the half hour).
   await page.getByRole('button', { name: /Back to back/ }).click();
-  for (const screen of ['When you add new videos', 'Subtitles and sound', 'The picture', 'Watching on other screens', 'Keeping it up to date', 'Torrents']) {
+  for (const screen of ['When you add new videos', 'Subtitles and sound', 'The picture', 'Watching on other screens', 'Keeping it up to date', 'Torrents', 'Movies, TV shows and anime (beta)']) {
     await page.getByRole('button', { name: 'Next', exact: true }).click();
     await expect(page.getByRole('heading', { name: screen })).toBeVisible();
   }
