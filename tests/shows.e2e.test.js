@@ -77,6 +77,8 @@ test('a TV show has seasons; what you own plays, in order; the rest says no stre
   const parts = await page.locator('.cat-part').allTextContents();
   expect(parts.filter((p) => /Season/.test(p)).length).toBe(5);
   await expect(page.locator('.cat-part').first()).toContainText('Season 1');
+  expect(parts.some((p) => /El Camino/.test(p)), parts.join(', ')).toBe(true);
+  expect(parts.some((p) => /Breaking Good/.test(p)), 'a parody is not part of the show').toBe(false);
   await expect(page.locator('.cat-ep.plays')).toHaveCount(2);
   await expect(page.locator('.cat-ep').first()).toContainText('Pilot');
   await page.locator('.cat-part', { hasText: 'Season 2' }).click();

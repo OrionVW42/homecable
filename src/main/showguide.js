@@ -43,11 +43,12 @@ function tvParts(showName, episodes, films = []) {
 }
 
 // Films that belong to this show, as Wikidata records it.
-async function tvFilms(qid) {
+// "Based on" also covers parodies and loose remakes, so that link only counts when the film carries the show's name.
+async function tvFilms(qid, showName = '') {
   if (!qid) return [];
-  const q = `SELECT DISTINCT ?f ?fLabel (MIN(?d) AS ?date) WHERE { VALUES ?link { wdt:P179 wdt:P8345 wdt:P144 } ?f ?link wd:${qid}; wdt:P31/wdt:P279* wd:Q11424; wdt:P577 ?d. SERVICE wikibase:label { bd:serviceParam wikibase:language 'en,mul'. } } GROUP BY ?f ?fLabel LIMIT 25`;
+  const q = `SELECT DISTINCT ?f ?fLabel ?link (MIN(?d) AS ?date) WHERE { VALUES ?link { wdt:P179 wdt:P8345 wdt:P144 } ?f ?link wd:${qid}; wdt:P31/wdt:P279* wd:Q11424; wdt:P577 ?d. SERVICE wikibase:label { bd:serviceParam wikibase:language 'en,mul'. } } GROUP BY ?f ?fLabel ?link LIMIT 25`;
   const j = await get('https://query.wikidata.org/sparql?format=json&query=' + encodeURIComponent(q), { ...UA, Accept: 'application/sparql-results+json' });
-  return (j?.results?.bindings || []).map((b) => ({ qid: b.f.value.split('/').pop(), title: b.fLabel?.value || '', date: String(b.date?.value || '').slice(0, 10) })).filter((f) => f.title && !/^Q\d+$/.test(f.title));
+  return (j?.results?.bindings || []).map((b) => ({ qid: b.f.value.split('/').pop(), title: b.fLabel?.value || '', date: String(b.date?.value || '').slice(0, 10), strong: !/P144$/.test(b.link?.value || '') })).filter((f) => f.title && !/^Q\d+$/.test(f.title) && (f.strong || norm(f.title).includes(norm(showName))));
 }
 
 async function tvGuide(m) {
@@ -58,7 +59,7 @@ async function tvGuide(m) {
   }
   if (!show) return null;
   const episodes = await get(`https://api.tvmaze.com/shows/${show.id}/episodes?specials=1`);
-  const films = await tvFilms(m.qid).catch(() => []);
+  const films = await tvFilms(m.qid, m.title).catch(() => []);
   return { from: 'TVmaze', summary: plain(show.summary), poster: show.image?.original || show.image?.medium || null, genres: show.genres || [], network: show.network?.name || show.webChannel?.name || null, parts: tvParts(m.title, episodes, films) };
 }
 
