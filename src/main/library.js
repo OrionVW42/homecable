@@ -306,7 +306,7 @@ class Library extends EventEmitter {
   resolve(src) {
     // Items waiting for review only play where you picked them by hand.
     const every = src.private ? this.listAll() : this.list(); // private: the locked section's own folder
-    const all = src.type === 'item' ? every : every.filter((it) => it.status !== 'pending' && it.kind !== 'ad' && !it.offline); // offline: a paused torrent's videos
+    const all = src.type === 'item' ? every : every.filter((it) => it.status !== 'pending' && it.kind !== 'ad' && !it.offline && !it.catalogOnly); // offline: a paused torrent's videos
     const ordered = (list) => list.sort((a, b) =>
       ((a.show || '') === (b.show || '') ? 0 : naturalCompare(a.show || a.title, b.show || b.title))
       || ((a.season ?? 0) - (b.season ?? 0)) || ((a.episode ?? 0) - (b.episode ?? 0)) || naturalCompare(a.path, b.path));

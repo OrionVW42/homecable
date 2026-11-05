@@ -18,6 +18,7 @@ test('automatic setup builds a full lineup: your media + free TV', async () => {
   page.on('pageerror', (e) => console.log('[pageerror]', e.message));
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1400, 860));
   // "Set it all up for me": every step is filled in — check it and press Next.
+  await page.locator('.terms-tick input').check();
   await page.getByText('Set it all up for me', { exact: true }).click();
   await page.getByRole('button', { name: 'Next', exact: true }).click(); // who watches
   await page.waitForFunction(() => !document.querySelector('.sources .progress'), null, { timeout: 60000 }).catch(() => {});

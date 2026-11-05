@@ -28,6 +28,7 @@ const free = require('./freecontent');
 const { Torrents, looksLikeLink } = require('./torrents');
 const { TorrentSearch } = require('./search');
 const vpn = require('./vpn');
+const { Catalog } = require('./catalog');
 const adsLib = require('./ads');
 const epg = require('./epg');
 const { Profiles, autoRating } = require('./profiles');
@@ -58,7 +59,7 @@ function log(...a) {
   if (!app.isPackaged) process.stdout.write(line);
 }
 
-const DEFAULT_SETTINGS = { torrentsOn: false, torrentLimitGB: 100, torrentMaxActive: 3, torrentCleanSeries: 'watched', torrentCleanMovies: 'watched', torrentStopSeeding: true, torrentEncryption: 'require', torrentVpn: 'auto', torrentVpnWarn: true, torrentToOnDemand: true, torrentKeep: [], searchEngines: {}, searchEngineOptions: {}, searchRecent: [], setupDone: false, onlineMeta: true, transitions: true, showClock: true, volume: 0.9, muted: false, lastChannel: null, prevChannel: null, bannerSeconds: 5, lockChannel: null, startFullscreen: false, brightness: 1, fit: 'fit',
+const DEFAULT_SETTINGS = { torrentsOn: false, torrentLimitGB: 100, torrentMaxActive: 3, torrentCleanSeries: 'watched', torrentCleanMovies: 'watched', torrentStopSeeding: true, torrentWatchOnly: true, torrentCacheGB: 50, moviesOn: false, moviesFree: true, moviesPlayBy: 'web', torrentEncryption: 'require', torrentVpn: 'auto', torrentVpnWarn: true, torrentToOnDemand: true, torrentKeep: [], searchEngines: {}, searchEngineOptions: {}, searchRecent: [], setupDone: false, onlineMeta: true, transitions: true, showClock: true, volume: 0.9, muted: false, lastChannel: null, prevChannel: null, bannerSeconds: 5, lockChannel: null, startFullscreen: false, brightness: 1, fit: 'fit',
   // auto / manual / in-between
   newMedia: 'auto',          // 'auto' = onto channels · 'review' = inbox first · 'library' = library only
   scanInterval: '6h',        // 'off' | '1h' | '6h' | '24h' (folders are also watched live)
@@ -290,7 +291,8 @@ async function subsInfo(it) {
 // Once a VPN has been seen, torrents wait for it rather than quietly using the normal
 // connection when it drops (your choice: Torrents → Privacy).
 const NO_VPN = '(your VPN)';
-let vpnNow = null, vpnApplied = null;
+const TERMS_VERSION = '2026-11';
+let vpnNow = null, vpnApplied = null, catalog = null;
 const vpnOn = () => settings.torrentVpn !== 'off' && !process.env.HOMECABLE_DEMO;
 function netIface() {
   if (settings.torrentInterface) return settings.torrentInterface;
@@ -1201,6 +1203,7 @@ function handlers() {
   const h = (name, fn) => (handlerFns[name] = fn, ipcMain.handle(name, async (_e, ...a) => {
     if ((ADMIN.has(name) || name === 'torrentsLock:set') && !profiles.isAdult()) throw new Error('Ask a grown-up to do that');
     if (/^(torrents|search):/.test(name) && name !== 'torrents:vpn' && !settings.torrentsOn) throw new Error('Torrents are turned off. You can turn them on in Settings.');
+    if (name.startsWith('catalog:') && !settings.moviesOn) throw new Error('The Movies tab is turned off. You can turn it on in Settings → Beta.');
     if (name === 'settings:set' && !profiles.isAdult() && Object.keys(a[0] || {}).some((k) => !VIEWER_SETTINGS.has(k))) throw new Error('Ask a grown-up to change settings');
     try { return await fn(...a); } catch (err) { log('ipc', name, err.stack || err); throw err; }
   }));
@@ -1276,7 +1279,7 @@ function handlers() {
   });
   h('settings:set', async (patch) => {
     if (patch && 'vault' in patch) { patch = { ...patch }; delete patch.vault; } // only changed through vault:*
-    if (patch && ('torrentsOn' in patch || 'torrentsAccepted' in patch)) { patch = { ...patch }; delete patch.torrentsOn; delete patch.torrentsAccepted; } // only through torrentsLock:set
+    if (patch && ['torrentsOn', 'torrentsAccepted', 'moviesOn', 'moviesAccepted', 'termsAccepted'].some((k) => k in patch)) { patch = { ...patch }; for (const k of ['torrentsOn', 'torrentsAccepted', 'moviesOn', 'moviesAccepted', 'termsAccepted']) delete patch[k]; } // only through their own switches, below
     if ('subMode' in patch || 'subLang' in patch) subsCache.clear(); // (audioPref is applied per request)
     Object.assign(settings, patch);
     lib.defaultPolicy = settings.newMedia;
@@ -1285,6 +1288,7 @@ function handlers() {
     if ('torrentInterface' in patch || 'torrentVpn' in patch || 'torrentVpnRequired' in patch) await checkVpn();
     if ('torrentEncryption' in patch) torrents?.setEncryption().catch((e) => log('torrents', e.message));
     if ('torrentMaxActive' in patch) torrents?._schedule().catch(() => {});
+    if ('torrentCacheGB' in patch) torrents?.sweep().catch(() => {});
     if ('torrentLimitGB' in patch || 'torrentCleanSeries' in patch || 'torrentCleanMovies' in patch) torrents?.enforceLimit().catch((e) => log('torrents', e.message));
     if (patch.torrentToOnDemand && settings.torrentsOn) torrentsToOnDemand().catch(() => {});
     if (AD_KEYS.some((k) => k in patch) || 'adPacks' in patch || 'bumpersOn' in patch || 'bumperSeconds' in patch) {
@@ -2012,6 +2016,18 @@ function handlers() {
     return res;
   });
   h('sources:removeServer', async (id) => { if (id.startsWith('torrent:')) await torrents.remove(id); else lib.removeServer(id); return libraryStats(); });
+  // The Terms of Use: the installer's text. Agreed to once on the first setup screen, because
+  // small updates and copies not installed with the installer never show its page.
+  h('terms:get', () => ({ text: fs.readFileSync(path.join(__dirname, '../../build/license.txt'), 'utf8'), version: TERMS_VERSION, accepted: settings.termsAccepted === TERMS_VERSION }));
+  h('terms:accept', (yes) => { if (yes === true) settings.termsAccepted = TERMS_VERSION; else delete settings.termsAccepted; saveSettings(); return yes === true; });
+  // The Movies tab, in Settings → Beta. Turning it on needs its warning accepted.
+  h('moviesLock:set', (on, accepted) => {
+    if (on && accepted !== true) throw new Error('The Movies tab can only be turned on after accepting the warning.');
+    settings.moviesOn = !!on;
+    if (on) settings.moviesAccepted = true;
+    saveSettings();
+    return settings.moviesOn;
+  });
   // The torrent lock. Turning it on needs the warning accepted; off stops everything and hides it.
   h('torrentsLock:set', async (on, accepted) => {
     if (on && accepted !== true) throw new Error('Torrents can only be turned on after accepting the warning.');
@@ -2025,6 +2041,14 @@ function handlers() {
     return settings.torrentsOn;
   });
   h('torrents:status', () => torrents?.status() || []);
+  // The Movies tab
+  h('catalog:meta', () => catalog.meta());
+  h('catalog:home', () => { catalog.refreshFree().catch(() => {}); return catalog.home(); });
+  h('catalog:browse', (o) => catalog.browse(o && typeof o === 'object' ? o : {}));
+  h('catalog:art', (ids) => { catalog.art(Array.isArray(ids) ? ids : [], send); return true; });
+  h('catalog:details', (id) => catalog.details(String(id)));
+  h('catalog:sources', (id) => catalog.sources(String(id)));
+  h('catalog:open', async (id, quality) => { const r = await catalog.open(String(id), String(quality || '')); saveSettings(); send('library-changed', libraryStats()); return r; });
   h('torrents:interfaces', () => torrents?.interfaces() || []);
   h('torrents:vpn', async () => { if (!settings.torrentsOn) vpnNow = vpnOn() ? await vpn.detect(settings.torrentVpn || 'auto').catch(() => null) : null; return ({ setting: settings.torrentVpn || 'auto', providers: vpn.PROVIDERS, found: vpnNow && { provider: vpnNow.provider, name: vpnNow.name }, manual: settings.torrentInterface || '', required: !!settings.torrentVpnRequired, waiting: netIface() === NO_VPN, warn: settings.torrentVpnWarn !== false, protectedBy: settings.torrentInterface || vpnNow?.name || '', encryption: settings.torrentEncryption || 'require' }); });
   h('torrents:publicInfo', async () => { const j = await search.publicInfo(); return { org: String(j.org || '').replace(/^AS\d+\s*/, ''), country: j.country || '', city: j.city || '' }; });
@@ -2353,6 +2377,7 @@ function handlers() {
       if (ks.length > 2000) for (const k of ks.slice(0, ks.length - 2000)) delete seen[k];
     }
     settings.vodResume = resume; settings.vodWatched = seen;
+    if (watched && !started) torrents?.noteWatched(id);
     if (showKey) settings.showLast = { ...(settings.showLast || {}), [showKey]: { id, done: started ? false : watched } };
     saveSettings();
     send('progress-changed', { vodResume: settings.vodResume, vodWatched: settings.vodWatched, showLast: settings.showLast });
@@ -2764,10 +2789,12 @@ app.whenReady().then(async () => {
   });
   // The VPN check comes first, so nothing starts on the normal connection by accident.
   vpnNow = vpnOn() ? vpn.detectNow(settings.torrentVpn || 'auto') : null;
+  if (settings.moviesOn && !settings.moviesAccepted) settings.moviesOn = false; // never on without the warning
   // 1.7.6: torrents became opt-in, for everyone once. Anyone who had some is told, once, that they're safe.
   if (!settings.torrentLock176) { settings.torrentLock176 = true; if (!settings.torrentsOn && torrents.saved.length) settings.torrentsLockNote = torrents.saved.length; saveSettings(); }
   if (settings.torrentsOn) checkVpn().catch(() => {}).finally(() => { if (torrents.saved.length) torrents.start().catch((e) => log('torrents', e.message)); });
   setInterval(() => { if (settings.torrentsOn) checkVpn().catch(() => {}); }, 10000).unref?.();
+  catalog = new Catalog({ store, settings: () => settings, log, items: () => lib.list(), torrents: () => torrents, lib });
   // Torrent search: engines that run on the torrent network interface, started when first used.
   search = new TorrentSearch({ dir: path.join(app.getPath('userData'), 'search-engines'), builtinDir: path.join(__dirname, 'searchEngines'), store, settings: () => settings, save: saveSettings, log, iface: () => netIface(), send });
   // What a kids/teens phone may play: everything on the channels its level can see (cached briefly).

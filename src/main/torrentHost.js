@@ -73,7 +73,7 @@ const describe = (t) => ({
   files: t.files.map((f, index) => ({ index, path: f.path, name: f.name, length: f.length, url: base + f.streamURL })).filter((f) => f.length >= MIN_FILE),
 });
 
-async function add({ src, b64 }) {
+async function add({ src, b64, deselect }) {
   if (state !== 'ready') throw new Error(cfg.iface ? `Torrents are waiting for “${cfg.iface}” to come up — it has no address right now` : 'Torrents are not running');
   let id = b64 ? Buffer.from(b64, 'base64') : src;
   if (typeof id === 'string' && /^https?:/i.test(id)) {
@@ -87,8 +87,9 @@ async function add({ src, b64 }) {
   if (have) return describe(have);
   if (inflight.has(infoHash)) return describe(await inflight.get(infoHash));
   const p = (async () => {
-    const t = client.add(id, { path: path.join(cfg.dir, infoHash.slice(0, 16)), strategy: 'sequential' });
-    t.on('error', (e) => log('a torrent had an error:', String(e.message).replace(/d{1,3}(.d{1,3}){3}/g, '(address)').slice(0, 120)));
+    // deselect: nothing downloads until it is asked for (Watch without keeping).
+    const t = client.add(id, { path: path.join(cfg.dir, infoHash.slice(0, 16)), strategy: 'sequential', deselect: !!deselect });
+    t.on('error', (e) => log('a torrent had an error:', String(e.message).replace(/\b\d{1,3}(\.\d{1,3}){3}\b/g, '(address)').slice(0, 120)));
     await new Promise((resolve, reject) => {
       if (t.metadata) return resolve();
       const timer = setTimeout(() => { t.destroy(); reject(new Error('Nobody answered for this torrent — is the link right, and does it still have seeds?')); }, METADATA_MS);

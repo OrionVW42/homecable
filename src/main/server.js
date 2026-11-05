@@ -145,13 +145,18 @@ function startServer(lib, log = () => {}, { liveFor = () => null, thumbDir = nul
       // Network media server: pass the request through (keeps Range seeking, adds CORS).
       const target = await sourceOf(item);
       if (!target) { res.writeHead(503); return res.end(); } // a torrent that isn't reachable right now
-      const up = (target.startsWith('https') ? require('https') : http).get(target, { headers: req.headers.range ? { Range: req.headers.range } : {} }, (r) => {
+      // Web servers often answer "it's over there" (the Internet Archive always does): go there, and
+      // never hand that answer on, because the player can't follow it through this address.
+      let up;
+      const ask = (where, hops) => { up = (where.startsWith('https') ? require('https') : http).get(where, { headers: req.headers.range ? { Range: req.headers.range } : {} }, (r) => {
+        if (r.statusCode >= 300 && r.statusCode < 400 && r.headers.location && hops < 5) { r.resume(); try { return ask(new URL(r.headers.location, where).href, hops + 1); } catch { res.writeHead(502); return res.end(); } }
         const h = { 'Access-Control-Allow-Origin': '*', 'Content-Type': r.headers['content-type'] || 'application/octet-stream' };
         for (const k of ['content-length', 'content-range', 'accept-ranges']) if (r.headers[k]) h[k] = r.headers[k];
         res.writeHead(r.statusCode, h);
         r.pipe(res);
       });
-      up.on('error', () => res.destroy());
+      up.on('error', () => res.destroy()); };
+      ask(target, 0);
       req.on('close', () => up.destroy());
       return;
     }

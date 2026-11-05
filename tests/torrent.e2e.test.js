@@ -12,6 +12,9 @@ const os = require('os');
 const MAGNET = 'magnet:?xt=urn:btih:08ada5a7a6183aae1e09d831df6748d566095a10&dn=Sintel&tr=udp%3A%2F%2Fexplodie.org%3A6969&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969&tr=udp%3A%2F%2Ftracker.empire-js.us%3A1337&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337&tr=wss%3A%2F%2Ftracker.btorrent.xyz&tr=wss%3A%2F%2Ftracker.fastcast.nz&tr=wss%3A%2F%2Ftracker.openwebtorrent.com&ws=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2F&xs=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2Fsintel.torrent';
 
 test.describe.configure({ mode: 'serial' });
+// Internet traffic: on a machine with a VPN, only through it. Elsewhere set HOMECABLE_ALLOW_NO_VPN=1.
+test.skip(!require('../src/main/vpn').detectNow('auto') && !process.env.HOMECABLE_ALLOW_NO_VPN, 'torrent tests run only with a VPN up');
+
 test.skip(!!process.env.HOMECABLE_NO_NET, 'needs the internet');
 
 let app, page, data, item, serverId;
@@ -53,7 +56,7 @@ const playUntil = (url, { seek = 0, until }) => page.evaluate(async ({ url, seek
 test.beforeAll(async () => {
   data = fs.mkdtempSync(path.join(os.tmpdir(), 'homecable-torrent-'));
   // No update checks or downloads during a test (the packaged build would also open its updater window first).
-  fs.writeFileSync(path.join(data, 'settings.json'), JSON.stringify({ torrentsOn: true, updateOnStart: false, updateEvery: 'off', torrentVpn: 'off', torrentVpnWarn: false, seedDefault173: true, torrentStopSeeding: false }));
+  fs.writeFileSync(path.join(data, 'settings.json'), JSON.stringify({ torrentsOn: true, torrentWatchOnly: false, updateOnStart: false, updateEvery: 'off', torrentVpn: 'off', torrentVpnWarn: false, seedDefault173: true, torrentStopSeeding: false }));
   await launch();
   await expect(page.getByText('Set it all up for me', { exact: true })).toBeVisible({ timeout: 15000 });
 });

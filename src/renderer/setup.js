@@ -6,6 +6,8 @@ import { ProfilesSettings } from './profiles.js';
 import { SetupBoard, initialPlan, planToChannels } from './setupboard.js';
 import { VaultFields, vaultReady, newVault } from './vault.js';
 import { TorrentConsent, consentDone } from './torrentlock.js';
+import { MoviesConsent, moviesConsentDone } from './beta.js';
+import { TermsAgree } from './terms.js';
 
 // First run, one clear thing at a time. Three ways through it:
 //   Set it up for me: a few easy questions, sensible choices for the rest (all listed at the end).
@@ -14,8 +16,8 @@ import { TorrentConsent, consentDone } from './torrentlock.js';
 // Nothing is created until the last screen, which says in plain words what will happen, and any
 // line there can be changed. Plain words first; "Tell me more" holds the details for those who want them.
 const QUICK = ['people', 'sources', 'found', 'free', 'summary'];
-const FULL = ['people', 'sources', 'folders', 'locked', 'online', 'found', 'free', 'showtime', 'channels', 'newvideos', 'subs', 'watching', 'devices', 'updates', 'torrents', 'summary'];
-const TITLES = { people: 'Who watches', sources: 'Your videos', folders: 'Movie and show folders', locked: 'Private videos', online: 'Posters and privacy', found: 'What we found', free: 'Free TV', showtime: 'Between the shows', channels: 'How channels play', newvideos: 'New videos', subs: 'Subtitles and sound', watching: 'The picture', devices: 'Other screens', updates: 'Updates', torrents: 'Torrents', summary: 'Check and go' };
+const FULL = ['people', 'sources', 'folders', 'locked', 'online', 'found', 'free', 'showtime', 'channels', 'newvideos', 'subs', 'watching', 'devices', 'updates', 'torrents', 'beta', 'summary'];
+const TITLES = { people: 'Who watches', sources: 'Your videos', folders: 'Movie and show folders', locked: 'Private videos', online: 'Posters and privacy', found: 'What we found', free: 'Free TV', showtime: 'Between the shows', channels: 'How channels play', newvideos: 'New videos', subs: 'Subtitles and sound', watching: 'The picture', devices: 'Other screens', updates: 'Updates', torrents: 'Torrents', beta: 'New things to try', summary: 'Check and go' };
 // These decide what gets scanned, so changing one means looking through your videos again.
 const BEFORE_SCAN = ['sources', 'folders', 'locked', 'online'];
 
@@ -76,7 +78,12 @@ export function Setup({ settings, setSettings, progress, onDone, onCancel, canCa
   const [seriesFolder, setSeriesFolder] = useState('');
   useEffect(() => { tv.onDemandDefaultFolder('movies').then(setOdFolder); tv.onDemandDefaultFolder('series').then(setSeriesFolder); }, []);
   const [torTicks, setTorTicks] = useState(() => (settings.torrentsOn ? { legal: true, own: true } : {}));
-  const [opts, setOpts] = useState({ onDemand: true, series: true, newMedia: 'auto', scanInterval: '6h', timing: 'cable', newArrivals: true, lockOne: false, startFullscreen: !!settings.startFullscreen, transitions: settings.transitions !== false, showClock: settings.showClock !== false, fit: settings.fit || 'fit', onlineMeta: settings.onlineMeta !== false, ads: true, bumpers: true, subMode: settings.subMode || 'auto', subLang: settings.subLang || 'eng', audioPref: settings.audioPref || 'orig', updateOnStart: settings.updateOnStart !== false, updateEvery: settings.updateEvery === 'start' ? '24h' : settings.updateEvery || '24h', updateNotify: settings.updateNotify !== false, torrents: !!settings.torrentsOn });
+  const [movieTicks, setMovieTicks] = useState(() => (settings.moviesOn ? { rights: true, own: true } : {}));
+  const [terms, setTerms] = useState(null); // null: not known yet, so nothing to tick is shown
+  useEffect(() => { tv.terms().then((t) => setTerms({ needed: !t.accepted, agreed: t.accepted })).catch(() => setTerms({ needed: false, agreed: true })); }, []);
+  const agree = (yes) => { setTerms((t) => ({ ...t, agreed: yes })); tv.termsAccept(yes).catch(() => {}); };
+  const blocked = !terms?.agreed;
+  const [opts, setOpts] = useState({ onDemand: true, series: true, newMedia: 'auto', scanInterval: '6h', timing: 'cable', newArrivals: true, lockOne: false, startFullscreen: !!settings.startFullscreen, transitions: settings.transitions !== false, showClock: settings.showClock !== false, fit: settings.fit || 'fit', onlineMeta: settings.onlineMeta !== false, ads: true, bumpers: true, subMode: settings.subMode || 'auto', subLang: settings.subLang || 'eng', audioPref: settings.audioPref || 'orig', updateOnStart: settings.updateOnStart !== false, updateEvery: settings.updateEvery === 'start' ? '24h' : settings.updateEvery || '24h', updateNotify: settings.updateNotify !== false, torrents: !!settings.torrentsOn, movies: !!settings.moviesOn });
   const [adPrev, setAdPrev] = useState(null); // one of the shipped wacky ads, for the Showtime page
   useEffect(() => {
     let stop = false; // the shipped ads register a moment after a fresh start — keep asking
@@ -138,6 +145,8 @@ export function Setup({ settings, setSettings, progress, onDone, onCancel, canCa
     // Torrents: on only if they ticked the boxes on that screen.
     const wantTor = !!opts.torrents && consentDone(torTicks);
     if (wantTor !== !!settings.torrentsOn) await tv.torrentsLock(wantTor, wantTor);
+    const wantMovies = !!opts.movies && moviesConsentDone(movieTicks);
+    if (wantMovies !== !!settings.moviesOn) await tv.moviesLock(wantMovies, wantMovies);
     let list = planToChannels(plan, inv, { odFolder: opts.onDemand ? odFolder : null, seriesFolder: opts.series ? seriesFolder : null });
     // Re-running setup: the On Demand / Stream Demand channels already exist (their
     // folders were re-pointed above) — don't make duplicates of them.
@@ -156,7 +165,7 @@ export function Setup({ settings, setSettings, progress, onDone, onCancel, canCa
     let all = list.length ? await tv.createChannels(list) : (await tv.state()).channels;
     if (opts.lockOne) lockId = all.find((c) => c.name === 'HomeCable')?.id || null;
     if (free.classics.length || free.live) await applyFreeTv(free, setStatus);
-    await setSettings({ setupDone: true, newArrivals: opts.newArrivals, torrentsOn: wantTor, ...(lockId ? { lockChannel: lockId } : {}) });
+    await setSettings({ setupDone: true, newArrivals: opts.newArrivals, torrentsOn: wantTor, moviesOn: wantMovies, ...(lockId ? { lockChannel: lockId } : {}) });
     setMade((await tv.state()).channels.length);
     setStep('done');
   };
@@ -204,20 +213,21 @@ export function Setup({ settings, setSettings, progress, onDone, onCancel, canCa
       <${Logo} size=${64} />
       <h1>Your videos.<br/><em>Live, like cable.</em></h1>
       <p class="lead">HomeCable turns the shows and movies on your computer into TV channels, with a guide and channel surfing. It also adds movies you can pick and play, free live TV, and more.</p>
+      ${terms?.needed && html`<${TermsAgree} agreed=${terms.agreed} onAgree=${agree} />`}
       <p class="muted" style="margin:-6px 0 14px">Nothing is set up until you’ve seen it all on the last screen, and you can change anything later in Settings. How much do you want to decide?</p>
-      <button class="choice" onClick=${() => start(true, true)}>
+      <button class="choice" disabled=${blocked} onClick=${() => start(true, true)}>
         <div class="ic"><${Icon.sparkle} /></div>
         <div class="grow"><b>Set it all up for me</b><span>The easy way. A few simple questions, and we pick good choices for everything else.</span></div>
       </button>
-      <button class="choice" onClick=${() => start(false, true)}>
+      <button class="choice" disabled=${blocked} onClick=${() => start(false, true)}>
         <div class="ic alt"><${Icon.guide} /></div>
         <div class="grow"><b>Walk me through it</b><span>One screen for each topic, explained, with good choices already filled in. Change whatever you like.</span></div>
       </button>
-      <button class="choice" onClick=${() => start(false, false)}>
+      <button class="choice" disabled=${blocked} onClick=${() => start(false, false)}>
         <div class="ic alt"><${Icon.settings} /></div>
         <div class="grow"><b>I’ll do it myself</b><span>The same screens, but you decide where everything goes by dragging movies and shows onto channels.</span></div>
       </button>
-      <p class="muted small" style="margin:10px 0 8px">HomeCable is free, open-source software and plays only media you provide or free public streams. By continuing you agree you’re responsible for what you play and won’t use it for piracy or anything illegal. Details are in Settings → Privacy, content & licenses.</p>
+      <p class="muted small" style="margin:10px 0 8px">HomeCable is free, open-source software and plays only media you provide or free public streams. Details are in Settings → Privacy, content & licenses.</p>
       <button class="btn ghost sm" onClick=${importOld}><${Icon.import} /> Import a schedule from the old VideoApp (data.txt)</button>`}
 
     ${step === 'people' && html`
@@ -381,6 +391,16 @@ export function Setup({ settings, setSettings, progress, onDone, onCancel, canCa
       <${More}>Checking asks GitHub, where HomeCable’s releases live, whether a newer version exists. No account or ID is sent.<//>
       ${nav()}`}
 
+    ${step === 'beta' && html`
+      <h1 style="font-size:34px">A Movies tab (beta)</h1>
+      <p class="lead" style="margin-bottom:14px"><b>It’s new, so it stays off unless you want it.</b> While it’s off, it’s hidden and nothing about it runs. You can turn it on later in Settings → Beta.</p>
+      <div class="opt-choices">
+        <${Choice} on=${!opts.movies} title="Leave it off" desc="You won’t see it anywhere in HomeCable." onClick=${() => set({ movies: false })} />
+        <${Choice} on=${opts.movies} title="I want to try it" desc="A list of American films from 1950 to today, for grown-up profiles." onClick=${() => set({ movies: true })} />
+      </div>
+      ${opts.movies && html`<p class="muted" style="margin:14px 0 10px">Please read this first.</p>
+        <${MoviesConsent} ticks=${movieTicks} setTicks=${setMovieTicks} />`}
+      ${nav(opts.movies && !moviesConsentDone(movieTicks))}`}
     ${step === 'torrents' && html`
       <h1 style="font-size:34px">Torrents</h1>
       <p class="lead" style="margin-bottom:14px"><b>Most people should leave this off.</b> While it’s off, torrents are hidden everywhere and nothing about them runs. You can turn them on later in Settings.</p>
@@ -395,7 +415,7 @@ export function Setup({ settings, setSettings, progress, onDone, onCancel, canCa
     ${step === 'summary' && html`
       <h1 style="font-size:34px">Here’s what will happen</h1>
       <p class="lead" style="margin-bottom:14px">Nothing has been changed yet. Anything you’d like different? Press its <b>Change</b> button. When it looks right, press <b>Set it up</b>.</p>
-      <${Summary} plan=${plan} inv=${inv} opts=${opts} free=${free} people=${people} odFolder=${odFolder} seriesFolder=${seriesFolder} vault=${vaultOn && vaultReady(vault) ? vault : null} wantTorrents=${!!opts.torrents && consentDone(torTicks)} sources=${sources} change=${change} />
+      <${Summary} plan=${plan} inv=${inv} opts=${opts} free=${free} people=${people} odFolder=${odFolder} seriesFolder=${seriesFolder} vault=${vaultOn && vaultReady(vault) ? vault : null} wantTorrents=${!!opts.torrents && consentDone(torTicks)} wantMovies=${!!opts.movies && moviesConsentDone(movieTicks)} sources=${sources} change=${change} />
       ${nav(false, apply)}`}
 
     ${step === 'applying' && html`
@@ -415,7 +435,7 @@ export function Setup({ settings, setSettings, progress, onDone, onCancel, canCa
 }
 
 // The last screen: everything that will be set up, in plain words, each with a way to change it.
-function Summary({ plan, inv, opts, free, people, odFolder, seriesFolder, vault, wantTorrents, sources, change }) {
+function Summary({ plan, inv, opts, free, people, odFolder, seriesFolder, vault, wantTorrents, wantMovies, sources, change }) {
   const Sec = ({ title, k, children }) => html`<div class="sum-sec"><div class="sum-head"><b>${title}</b><button class="btn ghost sm" onClick=${() => change(k)}>Change</button></div>${children}</div>`;
   const placed = plan ? new Set(Object.values(plan.members).flat()) : new Set();
   const loose = inv ? [...inv.movies.map((m) => 'm:' + m.id), ...inv.shows.map((s) => 's:' + s.key)].filter((k) => !placed.has(k)).length : 0;
@@ -454,6 +474,7 @@ function Summary({ plan, inv, opts, free, people, odFolder, seriesFolder, vault,
     <${Sec} title="🖥 The picture" k="watching"><div class="sum-row">${({ fit: 'Fit', fill: 'Fill', stretch: 'Stretch' })[opts.fit]}. Start in full screen: ${yes(opts.startFullscreen)}. Channel static: ${yes(opts.transitions)}. Clock: ${yes(opts.showClock)}.</div><//>
     <${Sec} title="📱 Other screens" k="devices"><div class="sum-row">Ready when you want them. Nothing to set up now.</div><//>
     <${Sec} title="🔄 Updates" k="updates"><div class="sum-row">Check at start: ${yes(opts.updateOnStart)}. While running: ${({ '1h': 'hourly', '6h': 'every 6 hours', '24h': 'daily', off: 'never' })[opts.updateEvery]}.</div><//>
+    <${Sec} title="🎬 Movies tab (beta)" k="beta"><div class="sum-row">${wantMovies ? 'On, and you accepted the warning. Find it in the top bar.' : 'Off and hidden. You can turn it on any time in Settings → Beta.'}</div><//>
     <${Sec} title="🧲 Torrents" k="torrents"><div class="sum-row">${wantTorrents ? 'On, and you accepted the warning. Use them legally and always with a VPN.' : 'Off and hidden. Most people never need them.'}</div><//>
   </div>`;
 }

@@ -1,6 +1,7 @@
-HomeCable — License & Fair Use Agreement
+HomeCable — Terms of Use & License
 
-Please read this before installing.
+Please read this before installing or using HomeCable. By installing or using
+it, you agree to these terms.
 
 WHAT HOMECABLE IS
 HomeCable is free, open-source software (MIT license) that turns video files
@@ -37,6 +38,38 @@ other people and show them your internet address, so always use a VPN. A VPN
 does not make anything legal. You alone are responsible for any source you add
 and for having the right to download and share what you add. HomeCable and its
 authors are not responsible for how you use this feature.
+
+THE MOVIES TAB AND OTHER BETA FEATURES
+Beta features are new and still being worked on. They are off and hidden unless
+you turn them on in HomeCable and accept a warning. They may be wrong or
+incomplete, may stop working, and may change or be removed in any update.
+
+The Movies tab is a list of films. HomeCable does not host them, and a film
+being listed does not mean you have the right to watch, copy or share it. Only
+films in your own library and copies the Internet Archive marks as public domain
+or Creative Commons can play. Those labels mostly come from whoever uploaded the
+film and can be wrong, and HomeCable cannot promise that any film is free to
+use. If you know a film is not, do not play it. Choosing to play free films
+through torrents means your computer shares them with other people, and the
+Torrents section above applies.
+
+CHILDREN AND SHARED COMPUTERS
+Live stations, film lists and other outside content are not checked by us and
+can include material unsuitable for children. Profile levels and locks are a
+help, not a guarantee. You are responsible for who uses your copy of HomeCable
+and for what they can see. Turning on torrents or beta features is for adults
+only.
+
+OTHER PEOPLE'S SERVICES
+HomeCable can connect to outside services for the features you use, as listed in
+Settings -> Privacy, content & licenses. They have their own terms and can change
+or stop at any time. We do not control them and are not responsible for them, for
+their content, or for what they do with what you send them.
+
+UPDATES AND CHANGES TO THESE TERMS
+HomeCable can update itself, and you can turn that off in Settings. These terms
+may change in a later version; the current terms are always in Settings -> About
+& updates. If you do not agree with a new version, stop using HomeCable.
 
 NO WARRANTY
 This software is provided "as is", without warranty of any kind. The full MIT
