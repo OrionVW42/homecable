@@ -53,7 +53,7 @@ const playUntil = (url, { seek = 0, until }) => page.evaluate(async ({ url, seek
 test.beforeAll(async () => {
   data = fs.mkdtempSync(path.join(os.tmpdir(), 'homecable-torrent-'));
   // No update checks or downloads during a test (the packaged build would also open its updater window first).
-  fs.writeFileSync(path.join(data, 'settings.json'), JSON.stringify({ updateOnStart: false, updateEvery: 'off', torrentVpn: 'off', torrentVpnWarn: false, seedDefault173: true, torrentStopSeeding: false }));
+  fs.writeFileSync(path.join(data, 'settings.json'), JSON.stringify({ torrentsOn: true, updateOnStart: false, updateEvery: 'off', torrentVpn: 'off', torrentVpnWarn: false, seedDefault173: true, torrentStopSeeding: false }));
   await launch();
   await expect(page.getByText('Set it all up for me', { exact: true })).toBeVisible({ timeout: 15000 });
 });

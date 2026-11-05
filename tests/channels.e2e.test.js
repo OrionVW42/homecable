@@ -19,7 +19,7 @@ test.beforeAll(async () => {
   const data = fs.mkdtempSync(path.join(os.tmpdir(), 'homecable-channels-'));
   // Sound ON for this one (no HOMECABLE_MUTE).
   const env = { ...process.env, HOMECABLE_DATA: data };
-  delete env.HOMECABLE_MUTE;
+  if (!process.env.HOMECABLE_OFFSCREEN) delete env.HOMECABLE_MUTE; // off-screen runs stay silent
   app = await electron.launch({ ...(process.env.HOMECABLE_EXE ? { executablePath: process.env.HOMECABLE_EXE, args: [] } : { args: [path.join(__dirname, '..')] }), env });
   page = await app.firstWindow();
   page.on('pageerror', (e) => console.log('[pageerror]', e.message));
@@ -49,6 +49,12 @@ test('setup wizard: choose sources, options and lineup', async () => {
   for (let n = await page.locator('.src-row.on').count(); n > 0; n = await page.locator('.src-row.on').count()) await page.locator('.src-row.on').first().click();
   await page.getByRole('button', { name: 'Choose a folder…' }).click();
   await expect(page.locator('.src-row.on')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Next', exact: true }).click(); // your videos
+  await expect(page.getByText('Pick-and-play folders')).toBeVisible();
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(page.getByText('Any private videos?')).toBeVisible();
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(page.getByText('Posters and privacy', { exact: true }).first()).toBeVisible();
   await page.getByRole('button', { name: /^Look through 1 source$/ }).click();
   // What we found: start empty (doing it myself), then take HomeCable's best guess.
   await expect(page.getByText('Here’s what we found')).toBeVisible({ timeout: 180000 });
@@ -64,9 +70,13 @@ test('setup wizard: choose sources, options and lineup', async () => {
   // The Showtime page (bumpers & wacky ads) sits between free TV and options.
   await expect(page.getByText('The stuff between the shows')).toBeVisible();
   await page.getByRole('button', { name: 'Next', exact: true }).click();
-  await expect(page.getByText('How should it run?')).toBeVisible();
+  await expect(page.getByText('How should channels play?')).toBeVisible();
   // Back to back: something is always playing (cable timing can sit on "Up next" until the half hour).
   await page.getByRole('button', { name: /Back to back/ }).click();
+  for (const screen of ['When you add new videos', 'Subtitles and sound', 'The picture', 'Watching on other screens', 'Keeping it up to date', 'Torrents']) {
+    await page.getByRole('button', { name: 'Next', exact: true }).click();
+    await expect(page.getByRole('heading', { name: screen })).toBeVisible();
+  }
   await page.getByRole('button', { name: 'Next', exact: true }).click();
   await expect(page.getByText('Here’s what will happen')).toBeVisible();
   await page.screenshot({ path: path.join(SHOTS, 'ch-01-summary.png') });

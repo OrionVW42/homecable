@@ -80,6 +80,7 @@ export function PadButton({ name, kind }) {
 
 // Settings → Controls: one tab per device.
 export function ControlsMap({ initial }) {
+  const hide = (row) => row[0].startsWith('Torrents tab') && !window.__torrentsOn;
   // Opens on whatever you used last (keyboard, Xbox or PS5) and follows along.
   const [tab, setTab] = useState(initial || window.__inputKind || 'keyboard');
   useEffect(() => {
@@ -93,7 +94,7 @@ export function ControlsMap({ initial }) {
     </div>
     ${CONTROL_MAP.map(([section, rows]) => html`
       <div class="section-title" style="margin-top:14px">${section}</div>
-      <div class="help-grid">${rows.filter((r) => (tab === 'keyboard' ? r[1] : r[2])).map(([what, keys, pad, note]) => html`
+      <div class="help-grid">${rows.filter((r) => !hide(r) && (tab === 'keyboard' ? r[1] : r[2])).map(([what, keys, pad, note]) => html`
         <div class="row" style="gap:4px;flex-wrap:wrap">${tab === 'keyboard' ? keys.map((k) => html`<${Key} k=${k} />`) : pad.map((b) => html`<${PadButton} name=${b} kind=${tab} />`)}</div>
         <span><span>${what}</span>${note && html`<span class="faint small"> — ${note}</span>`}</span>`)}
       </div>`)}

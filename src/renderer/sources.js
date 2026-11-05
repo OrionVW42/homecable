@@ -7,7 +7,7 @@ import { tv, Icon } from './util.js';
 const Check = ({ on }) => html`<div class=${'pick-item' + (on ? ' on' : '')} style="padding:0;border:0;background:none"><div class="box">${on ? '✓' : ''}</div></div>`;
 
 // Finds everything on this PC and the network; `value` is the list of chosen sources.
-export function SourcesPicker({ value, onChange, autoSelect = true }) {
+export function SourcesPicker({ value, onChange, autoSelect = true, torrents = false }) {
   const [found, setFound] = useState(null);
   const [busy, setBusy] = useState(false);
   const [roots, setRoots] = useState([]);
@@ -83,15 +83,17 @@ export function SourcesPicker({ value, onChange, autoSelect = true }) {
       <button class="btn sm" onClick=${addUnc}>Add</button>
     </div>
     ${uncMsg && html`<p class="small" style="color:var(--warn)">${uncMsg}</p>`}
-    <div class="row" style="margin-top:8px;flex-wrap:wrap">
+    ${torrents && html`<div class="row" style="margin-top:8px;flex-wrap:wrap">
       <input class="input grow" style="min-width:220px" placeholder="Magnet link or .torrent file, e.g. magnet:?xt=urn:btih:…" value=${torrent} onInput=${(e) => setTorrent(e.target.value)} onKeyDown=${(e) => e.key === 'Enter' && addTorrent()} />
       <button class="btn sm" onClick=${addTorrent}>Add torrent</button>
     </div>
-    <p class="small muted">A torrent’s videos play while they download, on channels and On Demand alike. Only add torrents you have the right to download.</p>
+    <p class="small muted">A torrent’s videos play while they download, on channels and On Demand alike. Only add torrents you have the right to download.</p>`}
   </div>`;
 }
 
 // Free live TV (IPTV) and public-domain classics.
+// The free streaming services you can switch off, each on by default.
+const SERVICES = [['pluto', 'Pluto TV'], ['samsung', 'Samsung TV Plus'], ['plex', 'Plex'], ['roku', 'The Roku Channel'], ['stirr', 'Stirr']];
 export function FreeTvPicker({ value, onChange }) {
   const [countries, setCountries] = useState([]);
   const [regions, setRegions] = useState([]);
@@ -113,12 +115,17 @@ export function FreeTvPicker({ value, onChange }) {
   const COMMON = ['eng', 'spa', 'fra', 'deu', 'por', 'ita', 'ara', 'hin', 'zho', 'jpn', 'kor', 'rus', 'tur', 'nld', 'pol', 'vie', 'tgl', 'ukr', 'ell', 'swe'];
   const langName = (c) => langs.find((l) => l.code === c)?.name || c;
   const shownLangs = moreLangs ? langs.map((l) => l.code) : COMMON;
+  const off = value.servicesOff || [];
+  const togSvc = (k) => set({ servicesOff: off.includes(k) ? off.filter((x) => x !== k) : [...off, k] });
   const togCat = (c) => set({ categories: value.categories.includes(c) ? value.categories.filter((x) => x !== c) : [...value.categories, c] });
   return html`<div class="freetv">
     <div class="opt-card">
       <div class="row"><button class=${'toggle' + (value.live ? ' on' : '')} onClick=${() => set({ live: !value.live })}></button>
-        <div class="grow"><b>Free live TV channels (IPTV)</b><span>Public, free-to-air streams from the iptv-org lists. HomeCable tests each station and adds the ones that work — numbered from 100. HomeCable doesn’t host these streams; what’s on is up to each broadcaster.</span></div></div>
-      ${value.live && html`<div class="row" style="margin-top:12px;flex-wrap:wrap;gap:6px"><span class="muted small">Station lists</span>
+        <div class="grow"><b>Free live TV channels</b><span>Everything free in your language is on by default: news, movies, kids, sports and more. HomeCable tests each station and adds the ones that work, numbered from 100. It keeps adding them in the background, and HomeCable doesn’t host any of them.</span></div></div>
+      ${value.live && html`<div class="row" style="margin-top:12px;flex-wrap:wrap;gap:6px"><span class="pick-label">📺 Free services</span>
+        ${SERVICES.map(([k, l]) => html`<button class=${'chip' + (off.includes(k) ? '' : ' chip-on')} aria-pressed=${!off.includes(k)} onClick=${() => togSvc(k)}>${off.includes(k) ? '' : '✓ '}${l}</button>`)}
+        <span class="muted small">Press one to turn it off.</span></div>
+      <div class="row" style="margin-top:12px;flex-wrap:wrap;gap:6px"><span class="pick-label">📋 Station lists</span>
         ${[['iptv-org', 'iptv-org (biggest)'], ['free-tv', 'Free-TV (official broadcasters)']].map(([k, l]) => html`<button class=${'chip' + ((value.sources || ['iptv-org', 'free-tv']).includes(k) ? ' chip-on' : '')} onClick=${() => { const cur = value.sources || ['iptv-org', 'free-tv']; set({ sources: cur.includes(k) ? cur.filter((x) => x !== k) : [...cur, k] }); }}>${l}</button>`)}</div>
       <div class="row" style="margin-top:12px;flex-wrap:wrap;gap:6px"><span class="pick-label">🗣 Languages</span>
         ${shownLangs.map((c) => html`<button class=${'chip' + ((value.languages || []).includes(c) ? ' chip-on' : '')} onClick=${() => togLang(c)}>${langName(c)}</button>`)}
@@ -132,6 +139,9 @@ export function FreeTvPicker({ value, onChange }) {
           ${countries.map((c) => html`<option value=${c.code.toLowerCase()}>${c.flag} ${c.name}</option>`)}
         </select>
       </div>
+      <div class="row" style="margin-top:12px"><button class=${'toggle' + (value.anime ? ' on' : '')} onClick=${() => set({ anime: !value.anime })}></button>
+        <div class="grow"><b>🍥 Free anime channels</b><span class="muted small" style="display:block">Crunchyroll, RetroCrush, Anime x HIDIVE, Toonami Aftermath, Naruto, One Piece, Yu-Gi-Oh! and more, whichever are on the air. Often in Japanese with subtitles.</span></div></div>
+      <details class="tell-more"><summary>More choices</summary><div>
       <div class="row" style="margin-top:10px;flex-wrap:wrap;gap:6px">
         <span class="pick-label">🗺 Regions</span>
         ${(value.regions || []).map((rg) => html`<span class="chip chip-on">${(regions.find((x) => x.code === rg) || { name: rg.toUpperCase() }).name}<button onClick=${() => togRegion(rg)}>×</button></span>`)}
@@ -149,10 +159,9 @@ export function FreeTvPicker({ value, onChange }) {
       </div>
       <div class="row" style="margin-top:10px;flex-wrap:wrap"><span class="muted small">Your own playlist</span>
         <input class="input grow" style="min-width:240px" placeholder="M3U link (optional), e.g. https://…/playlist.m3u" value=${value.m3u || ''} onInput=${(e) => set({ m3u: e.target.value })} /></div>
-      <div class="row" style="margin-top:12px"><button class=${'toggle' + (value.anime ? ' on' : '')} onClick=${() => set({ anime: !value.anime })}></button>
-        <div class="grow"><b>🍥 Free anime channels</b><span class="muted small" style="display:block">Crunchyroll, RetroCrush, Anime x HIDIVE, Toonami Aftermath, Naruto, One Piece, Yu-Gi-Oh! and more — whichever are on the air.</span></div></div>
-      <div class="row" style="margin-top:10px;flex-wrap:wrap;gap:6px"><span class="pick-label">🏷 Categories</span><span class="muted small">(any country)</span>
-        ${cats.map((c) => html`<button class=${'chip' + (value.categories.includes(c) ? ' chip-on' : '')} onClick=${() => togCat(c)}>${c}</button>`)}</div>`}
+      <div class="row" style="margin-top:10px;flex-wrap:wrap;gap:6px"><span class="pick-label">🏷 Extra categories</span><span class="muted small">Every kind is already included for your country. These add more from other countries, still in your languages.</span>
+        ${cats.map((c) => html`<button class=${'chip' + (value.categories.includes(c) ? ' chip-on' : '')} onClick=${() => togCat(c)}>${c}</button>`)}</div>
+      </div></details>`}
     </div>
     <div class="opt-card">
       <div class="row"><button class=${'toggle' + (value.classics.length ? ' on' : '')} onClick=${() => set({ classics: value.classics.length ? [] : colls.slice(0, 3).map((c) => c.id) })}></button>
@@ -165,7 +174,7 @@ export function FreeTvPicker({ value, onChange }) {
 
 // The viewer's own language, as an ISO 639-3 code like iptv-org uses.
 const LANG3 = { en: 'eng', es: 'spa', fr: 'fra', de: 'deu', pt: 'por', it: 'ita', ar: 'ara', hi: 'hin', zh: 'zho', ja: 'jpn', ko: 'kor', ru: 'rus', tr: 'tur', nl: 'nld', pl: 'pol', vi: 'vie', tl: 'tgl', uk: 'ukr', el: 'ell', sv: 'swe' };
-export const DEFAULT_FREE = { anime: true, live: true, country: (navigator.language.split('-')[1] || 'us').toLowerCase(), languages: [LANG3[navigator.language.split('-')[0]] || 'eng'], max: 0, categories: [], classics: ['feature_films', 'classic_cartoons', 'classic_tv'] };
+export const DEFAULT_FREE = { servicesOff: [], anime: true, live: true, country: (navigator.language.split('-')[1] || 'us').toLowerCase(), languages: [LANG3[navigator.language.split('-')[0]] || 'eng'], max: 0, categories: [], classics: ['feature_films', 'classic_cartoons', 'classic_tv'] };
 
 // What the Free TV picker should start from: what's already set up, when it is.
 export function freeFromSettings(live, { classics = [] } = {}) {
@@ -176,12 +185,12 @@ export function freeFromSettings(live, { classics = [] } = {}) {
     countries: live.countries || [live.country || DEFAULT_FREE.country],
     languages: live.languages || [], regions: live.regions || [], categories: live.categories || [],
     max: live.max ?? 0, sources: live.sources || ['iptv-org', 'free-tv'],
-    anime: !!live.anime, m3u: (live.urls || [])[0] || '',
+    anime: !!live.anime, m3u: (live.urls || [])[0] || '', servicesOff: live.servicesOff || [],
   };
 }
 
 // Kick off free TV setup (classics import waits; IPTV checks run in the background).
 export async function applyFreeTv(free, onStatus) {
   if (free.classics.length) { onStatus?.('Adding classic movies, cartoons & TV…'); await tv.freeAdd(free.classics, 60); }
-  if (free.live) await tv.iptvAuto({ country: free.country, countries: free.countries || [free.country], regions: free.regions || [], categories: free.categories, languages: free.languages || [], anime: !!free.anime, max: free.max ?? 0, sources: free.sources || ['iptv-org', 'free-tv'], urls: free.m3u?.trim() ? [free.m3u.trim()] : [] });
+  if (free.live) await tv.iptvAuto({ country: free.country, countries: free.countries || [free.country], regions: free.regions || [], categories: free.categories, languages: free.languages || [], anime: !!free.anime, servicesOff: free.servicesOff || [], max: free.max ?? 0, sources: free.sources || ['iptv-org', 'free-tv'], urls: free.m3u?.trim() ? [free.m3u.trim()] : [] });
 }

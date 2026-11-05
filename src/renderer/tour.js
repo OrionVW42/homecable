@@ -54,7 +54,7 @@ const SLIDES = [
       ['Cast to a Chromecast or Google TV.', 'K'],
       ['Pair phones and tablets with a QR code (Settings → Phone app): watch anywhere, or use one as the remote — even for the TV.', null],
       ['Profiles keep kids on kid-friendly channels; your stuff stays yours.', null],
-      ['Pop-out player: a small always-on-top window while you work.', 'P'],
+      ['Pop-out player: a small window that stays on top while you work or play a game.', 'P'],
     ],
   },
   {

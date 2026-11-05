@@ -11,6 +11,7 @@ const crypto = require('crypto');
 const { spawn } = require('child_process');
 const { ffmpegPath, pickEncoder, streamArgs } = require('./ffmpeg');
 const { liveArgs, resolveHls } = require('./iptv');
+const { openPair } = require('./hlsPair');
 
 const MIME = {
   mp4: 'video/mp4', m4v: 'video/mp4', mov: 'video/mp4', webm: 'video/webm', mkv: 'video/webm', mk3d: 'video/webm',
@@ -40,6 +41,7 @@ function startServer(lib, log = () => {}, { liveFor = () => null, thumbDir = nul
     res.writeHead(200, { 'Access-Control-Allow-Origin': '*', 'Content-Type': type, 'Cache-Control': 'no-store', ...extra });
     p.stdout.pipe(res);
     req.on('close', () => p.kill('SIGKILL'));
+    return p;
   };
   // Older TVs (DLNA / "Samsung cast") play MPEG-TS: the same ffmpeg job in a different
   // wrapper (?fmt=ts), plus the DLNA headers those players look for.
@@ -86,10 +88,20 @@ function startServer(lib, log = () => {}, { liveFor = () => null, thumbDir = nul
       const st = liveFor(id, who);
       if (!st) { res.writeHead(404); return res.end(); }
       const hls = st.audioOnly ? null : await resolveHls(st);
-      log(`live ${st.mode || 'copy'}${hls ? ' (picture+sound split)' : ''} ${st.url}${who.group ? ' → ' + who.group : ''}`);
-      if (req.destroyed) return; // they changed channel while we looked it up
-      if (url.searchParams.get('fmt') === 'ts') return spawnTo(asTs(liveArgs(st, st.mode || 'copy', hls)), res, req, 'video/mpeg', 'live', group, DLNA_LIVE);
-      return spawnTo(liveArgs(st, st.mode || 'copy', hls), res, req, st.audioOnly ? 'audio/mp4' : 'video/mp4', 'live', group);
+      // Separate picture and sound: join them on one clock, so they can't drift apart.
+      const pair = hls ? await openPair(st, hls, { log }) : null;
+      log(`live ${st.mode || 'copy'}${pair ? ' (picture+sound joined)' : hls ? ' (picture+sound split)' : ''} ${st.url}${who.group ? ' → ' + who.group : ''}`);
+      if (req.destroyed) return pair?.stop(); // they changed channel while we looked it up
+      const how = pair ? { pipe: true } : hls;
+      const ts = url.searchParams.get('fmt') === 'ts';
+      const p = ts ? spawnTo(asTs(liveArgs(st, st.mode || 'copy', how)), res, req, 'video/mpeg', 'live', group, DLNA_LIVE)
+        : spawnTo(liveArgs(st, st.mode || 'copy', how), res, req, st.audioOnly ? 'audio/mp4' : 'video/mp4', 'live', group);
+      if (pair) {
+        p.stdin.on('error', () => pair.stop());
+        p.on('close', () => pair.stop());
+        pair.pipeTo(p.stdin, () => { try { p.stdin.end(); } catch {} });
+      }
+      return;
     }
     if (route === 'art') {
       // Movie posters (cached JPEGs made by artwork.js).

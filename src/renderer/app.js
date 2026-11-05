@@ -119,6 +119,7 @@ function App() {
   const [avMenu, setAvMenu] = useState(false); // Audio & subtitles picker while watching
   const [mini, setMini] = useState(false); // pop-out always-on-top mini player
   const miniDrag = useRef(null); // dragging the pop-out by its top edge
+  const [lockAsk, setLockAsk] = useState(false); // the upgrade note's "Turn on…" opens the warning in Settings
   const [torrentDone, setTorrentDone] = useState(null); // { id, name } — the "finished downloading" note up top
   const [miniBig, setMiniBig] = useState(false); // the pop-out grown to guide size while a menu is open
   useEffect(() => {
@@ -475,10 +476,11 @@ function App() {
   const isAdultRef = useRef(true);
   isAdultRef.current = isAdult;
   ui.current = { overlay, editing, setup: setup || picker, digits };
+  window.__torrentsOn = !!settings.torrentsOn;
   // Controllers cycle these screens with LB/RB (the Edit menu's screens included).
   useEffect(() => {
     window.__overlayCycle = {
-      list: () => (isAdultRef.current ? ['channels', 'manager', 'tags', 'library', 'torrents', 'arcade', 'settings'] : ['library', 'arcade', 'settings']),
+      list: () => (isAdultRef.current ? ['channels', 'manager', 'tags', 'library', ...(window.__torrentsOn ? ['torrents'] : []), 'arcade', 'settings'] : ['library', 'arcade', 'settings']),
       current: () => ui.current.overlay,
       open: (k) => { ui.current.overlay = k; setOverlay(k); setEditMenu(false); },
     };
@@ -650,7 +652,12 @@ function App() {
       <button class="mini-ctl" title="Forward 10 seconds" onClick=${() => { player.current.seekBy?.(10); poke(); }}>10⟳</button>
       <button class="mini-ctl" title="Back to the full window (P)" onClick=${() => tv.miniMode(false)}>⛶</button>
     </div>`}
-    ${torrentDone && html`<div class="tor-done" role="status">
+    ${isAdult && settings.torrentsLockNote > 0 && !settings.torrentsOn && html`<div class="tor-done" role="status">
+      <span>🧲 Torrents are now off until you choose to turn them on. Your ${settings.torrentsLockNote} torrent${settings.torrentsLockNote === 1 ? '' : 's'} and ${settings.torrentsLockNote === 1 ? 'its' : 'their'} files are safe, just hidden and paused.</span>
+      <button class="btn sm primary" onClick=${() => { setLockAsk(true); setOverlay('settings'); }}>Turn on…</button>
+      <button class="btn sm" onClick=${() => setSettings({ torrentsLockNote: null })}>OK</button>
+    </div>`}
+    ${torrentDone && settings.torrentsOn && html`<div class="tor-done" role="status">
       <span>✅ <b>${torrentDone.name}</b> finished downloading — it’s still sharing with others.</span>
       <button class="btn sm primary" onClick=${() => { tv.torrentStop(torrentDone.id).then(() => toast('⏹ Stopped sharing — it plays from your PC now')).catch((e) => toast(String(e.message || e))); setTorrentDone(null); }}>⏹ Stop sharing</button>
       <button class="btn sm" onClick=${() => setTorrentDone(null)}>Keep sharing</button>
@@ -670,9 +677,9 @@ function App() {
     ${overlay === 'manager' && html`<${ChannelManager} channels=${channels} setChannels=${setChannels} initialId=${ch?.id} toast=${toast} onTune=${(id) => { setOverlay(null); ui.current.overlay = null; tune(id); }} onEdit=${setEditing} />`}
     ${overlay === 'tags' && html`<${TagsPanel} isAdult=${isAdult} toast=${toast} />`}
     ${overlay === 'freetv' && html`<${FreeTvPanel} isAdult=${isAdult} setChannels=${setChannels} toast=${toast} onTune=${(id) => { setOverlay(null); ui.current.overlay = null; tune(id); }} />`}
-    ${overlay === 'library' && html`<${LibraryPanel} isAdult=${isAdult} stats=${stats} onScan=${scan} enrichProgress=${enrichProgress} channels=${channels} setChannels=${setChannels} onPlay=${playVod} onEdit=${setEditing} toast=${toast} onOpenTorrents=${() => setOverlay('torrents')} />`}
-    ${overlay === 'torrents' && html`<${TorrentsView} isAdult=${isAdult} settings=${settings} setSettings=${setSettings} onPlay=${playVod} toast=${toast} />`}
-    ${overlay === 'settings' && html`<${SettingsPanel} isAdult=${isAdult} profile=${profile} setProfile=${setProfile} onSwitch=${() => { setOverlay(null); setPicker(true); }} stats=${stats} onOpenLibrary=${() => setOverlay('library')} onOpenTorrents=${() => setOverlay('torrents')} toast=${toast} channels=${channels} onLock=${(id) => { setSettings({ lockChannel: id || null }); if (id) tune(id); }} settings=${settings} setSettings=${setSettings} version=${version} onShowTour=${() => { setOverlay(null); ui.current.overlay = null; setTour(true); }} onRunSetup=${() => { setOverlay(null); setSetup(true); }} onEnrich=${() => { tv.enrich().then((n) => toast(`Looked up ${n} shows`)); }} cast=${cast} tvs=${tvs} onOpenCast=${() => setOverlay('cast')} vault=${vault} setVault=${setVault} onOpenVault=${() => { setOverlay(null); ui.current.overlay = null; tune(vault.channelId, { quiet: true }); }} />`}
+    ${overlay === 'library' && html`<${LibraryPanel} isAdult=${isAdult} stats=${stats} onScan=${scan} enrichProgress=${enrichProgress} channels=${channels} setChannels=${setChannels} onPlay=${playVod} onEdit=${setEditing} toast=${toast} onOpenTorrents=${() => setOverlay('torrents')} torrentsOn=${!!settings.torrentsOn} />`}
+    ${overlay === 'torrents' && settings.torrentsOn && html`<${TorrentsView} isAdult=${isAdult} settings=${settings} setSettings=${setSettings} onPlay=${playVod} toast=${toast} />`}
+    ${overlay === 'settings' && html`<${SettingsPanel} lockAsk=${lockAsk} onLockAsked=${() => setLockAsk(false)} isAdult=${isAdult} profile=${profile} setProfile=${setProfile} onSwitch=${() => { setOverlay(null); setPicker(true); }} stats=${stats} onOpenLibrary=${() => setOverlay('library')} onOpenTorrents=${() => setOverlay('torrents')} toast=${toast} channels=${channels} onLock=${(id) => { setSettings({ lockChannel: id || null }); if (id) tune(id); }} settings=${settings} setSettings=${setSettings} version=${version} onShowTour=${() => { setOverlay(null); ui.current.overlay = null; setTour(true); }} onRunSetup=${() => { setOverlay(null); setSetup(true); }} onEnrich=${() => { tv.enrich().then((n) => toast(`Looked up ${n} shows`)); }} cast=${cast} tvs=${tvs} onOpenCast=${() => setOverlay('cast')} vault=${vault} setVault=${setVault} onOpenVault=${() => { setOverlay(null); ui.current.overlay = null; tune(vault.channelId, { quiet: true }); }} />`}
     ${overlay === 'cast' && html`<${CastMenu} cast=${cast} tvs=${tvs} setTvs=${setTvs} settings=${settings} setSettings=${setSettings} toast=${toast} onClose=${() => setOverlay(null)} />`}
     ${overlay === 'arcade' && html`<${Arcade} settings=${settings} setSettings=${setSettings} onClose=${() => setOverlay(null)} />`}
     ${overlay === 'help' && html`<div class="modal-bg" onClick=${() => setOverlay(null)}><div class="modal narrow"><div class="modal-head"><h3>Controls</h3></div><div class="modal-body" onClick=${(e) => e.stopPropagation()}><${ControlsMap} /></div></div></div>`}
@@ -681,7 +688,7 @@ function App() {
     <div class=${'topbar' + (idle || setup ? ' hide' : '')}>
       <div class="brand"><${Logo} size=${24} /><span>HomeCable</span></div>
       <div class="nav">
-        ${[['guide', 'Guide', Icon.guide, 'G'], ['library', 'Library', Icon.library, 'L'], ...(isAdult ? [['torrents', 'Torrents', Icon.magnet, '']] : [])].map(([k, l, I, key]) => html`
+        ${[['guide', 'Guide', Icon.guide, 'G'], ['library', 'Library', Icon.library, 'L'], ...(isAdult && settings.torrentsOn ? [['torrents', 'Torrents', Icon.magnet, '']] : [])].map(([k, l, I, key]) => html`
           <button class=${overlay === k ? 'on' : ''} title=${key ? `${l} (${key})` : `${l} — search for torrents, manage yours`} onClick=${() => setOverlay((o) => (o === k ? null : k))}><${I} /><span class="l">${l}</span></button>`)}
         ${isAdult && html`<div class="nav-drop">
           <button class=${['manager', 'channels', 'tags'].includes(overlay) || editMenu ? 'on' : ''} title="Everything that edits lives here (E)" onClick=${() => setEditMenu((m) => !m)}><${Icon.edit} /><span class="l">Edit</span><span class="caret">▾</span></button>

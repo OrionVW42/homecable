@@ -1,10 +1,11 @@
 import { html } from 'htm/preact';
-import { useEffect, useMemo, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { tv, fmtDur, ChannelLogo, Icon, ORDER_LABEL, PALETTE } from './util.js';
 import { LookEditor } from './look.js';
 import { VaultSettings } from './vault.js';
 import { PhoneSettings } from './phonesettings.js';
 import { ControlsMap } from './controls.js';
+import { TorrentLockRow } from './torrentlock.js';
 import { FreeTvDialog } from './libraryview.js';
 import { ProfilesSettings, LEVEL_LABEL } from './profiles.js';
 
@@ -360,22 +361,48 @@ function TvMenuRow({ settings, setSettings }) {
     <button class=${'toggle' + (settings.tvMenu ? ' on' : '')} disabled=${busy} onClick=${flip}></button></div>`;
 }
 
-export function SettingsPanel({ settings, setSettings, onRunSetup, onShowTour, version, onEnrich, channels, onLock, stats, onOpenLibrary, onOpenTorrents, toast, isAdult, profile, setProfile, onSwitch, cast, tvs, onOpenCast, vault, setVault, onOpenVault }) {
+export function SettingsPanel({ settings, setSettings, onRunSetup, onShowTour, version, onEnrich, channels, onLock, stats, onOpenLibrary, onOpenTorrents, toast, isAdult, profile, setProfile, onSwitch, cast, tvs, onOpenCast, vault, setVault, onOpenVault, lockAsk = false, onLockAsked = () => {} }) {
   const [freeOpen, setFreeOpen] = useState(false);
+  const [find, setFind] = useState('');
+  const body = useRef(null);
+  // The search box: hides what doesn't match, section titles included. It works over whatever's
+  // on screen, so a new setting is searchable the moment it's added.
+  useEffect(() => {
+    const root = body.current;
+    if (!root) return;
+    const q = find.trim().toLowerCase();
+    const rows = [...root.querySelectorAll('.settings-row, .ads-box')];
+    for (const r of rows) r.style.display = !q || r.textContent.toLowerCase().includes(q) || r.closest('.ads-box')?.textContent.toLowerCase().includes(q) ? '' : 'none';
+    const none = q && !rows.some((r) => r.style.display !== 'none');
+    root.querySelector('.settings-none')?.toggleAttribute('hidden', !none);
+    const kids = [...root.children];
+    kids.forEach((el, i) => {
+      if (el.classList.contains('settings-find-row')) return;
+      if (el.classList.contains('section-title')) {
+        let any = false;
+        for (let j = i + 1; j < kids.length && !kids[j].classList.contains('section-title'); j++) if (kids[j].style.display !== 'none' && kids[j].offsetParent !== null) any = true;
+        el.style.display = !q || any ? '' : 'none';
+      } else if (!el.matches('.settings-row, .ads-box, .settings-none')) el.style.display = q ? 'none' : '';
+    });
+  });
+  const jump = (id) => { setFind(''); setTimeout(() => body.current?.querySelector('#set-' + id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 30); };
   const [notices, setNotices] = useState(null);
   const Toggle = ({ k }) => html`<button class=${'toggle' + (settings[k] ? ' on' : '')} onClick=${() => setSettings({ [k]: !settings[k] })}></button>`;
   return html`<div class="overlay">
     <div class="overlay-head"><h2>Settings</h2></div>
-    <div class="overlay-body" style="max-width:820px">
+    <div class="overlay-body" style="max-width:820px" ref=${body}>
+      <div class="settings-find-row"><input class="input settings-find" placeholder="Search settings, like “subtitles” or “update”" value=${find} onInput=${(e) => setFind(e.target.value)} onKeyDown=${(e) => { e.stopPropagation(); if (e.key === 'Escape') setFind(''); }} />
+        ${isAdult && !find && html`<div class="settings-jump">${[['people', 'People'], ['library', 'Videos'], ['freetv', 'Free TV'], ['watching', 'Watching'], ['screens', 'Other screens'], ['fun', 'Fun extras'], ['help', 'Help & setup'], ['torrents', 'Torrents'], ['controls', 'Controls'], ['about', 'About & updates']].map(([k, l]) => html`<button class="btn ghost sm" onClick=${() => jump(k)}>${l}</button>`)}</div>`}</div>
+      <p class="muted settings-none" hidden>Nothing matches that. Try a simpler word.</p>
       ${!isAdult ? html`
         <div class="settings-row"><div class="grow"><b>${profile?.list.find((p) => p.id === profile.active)?.avatar} ${profile?.list.find((p) => p.id === profile.active)?.name}</b><span>Ask a grown-up to change settings and channels.</span></div><button class="btn sm" onClick=${onSwitch}>Switch profile</button></div>
         <div class="settings-row"><div class="grow"><b>Picture size</b></div>
           <div class="seg">${[['fit', 'Fit'], ['fill', 'Fill'], ['stretch', 'Stretch']].map(([k, l]) => html`<button class=${(settings.fit || 'fit') === k ? 'on' : ''} onClick=${() => setSettings({ fit: k })}>${l}</button>`)}</div></div>
         <${CastSettings} settings=${settings} setSettings=${setSettings} cast=${cast} tvs=${tvs} onOpenCast=${onOpenCast} />
         <div class="section-title">Controls</div><${ControlsMap} />` : html`
-      <div class="section-title" style="margin-top:0">People</div>
+      <div class="section-title" id="set-people">People</div>
       ${profile && html`<${ProfilesSettings} view=${profile} setView=${setProfile} toast=${toast} />`}
-      <div class="section-title">Library & updates</div>
+      <div class="section-title" id="set-library">Your videos</div>
       <div class="settings-row"><div class="grow"><b>When new videos show up</b><span>Automatic adds them to matching channels’ upcoming schedules. Review holds them in Library → New. Library only keeps them out of channels until you add them.</span></div>
         <div class="seg">${[['auto', 'Automatic'], ['review', 'Let me review'], ['library', 'Library only']].map(([k, l]) => html`<button class=${settings.newMedia === k ? 'on' : ''} onClick=${() => setSettings({ newMedia: k })}>${l}</button>`)}</div></div>
       <div class="settings-row"><div class="grow"><b>Check for new media</b><span>${stats?.lastScan ? `Last checked ${new Date(stats.lastScan).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}. ` : ''}Folders on this PC are also watched live.</span></div>
@@ -386,12 +413,9 @@ export function SettingsPanel({ settings, setSettings, onRunSetup, onShowTour, v
       ${vault && html`<${VaultSettings} vault=${vault} setVault=${setVault} toast=${toast} onOpen=${onOpenVault} />`}
       <div class="settings-row"><div class="grow"><b>“New Arrivals” channel</b><span>Plays whatever was added in the last two weeks.</span></div><${Toggle} k="newArrivals" /></div>
       <div class="settings-row"><div class="grow"><b>Sources</b><span>${(stats?.folders.length || 0)} folders · ${(stats?.servers || []).length} media servers. Add network shares, NAS boxes and media servers.</span></div><button class="btn sm" onClick=${onOpenLibrary}>Manage in Library</button></div>
+      <div class="section-title" id="set-freetv">Free TV</div>
       <div class="settings-row"><div class="grow"><b>Free TV</b><span>Free live IPTV stations and public-domain classic movies, cartoons and TV.</span></div><button class="btn sm" onClick=${() => setFreeOpen(true)}>📡 Add free channels</button></div>
-      <${TorrentSettings} settings=${settings} setSettings=${setSettings} toast=${toast} onOpenTorrents=${onOpenTorrents} />
-      <${AdsSettings} settings=${settings} setSettings=${setSettings} toast=${toast} />
-      <div class="section-title">Watching</div>
-      <${PhoneSettings} toast=${toast} />
-      <${CastSettings} settings=${settings} setSettings=${setSettings} cast=${cast} tvs=${tvs} onOpenCast=${onOpenCast} />
+      <div class="section-title" id="set-watching">Watching</div>
       <div class="settings-row"><div class="grow"><b>Single channel mode</b><span>Lock the TV to one channel, all the time. Channel flipping is turned off; the guide shows just that channel's schedule.</span></div>
         <select class="select" style="min-width:220px" value=${settings.lockChannel || ''} onChange=${(e) => onLock(e.target.value)}>
           <option value="">Off — all channels</option>
@@ -407,23 +431,32 @@ export function SettingsPanel({ settings, setSettings, onRunSetup, onShowTour, v
       <div class="settings-row"><div class="grow"><b>Picture size</b><span>Fit shows the whole picture; Fill zooms to remove black bars; Stretch fills the screen. Z or R3 switches while watching.</span></div>
         <div class="seg">${[['fit', 'Fit'], ['fill', 'Fill'], ['stretch', 'Stretch']].map(([k, l]) => html`<button class=${(settings.fit || 'fit') === k ? 'on' : ''} onClick=${() => setSettings({ fit: k })}>${l}</button>`)}</div></div>
       <div class="settings-row"><div class="grow"><b>Start in fullscreen</b><span>Open straight into fullscreen TV, like turning on a set. Esc (or B / ○ on a controller) leaves it.</span></div><${Toggle} k="startFullscreen" /></div>
-      <div class="settings-row"><div class="grow"><b>📺 Channel bumpers</b><span>The channel’s own logo for a few seconds between shows, like a real network’s bumps. When commercials are on, one plays going into the break and another coming back.</span></div>
-        ${settings.bumpersOn !== false && html`<div class="seg">${[3, 5, 8].map((s) => html`<button class=${(settings.bumperSeconds || 5) === s ? 'on' : ''} onClick=${() => setSettings({ bumperSeconds: s })}>${s}s</button>`)}</div>`}
-        <${Toggle} k="bumpersOn" /></div>
       <div class="settings-row"><div class="grow"><b>Channel-change static</b><span>Show TV static while a channel tunes in.</span></div><${Toggle} k="transitions" /></div>
       <div class="settings-row"><div class="grow"><b>On-screen clock</b><span>Show the time in the corner while watching.</span></div><${Toggle} k="showClock" /></div>
       <div class="settings-row"><div class="grow"><b>Info banner</b><span>How long the channel banner stays up after changing channels.</span></div>
         <div class="seg">${[3, 5, 8].map((s) => html`<button class=${settings.bannerSeconds === s ? 'on' : ''} onClick=${() => setSettings({ bannerSeconds: s })}>${s}s</button>`)}</div></div>
+      <div class="section-title" id="set-screens">Other screens</div>
+      <${PhoneSettings} toast=${toast} />
+      <${CastSettings} settings=${settings} setSettings=${setSettings} cast=${cast} tvs=${tvs} onOpenCast=${onOpenCast} />
+      <div class="section-title" id="set-fun">Fun extras</div>
+      <div class="settings-row"><div class="grow"><b>📺 Channel bumpers</b><span>The channel’s own logo for a few seconds between shows, like a real network’s bumps. When commercials are on, one plays going into the break and another coming back.</span></div>
+        ${settings.bumpersOn !== false && html`<div class="seg">${[3, 5, 8].map((s) => html`<button class=${(settings.bumperSeconds || 5) === s ? 'on' : ''} onClick=${() => setSettings({ bumperSeconds: s })}>${s}s</button>`)}</div>`}
+        <${Toggle} k="bumpersOn" /></div>
+      <${AdsSettings} settings=${settings} setSettings=${setSettings} toast=${toast} />
+      <div class="section-title" id="set-help">Help & setup</div>
       <div class="settings-row"><div class="grow"><b>Online show & movie info</b><span>Look up show genres and posters (TVmaze) and movie posters (Wikipedia) — only titles are sent. Movies with cover art in the file, or a picture beside them, never go online.</span></div>
         <button class="btn sm" onClick=${onEnrich}>Look up now</button><${Toggle} k="onlineMeta" /></div>
-      <div class="settings-row"><div class="grow"><b>Setup</b><span>Run the first-time scan and channel suggestions again.</span></div><button class="btn sm" onClick=${onRunSetup}>Run setup</button></div>
+      <div class="settings-row"><div class="grow"><b>Setup</b><span>Go through the first-time screens again, one topic at a time.</span></div><button class="btn sm" onClick=${onRunSetup}>Run setup</button></div>
       <div class="settings-row"><div class="grow"><b>Welcome tour</b><span>The quick walkthrough of everything HomeCable can do — channels, the guide, On Demand, tagging, the phone app.</span></div><button class="btn sm" onClick=${onShowTour}>Show the tour</button></div>
       <${StartOverRow} />
       <div class="settings-row"><div class="grow"><b>Troubleshooting</b><span>Open the log file.</span></div><button class="btn sm" onClick=${() => tv.openLog()}>Open log</button></div>
-      <div class="section-title">Controls</div>
+      <div class="section-title" id="set-torrents">Torrents</div>
+      <${TorrentLockRow} settings=${settings} setSettings=${setSettings} toast=${toast} askOpen=${lockAsk} onAsked=${onLockAsked} />
+      ${settings.torrentsOn && html`<${TorrentSettings} settings=${settings} setSettings=${setSettings} toast=${toast} onOpenTorrents=${onOpenTorrents} />`}
+      <div class="section-title" id="set-controls">Controls</div>
       <${ControlsMap} />
       ${freeOpen && html`<${FreeTvDialog} onClose=${() => setFreeOpen(false)} toast=${toast} />`}
-      <div class="section-title">About</div>
+      <div class="section-title" id="set-about">About & updates</div>
       <div class="settings-row"><div class="grow"><b>HomeCable ${version}</b><span>Free, open-source software (MIT). No accounts, no telemetry, no tracking. Free TV comes from public lists and public-domain archives — HomeCable doesn't host any streams, and what you play is your responsibility.</span></div>
         <button class="btn sm" onClick=${async () => setNotices(await tv.notices())}>Privacy, content & licenses</button></div>
       <${UpdatesSection} settings=${settings} setSettings=${setSettings} toast=${toast} version=${version} Toggle=${Toggle} />

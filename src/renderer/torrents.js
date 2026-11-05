@@ -12,7 +12,7 @@ const eta = (ms) => { const s = ms / 1000; return !isFinite(s) || s <= 0 ? '' : 
 const stateOf = (t) => (t.stopped ? (t.done ? 'Stopped · plays from this PC' : 'Stopped') : t.paused ? 'Paused' : t.busy ? 'Starting…' : t.waiting ? 'Waiting for the network interface' : t.queued ? 'Queued — waiting its turn' : t.done ? 'Done · sharing' : t.progress > 0 ? 'Downloading' : 'Looking for peers');
 
 // settings / setSettings come from the Settings panel; opened elsewhere it looks after the setting itself.
-const VPNS = [['Proton VPN', 'https://protonvpn.com/download'], ['NordVPN', 'https://nordvpn.com/download/'], ['Malwarebytes', 'https://www.malwarebytes.com/vpn']];
+export const VPNS = [['Proton VPN', 'https://protonvpn.com/download'], ['NordVPN', 'https://nordvpn.com/download/'], ['Malwarebytes', 'https://www.malwarebytes.com/vpn']];
 // Up top on every Torrents view while no VPN is in use.
 export function VpnBanner({ toast }) {
   const [v, setV] = useState(null);

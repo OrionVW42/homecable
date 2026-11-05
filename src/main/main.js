@@ -58,7 +58,7 @@ function log(...a) {
   if (!app.isPackaged) process.stdout.write(line);
 }
 
-const DEFAULT_SETTINGS = { torrentLimitGB: 100, torrentMaxActive: 3, torrentCleanSeries: 'watched', torrentCleanMovies: 'watched', torrentStopSeeding: true, torrentEncryption: 'require', torrentVpn: 'auto', torrentVpnWarn: true, torrentToOnDemand: true, torrentKeep: [], searchEngines: {}, searchEngineOptions: {}, searchRecent: [], setupDone: false, onlineMeta: true, transitions: true, showClock: true, volume: 0.9, muted: false, lastChannel: null, prevChannel: null, bannerSeconds: 5, lockChannel: null, startFullscreen: false, brightness: 1, fit: 'fit',
+const DEFAULT_SETTINGS = { torrentsOn: false, torrentLimitGB: 100, torrentMaxActive: 3, torrentCleanSeries: 'watched', torrentCleanMovies: 'watched', torrentStopSeeding: true, torrentEncryption: 'require', torrentVpn: 'auto', torrentVpnWarn: true, torrentToOnDemand: true, torrentKeep: [], searchEngines: {}, searchEngineOptions: {}, searchRecent: [], setupDone: false, onlineMeta: true, transitions: true, showClock: true, volume: 0.9, muted: false, lastChannel: null, prevChannel: null, bannerSeconds: 5, lockChannel: null, startFullscreen: false, brightness: 1, fit: 'fit',
   // auto / manual / in-between
   newMedia: 'auto',          // 'auto' = onto channels · 'review' = inbox first · 'library' = library only
   scanInterval: '6h',        // 'off' | '1h' | '6h' | '24h' (folders are also watched live)
@@ -180,7 +180,7 @@ function sortedChannels() { return visible().filter((c) => !c.locked).sort((a, b
 function libraryStats() {
   const items = lib.list();
   const count = (k) => items.filter((i) => i.kind === k).length;
-  return { total: items.length, episodes: count('episode'), movies: count('movie'), music: count('music'), shorts: count('short'), clips: count('clip'), shows: lib.shows().length, folders: lib.folders.filter((f) => !lib.isPrivate(f)) /* the locked section's folders are never listed */, servers: lib.servers.map(({ id, name, detail }) => ({ id, name, detail })), pending: lib.pendingCount(), scanning: lib.scanning, lastScan: settings.lastScan };
+  return { total: items.length, episodes: count('episode'), movies: count('movie'), music: count('music'), shorts: count('short'), clips: count('clip'), shows: lib.shows().length, folders: lib.folders.filter((f) => !lib.isPrivate(f)) /* the locked section's folders are never listed */, servers: lib.servers.filter((s) => settings.torrentsOn || s.kind !== 'torrent').map(({ id, name, detail }) => ({ id, name, detail })), pending: lib.pendingCount(), scanning: lib.scanning, lastScan: settings.lastScan };
 }
 
 function describe(entry) {
@@ -772,7 +772,7 @@ function tune(id, atTime, opts = {}) {
       play: st ? { mode: 'live', url: media.liveUrl(st.id, ++liveSeq), offset: 0, startedAt: 0, audioOnly: !!st.iptv.audioOnly } : null };
   }
   const item = entry.itemId ? lib.items[entry.itemId] : null;
-  if (item?.torrent) torrents?.focus(item.id).catch(() => {});
+  if (item?.torrent && settings.torrentsOn) torrents?.focus(item.id).catch(() => {});
   return { channel: ch, entry: describe(entry), next: describe(next), offset, play: item ? playFor(item, offset, opts) : null, now, at: t, earliest };
 }
 
@@ -936,25 +936,43 @@ async function scanEverything() {
 // Free live TV: fetch the public lists, test every station, and add the ones
 // that actually play — progressively, in the background.
 let iptvJob = null;
-async function iptvAutoAdd({ country = 'us', countries = null, regions = [], categories = [], languages = [], max = 100, urls = [], skipPresets = false, sources = ['iptv-org', 'free-tv'], anime = false } = {}) {
+async function iptvAutoAdd({ country = 'us', countries = null, regions = [], categories = [], languages = [], max = 100, urls = [], skipPresets = false, sources = ['iptv-org', 'free-tv'], anime = false, servicesOff = [] } = {}) {
   if (iptvJob) return iptvJob;
   const ccs = [...new Set((Array.isArray(countries) && countries.length ? countries : [country]).map((c) => String(c).toLowerCase()))];
   iptvJob = (async () => {
-    const all = [...(skipPresets || !sources.includes('iptv-org') ? [] : [...ccs.map((cc) => iptv.presetUrl({ country: cc })), ...(regions || []).map((rg) => iptv.presetUrl({ region: rg })), ...languages.map((l) => iptv.presetUrl({ language: l })), ...categories.map((c) => iptv.presetUrl({ category: c }))]), ...urls];
-    const lists = await Promise.all(all.map((u) => iptv.fetchPlaylist(u).catch((e) => { log('playlist', u, e.message); return []; })));
+    const useOrg = !skipPresets && sources.includes('iptv-org');
+    const getList = (u) => iptv.fetchList(u).catch((e) => { log('playlist', u, e.message); return []; });
+    const broad = await Promise.all((useOrg ? [...ccs.map((cc) => iptv.presetUrl({ country: cc })), ...(regions || []).map((rg) => iptv.presetUrl({ region: rg })), ...categories.map((c) => iptv.presetUrl({ category: c }))] : []).map(getList));
+    const byLang = await Promise.all((useOrg ? languages.map((l) => iptv.presetUrl({ language: l })) : []).map(getList));
+    const unlabelled = useOrg && languages.length ? await getList(iptv.presetUrl({ language: 'undefined' })) : [];
+    // Your languages: their lists, and from everything broader only stations in them.
+    const lists = [...(languages.length ? iptv.keepLanguages(broad, byLang, unlabelled) : broad), ...byLang, ...await Promise.all((urls || []).map(getList))];
     if (!skipPresets && sources.includes('free-tv')) for (const cc of ccs) lists.unshift(await iptv.fetchFreeTv(cc).catch((e) => { log('free-tv', e.message); return []; }));
     if (anime) lists.unshift(await iptv.fetchAnime().catch((e) => { log('anime', e.message); return []; }));
     playlistGuides = [...new Set(lists.flatMap((l) => l.tvgUrls || []))].slice(0, 4);
     const have = new Set(channels.filter((c) => c.iptv).map((c) => c.iptv.url));
     const seenName = new Set(channels.filter((c) => c.iptv).map((c) => c.name.toLowerCase()));
+    // This scan runs at every start. Without this it re-tested every dead station each time.
+    const MISS_WAIT = 24 * 3600e3;
+    const missed = store.read('liveMisses', {});
     const candidates = [];
+    const named = new Map();
     for (const st of lists.flat()) {
-      if (st.flags.geo || have.has(st.url) || seenName.has(st.name.toLowerCase())) continue;
-      have.add(st.url); seenName.add(st.name.toLowerCase());
+      if (st.flags.geo || have.has(st.url) || servicesOff.includes(iptv.providerOf(st.url)?.key)) continue;
+      if (Date.now() - (missed[st.url] || 0) < MISS_WAIT) continue;
+      have.add(st.url);
+      const key = st.name.toLowerCase();
+      // The same channel from another source is a spare, tried if the first one doesn't play.
+      if (named.has(key)) { named.get(key).spares.push(st); continue; }
+      if (seenName.has(key)) continue;
+      seenName.add(key);
+      st.spares = [];
+      named.set(key, st);
       candidates.push(st);
     }
-    // Most-watched kinds of channels first; religious/shopping/government last; at
-    // most two stations per network brand so one broadcaster can't fill the lineup.
+    // Most-watched kinds of channels first; religious/shopping/government last. With a limit
+    // set, at most two stations per network brand so one broadcaster can't fill it. With no
+    // limit you asked for every station that works: the cap cut over a third of them.
     const PREFER = ['movies', 'news', 'entertainment', 'kids', 'animation', 'sports', 'comedy', 'music', 'classic', 'series', 'documentary', 'family', 'general', 'science', 'cooking', 'travel', 'outdoor'];
     const LAST = ['religious', 'shop', 'legislative', 'business', 'weather', 'auto'];
     const rank = (st) => {
@@ -967,35 +985,58 @@ async function iptvAutoAdd({ country = 'us', countries = null, regions = [], cat
     const perBrand = new Map();
     const brand = (n) => n.toLowerCase().replace(/\(.*?\)/g, '').split(/\s+/)[0];
     const kept = [];
-    for (const st of candidates) { const b = brand(st.name); const n = perBrand.get(b) || 0; if (n < 2) { perBrand.set(b, n + 1); kept.push(st); } }
-    candidates.length = 0; candidates.push(...kept);
+    if (max > 0) {
+      for (const st of candidates) { const b = brand(st.name); const n = perBrand.get(b) || 0; if (n < 2) { perBrand.set(b, n + 1); kept.push(st); } }
+      candidates.length = 0; candidates.push(...kept);
+    }
     const cap = max > 0 ? max : Infinity; // 0 = no limit: every station that works
     let added = 0, checked = 0, i = 0, lastSave = 0;
+    const slow = []; // Pluto, Samsung and the like, when busy: one more, patient try at the end
     send('iptv-progress', { checked, total: candidates.length, added, running: true });
+    const stationChannel = (st, check) => ({
+              number: nextNumber(settings.liveStart || 100), name: st.name.slice(0, 60), color: PALETTE[channels.length % PALETTE.length],
+              iptv: { url: st.url, logo: st.logo, group: st.group, genre: stationGenre(st.name, st.group), tvgId: st.tvgId, country: st.country, userAgent: st.userAgent, referer: st.referer, audioOnly: !check.video, mode: check.video && check.video !== 'h264' ? 'transcode' : 'copy' },
+    });
+    const addStation = (st, check) => {
+      added++;
+      channels.push(normalizeChannel(stationChannel(st, check)));
+      if (Date.now() - lastSave > 3000) { lastSave = Date.now(); saveChannels(); }
+      send('channels-changed');
+    };
     await Promise.all(Array.from({ length: 10 }, async () => {
       // Each worker shrugs off anything a station throws at it — a stream that
       // doesn't answer in time is skipped and the next one is tried.
       while (i < candidates.length && added < cap) {
         const st = candidates[i++];
         try {
-          const check = await iptv.checkStream(st, 10000);
+          let check = await iptv.checkStream(st);
+          for (const spare of st.spares || []) {
+            if (check.ok) break;
+            const c = await iptv.checkStream(spare);
+            if (c.ok) { check = c; Object.assign(st, { url: spare.url, userAgent: spare.userAgent, referer: spare.referer, logo: st.logo || spare.logo, group: st.group || spare.group, tvgId: st.tvgId || spare.tvgId }); }
+          }
           checked++;
+          if (!check.ok) missed[st.url] = Date.now();
+          if (!check.ok && !st.retried && iptv.providerOf(st.url)) { st.retried = true; slow.push(st); }
           if (check.ok && added < cap) {
-            added++;
-            channels.push(normalizeChannel({
-              number: nextNumber(settings.liveStart || 100), name: st.name.slice(0, 60), color: PALETTE[channels.length % PALETTE.length],
-              iptv: { url: st.url, logo: st.logo, group: st.group, genre: stationGenre(st.name, st.group), tvgId: st.tvgId, country: st.country, userAgent: st.userAgent, referer: st.referer, audioOnly: !check.video, mode: check.video && check.video !== 'h264' ? 'transcode' : 'copy' },
-            }));
-            // Saving is synchronous (whole channel list to disk) — doing it for every
-            // station stuttered whatever was PLAYING during a big add. Save at most
-            // every few seconds; the final save below catches the rest.
-            if (Date.now() - lastSave > 3000) { lastSave = Date.now(); saveChannels(); }
-            send('channels-changed');
+            addStation(st, check);
           }
         } catch (e) { checked++; log('iptv check', st.name, e.message); }
         send('iptv-progress', { checked, total: candidates.length, added, running: true, name: st.name });
       }
     }));
+    // A patient second look, a few at a time, for the big services that were just busy.
+    const retries = slow.length;
+    let rescued = 0;
+    await Promise.all(Array.from({ length: 5 }, async () => {
+      while (slow.length && added < cap) {
+        const st = slow.shift();
+        try { const check = await iptv.checkStream(st, 30000); if (check.ok && added < cap) { delete missed[st.url]; addStation(st, check); rescued++; } } catch (e) { log('iptv check', st.name, e.message); }
+      }
+    }));
+    if (retries) log('iptv auto: second look at', retries, 'found', rescued);
+    for (const u of Object.keys(missed)) if (Date.now() - missed[u] >= MISS_WAIT) delete missed[u];
+    store.write('liveMisses', missed);
     saveChannels();
     // Done: tell every screen to refresh so the new stations appear right away.
     send('channels-changed');
@@ -1126,6 +1167,7 @@ function ensureNewArrivals() {
 }
 
 let miniBack = null; // the window's size before mini mode
+let topKeeper = null; // while popped out: keeps it above games and anything else
 function createWindow() {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize;
   win = new BrowserWindow({
@@ -1157,7 +1199,8 @@ function handlers() {
     'profiles:upsert', 'profiles:remove', 'profiles:setLock', 'profiles:ask', 'ondemand:useFolder', 'ondemand:pickFolder', 'art:set', 'art:candidates', 'art:pickFile', 'meta:refresh', 'meta:refreshAll', 'name:set', 'show:move', 'show:make', 'tags:set', 'items:hide', 'app:startOver', 'vault:create', 'vault:update', 'vault:remove', 'phone:enable', 'phone:pairStart', 'phone:forget', 'phone:setLevel']);
   const VIEWER_SETTINGS = new Set(['volume', 'muted', 'brightness', 'fit', 'lastChannel', 'prevChannel', 'arcadeScores', 'castAuto', 'castHinted', 'vodResume', 'vodWatched', 'castMode', 'showLast', 'subMode', 'subLang', 'audioPref', 'liveCaptions']);
   const h = (name, fn) => (handlerFns[name] = fn, ipcMain.handle(name, async (_e, ...a) => {
-    if (ADMIN.has(name) && !profiles.isAdult()) throw new Error('Ask a grown-up to do that');
+    if ((ADMIN.has(name) || name === 'torrentsLock:set') && !profiles.isAdult()) throw new Error('Ask a grown-up to do that');
+    if (/^(torrents|search):/.test(name) && name !== 'torrents:vpn' && !settings.torrentsOn) throw new Error('Torrents are turned off. You can turn them on in Settings.');
     if (name === 'settings:set' && !profiles.isAdult() && Object.keys(a[0] || {}).some((k) => !VIEWER_SETTINGS.has(k))) throw new Error('Ask a grown-up to change settings');
     try { return await fn(...a); } catch (err) { log('ipc', name, err.stack || err); throw err; }
   }));
@@ -1233,6 +1276,7 @@ function handlers() {
   });
   h('settings:set', async (patch) => {
     if (patch && 'vault' in patch) { patch = { ...patch }; delete patch.vault; } // only changed through vault:*
+    if (patch && ('torrentsOn' in patch || 'torrentsAccepted' in patch)) { patch = { ...patch }; delete patch.torrentsOn; delete patch.torrentsAccepted; } // only through torrentsLock:set
     if ('subMode' in patch || 'subLang' in patch) subsCache.clear(); // (audioPref is applied per request)
     Object.assign(settings, patch);
     lib.defaultPolicy = settings.newMedia;
@@ -1242,7 +1286,7 @@ function handlers() {
     if ('torrentEncryption' in patch) torrents?.setEncryption().catch((e) => log('torrents', e.message));
     if ('torrentMaxActive' in patch) torrents?._schedule().catch(() => {});
     if ('torrentLimitGB' in patch || 'torrentCleanSeries' in patch || 'torrentCleanMovies' in patch) torrents?.enforceLimit().catch((e) => log('torrents', e.message));
-    if (patch.torrentToOnDemand) torrentsToOnDemand().catch(() => {});
+    if (patch.torrentToOnDemand && settings.torrentsOn) torrentsToOnDemand().catch(() => {});
     if (AD_KEYS.some((k) => k in patch) || 'adPacks' in patch || 'bumpersOn' in patch || 'bumperSeconds' in patch) {
       if ('adFeed' in patch || ('adsOn' in patch && settings.adsOn)) await syncAds();
       if ('adFolder' in patch && settings.adFolder) { await lib.scan([settings.adFolder], { prune: false, policy: 'auto', minBytes: 64 * 1024 }); adsLib.markFolder(lib, settings.adFolder); }
@@ -1500,6 +1544,20 @@ function handlers() {
   });
   // Mini player: the window shrinks to a small always-on-top video you can resize and
   // drag anywhere, so you can watch while you work. P (or its button) toggles it.
+  // On Windows the last window to claim "topmost" wins, and games claim it too. So while
+  // it's popped out it takes the spot back twice a second, without ever taking the keyboard
+  // or mouse from whatever you're using. Not while you're using the player itself: it's
+  // already on top then, and this would close its open dropdowns.
+  const keepOnTop = (on) => {
+    clearInterval(topKeeper); topKeeper = null;
+    if (!on) return win.setAlwaysOnTop(false);
+    win.setAlwaysOnTop(true, 'screen-saver');
+    topKeeper = setInterval(() => {
+      if (!win || win.isDestroyed() || !miniBack || win.isFocused()) return;
+      if (!win.isAlwaysOnTop()) win.setAlwaysOnTop(true, 'screen-saver');
+      win.moveTop();
+    }, 500);
+  };
   h('win:mini', (on) => {
     if (!win) return false;
     if (on === 'toggle') on = !miniBack;
@@ -1512,10 +1570,10 @@ function handlers() {
       // Automated checks never put a window on the screen — the pop-out included.
       if (process.env.HOMECABLE_OFFSCREEN) win.setBounds({ x: -10000, y: -10000, width: 520, height: 300 });
       else win.setBounds({ x: wa.x + wa.width - 540, y: wa.y + wa.height - 320, width: 520, height: 300 });
-      if (!process.env.HOMECABLE_OFFSCREEN) win.setAlwaysOnTop(true, 'floating');
+      keepOnTop(true);
     } else if (!on && miniBack) {
       miniSmall = null; // leaving the pop-out: the full window comes back, whatever size the pop-out was
-      win.setAlwaysOnTop(false);
+      keepOnTop(false);
       win.setMinimumSize(860, 440);
       win.setBounds(miniBack.bounds);
       if (miniBack.max) win.maximize();
@@ -1949,14 +2007,26 @@ function handlers() {
     }
     for (const s of srcs.filter((x) => x.type === 'dlna')) { const r = await lib.scanServer(s.server, { policy: settings.setupDone ? settings.newMedia : 'auto' }); res.added += r.added || 0; }
     // Torrents: a magnet link or a .torrent file — its videos play while they download.
-    for (const s of srcs.filter((x) => x.type === 'torrent')) { const r = await torrents.add(s.link, { policy: settings.setupDone ? settings.newMedia : 'auto' }); res.added += r.added || 0; }
+    for (const s of settings.torrentsOn ? srcs.filter((x) => x.type === 'torrent') : []) { const r = await torrents.add(s.link, { policy: settings.setupDone ? settings.newMedia : 'auto' }); res.added += r.added || 0; }
     res.total = lib.list().length;
     return res;
   });
   h('sources:removeServer', async (id) => { if (id.startsWith('torrent:')) await torrents.remove(id); else lib.removeServer(id); return libraryStats(); });
+  // The torrent lock. Turning it on needs the warning accepted; off stops everything and hides it.
+  h('torrentsLock:set', async (on, accepted) => {
+    if (on && accepted !== true) throw new Error('Torrents can only be turned on after accepting the warning.');
+    settings.torrentsOn = !!on;
+    if (on) { settings.torrentsAccepted = true; settings.searchTermsOk = true; delete settings.torrentsLockNote; }
+    saveSettings();
+    lib.hideTorrents = !settings.torrentsOn;
+    if (on) checkVpn().catch(() => {}).finally(() => { if (settings.torrentsOn && torrents.saved.length) torrents.start().catch((e) => log('torrents', e.message)); });
+    else { torrents?.killNow(); search?.killNow(); log('torrents: turned off'); }
+    send('library-changed', libraryStats()); send('channels-changed'); send('schedule-changed');
+    return settings.torrentsOn;
+  });
   h('torrents:status', () => torrents?.status() || []);
   h('torrents:interfaces', () => torrents?.interfaces() || []);
-  h('torrents:vpn', () => ({ setting: settings.torrentVpn || 'auto', providers: vpn.PROVIDERS, found: vpnNow && { provider: vpnNow.provider, name: vpnNow.name }, manual: settings.torrentInterface || '', required: !!settings.torrentVpnRequired, waiting: netIface() === NO_VPN, warn: settings.torrentVpnWarn !== false, protectedBy: settings.torrentInterface || vpnNow?.name || '', encryption: settings.torrentEncryption || 'require' }));
+  h('torrents:vpn', async () => { if (!settings.torrentsOn) vpnNow = vpnOn() ? await vpn.detect(settings.torrentVpn || 'auto').catch(() => null) : null; return ({ setting: settings.torrentVpn || 'auto', providers: vpn.PROVIDERS, found: vpnNow && { provider: vpnNow.provider, name: vpnNow.name }, manual: settings.torrentInterface || '', required: !!settings.torrentVpnRequired, waiting: netIface() === NO_VPN, warn: settings.torrentVpnWarn !== false, protectedBy: settings.torrentInterface || vpnNow?.name || '', encryption: settings.torrentEncryption || 'require' }); });
   h('torrents:publicInfo', async () => { const j = await search.publicInfo(); return { org: String(j.org || '').replace(/^AS\d+\s*/, ''), country: j.country || '', city: j.city || '' }; });
   h('torrents:bound', () => torrents?.bound() || { state: 'idle', iface: '', address: null });
   // The Torrents panel
@@ -2013,7 +2083,7 @@ function handlers() {
     const next = it.showKey ? lib.episodesOf(it.showKey).find((e, i, a) => a[i - 1]?.id === it.id) : null;
     // Anime gets the guessed 90-second "Skip intro" (that timing is an anime OP thing).
     const anime = [...(lib.meta[it.showKeyUser || it.showKey]?.genres || []), ...(it.genres || [])].includes('Anime');
-    if (it.torrent) torrents?.focus(it.id).catch(() => {}); // this one first, the next episode right behind it
+    if (it.torrent && settings.torrentsOn) torrents?.focus(it.id).catch(() => {}); // this one first, the next episode right behind it
     return { item: itemSummary(it), next: next ? itemSummary(next) : null, anime, play: playFor(it, t, opts), now: Date.now() };
   });
 
@@ -2082,7 +2152,7 @@ function handlers() {
   h('iptv:addOne', async (st) => {
     if (!st?.url || !/^https?:\/\//i.test(st.url)) return { ok: false, why: 'bad url' };
     if (channels.some((c) => c.iptv?.url === st.url)) return { ok: false, why: 'already in your lineup' };
-    const check = await iptv.checkStream(st, 12000);
+    const check = await iptv.checkStream(st);
     if (!check.ok) return { ok: false, why: 'not answering right now' };
     const ch = normalizeChannel({
       number: nextNumber(settings.liveStart || 100), name: String(st.name || 'Station').slice(0, 60), color: PALETTE[channels.length % PALETTE.length],
@@ -2115,8 +2185,12 @@ function handlers() {
   });
   h('iptv:auto', (opts) => {
     // Remember what the lineup should be stocked with, for the daily refresh.
-    settings.live = { country: opts.country || (opts.countries || [])[0] || 'us', countries: opts.countries || [opts.country || 'us'], regions: opts.regions || [], categories: opts.categories || [], languages: opts.languages || [], max: opts.max ?? 0, sources: opts.sources || ['iptv-org', 'free-tv'], urls: opts.urls || [], anime: !!opts.anime };
+    settings.live = { country: opts.country || (opts.countries || [])[0] || 'us', countries: opts.countries || [opts.country || 'us'], regions: opts.regions || [], categories: opts.categories || [], languages: opts.languages || [], max: opts.max ?? 0, sources: opts.sources || ['iptv-org', 'free-tv'], urls: opts.urls || [], anime: !!opts.anime, servicesOff: opts.servicesOff || [] };
+    // A service you turned off leaves the lineup (never the channel you're watching). Turn it on and it comes back.
+    const off = channels.filter((c) => c.iptv && settings.live.servicesOff.includes(iptv.providerOf(c.iptv.url)?.key) && c.id !== settings.lastChannel).map((c) => c.id);
+    if (off.length) { channels = channels.filter((c) => !off.includes(c.id)); if (off.includes(settings.lockChannel)) settings.lockChannel = null; renumberIptv(); saveChannels(); send('channels-changed'); send('schedule-changed'); log('iptv: removed', off.length, 'stations from services turned off'); }
     saveSettings();
+    store.write('liveMisses', {}); // you asked: try everything again now
     iptvAutoAdd(settings.live).then(() => refreshGuides()).catch((e) => log('iptv auto', e.stack));
     return { started: true };
   });
@@ -2129,7 +2203,7 @@ function handlers() {
   h('iptv:recheck', async (id) => {
     const ch = channels.find((c) => c.id === id && c.iptv);
     if (!ch) return null;
-    const r = await iptv.checkStream(ch.iptv, 12000);
+    const r = await iptv.checkStream(ch.iptv);
     if (r.ok) { delete ch.iptv.dead; ch.iptv.misses = 0; ch.iptv.mode = r.video && r.video !== 'h264' ? 'transcode' : 'copy'; } else ch.iptv.dead = Date.now();
     saveChannels();
     send('channels-changed');
@@ -2160,7 +2234,7 @@ function handlers() {
     await Promise.all(Array.from({ length: 8 }, async () => {
       while (i < live.length) {
         const ch = live[i++];
-        const r = await iptv.checkStream(ch.iptv, 12000);
+        const r = await iptv.checkStream(ch.iptv);
         if (r.ok) { up++; delete ch.iptv.dead; ch.iptv.misses = 0; ch.iptv.mode = r.video && r.video !== 'h264' ? 'transcode' : 'copy'; ch.iptv.audioOnly = !r.video; }
         else { down++; ch.iptv.dead = Date.now(); }
         send('iptv-progress', { checked: up + down, total: live.length, running: true, name: ch.name, recheck: true });
@@ -2629,7 +2703,7 @@ app.whenReady().then(async () => {
     },
     posterFor: (id) => (id.startsWith('chlogo-') && /^[\w.-]+$/.test(id.slice(7)) && !id.includes('..') ? path.join(app.getPath('userData'), 'logos', id.slice(7))
       : id.startsWith('series-') ? path.join(posterDir(), id + '.jpg') : lib.items[id]?.poster || null),
-    remoteUrl: (it) => (it.torrent ? torrents?.remoteUrl(it) : it.url),
+    remoteUrl: (it) => (it.torrent ? (settings.torrentsOn ? torrents?.remoteUrl(it) : null) : it.url),
     mirror: (req, res) => mirrorRequest(req, res),
   });
   lib.defaultPolicy = settings.newMedia;
@@ -2679,7 +2753,8 @@ app.whenReady().then(async () => {
   }
   applyVault();
   media.item = (id) => lib.items[id] || null;
-  // Torrents play while they download; saved ones come back at start.
+  // Torrents play while they download; saved ones come back at start, if they're turned on.
+  lib.hideTorrents = !settings.torrentsOn;
   torrents = new Torrents(lib, {
     dir: path.join(app.getPath('userData'), 'torrents'), store, log, iface: () => netIface(),
     settings: () => settings, send, playing: () => nowPlayingItem,
@@ -2689,8 +2764,10 @@ app.whenReady().then(async () => {
   });
   // The VPN check comes first, so nothing starts on the normal connection by accident.
   vpnNow = vpnOn() ? vpn.detectNow(settings.torrentVpn || 'auto') : null;
-  checkVpn().catch(() => {}).finally(() => { if (torrents.saved.length) torrents.start().catch((e) => log('torrents', e.message)); });
-  setInterval(() => checkVpn().catch(() => {}), 10000).unref?.();
+  // 1.7.6: torrents became opt-in, for everyone once. Anyone who had some is told, once, that they're safe.
+  if (!settings.torrentLock176) { settings.torrentLock176 = true; if (!settings.torrentsOn && torrents.saved.length) settings.torrentsLockNote = torrents.saved.length; saveSettings(); }
+  if (settings.torrentsOn) checkVpn().catch(() => {}).finally(() => { if (torrents.saved.length) torrents.start().catch((e) => log('torrents', e.message)); });
+  setInterval(() => { if (settings.torrentsOn) checkVpn().catch(() => {}); }, 10000).unref?.();
   // Torrent search: engines that run on the torrent network interface, started when first used.
   search = new TorrentSearch({ dir: path.join(app.getPath('userData'), 'search-engines'), builtinDir: path.join(__dirname, 'searchEngines'), store, settings: () => settings, save: saveSettings, log, iface: () => netIface(), send });
   // What a kids/teens phone may play: everything on the channels its level can see (cached briefly).

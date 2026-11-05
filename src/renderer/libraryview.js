@@ -111,7 +111,7 @@ function DropRail({ channels, onDrop, onNew }) {
   </aside>`;
 }
 
-export function LibraryPanel({ stats, channels, setChannels, onPlay, onEdit, toast, isAdult = true, onOpenTorrents = () => {} }) {
+export function LibraryPanel({ stats, channels, setChannels, onPlay, onEdit, toast, isAdult = true, onOpenTorrents = () => {}, torrentsOn = false }) {
   const [data, setData] = useState(null);
   const [view, setView] = useState('all');
   const [source, setSource] = useState(null); // filter by folder / server
@@ -411,7 +411,7 @@ export function LibraryPanel({ stats, channels, setChannels, onPlay, onEdit, toa
       ${isAdult && html`<button class="btn" onClick=${() => tv.scanAll().then((r) => toast(r.busy ? 'Already scanning…' : `Scan done — ${r.added || 0} new`))} disabled=${stats.scanning}><${Icon.refresh} /> Scan now</button>
       <button class="btn" disabled=${tagging} title="Look every show and movie up by name — covers, tags, summaries" onClick=${tagAll}>${tagging ? 'Looking everything up…' : '🏷 Find covers & tags'}</button>
       ${data.vault && html`<button class=${'btn' + (data.locked ? ' on' : '')} title=${data.locked ? 'Hide the locked videos again' : `Show ${data.vault.name}'s videos here, for tagging — needs the PIN`} onClick=${toggleLocked}>${data.locked ? '🔓 Hide locked' : '🔒 Show locked'}</button>`}
-      <button class="btn" onClick=${onOpenTorrents}>🧲 Torrents</button>
+      ${torrentsOn && html`<button class="btn" onClick=${onOpenTorrents}>🧲 Torrents</button>`}
       <button class="btn" onClick=${() => setDialog('free')}>📡 Free TV</button>
       <button class="btn primary" onClick=${() => setDialog('sources')}><${Icon.plus} /> Add sources</button>`}
     </div>
@@ -486,7 +486,7 @@ export function LibraryPanel({ stats, channels, setChannels, onPlay, onEdit, toa
       ${isAdult && !lockedView ? html`<${DropRail} channels=${channels} onDrop=${addTo} onNew=${newFrom} />` : html`<aside class="lib-rail">${lockedView && html`<div class="rail-title">🔒 Private</div><p class="muted small">These stay in ${data.locked.name}. They're shown here only for tagging and naming — never on channels, walls or the guide — and they lock again when you leave the Library.</p>`}</aside>`}
     </div>
 
-    ${dialog === 'sources' && html`<${AddSourcesDialog} onClose=${() => setDialog(null)} toast=${toast} />`}
+    ${dialog === 'sources' && html`<${AddSourcesDialog} torrentsOn=${torrentsOn} onClose=${() => setDialog(null)} toast=${toast} />`}
     ${dialog === 'free' && html`<${FreeTvDialog} onClose=${() => setDialog(null)} toast=${toast} />`}
     ${pin && html`<div class="modal-bg" onClick=${(e) => e.target === e.currentTarget && setPin(null)}><div class="modal narrow">
       <div class="modal-head"><h3>🔒 Show ${data.vault?.name || 'locked'} videos</h3><button class="icon-btn" onClick=${() => setPin(null)}><${Icon.close} /></button></div>
@@ -507,7 +507,7 @@ export function LibraryPanel({ stats, channels, setChannels, onPlay, onEdit, toa
   </div>`;
 }
 
-function AddSourcesDialog({ onClose, toast }) {
+function AddSourcesDialog({ onClose, toast, torrentsOn = false }) {
   const [picked, setPicked] = useState([]);
   const [busy, setBusy] = useState(false);
   const add = async () => {
@@ -519,7 +519,7 @@ function AddSourcesDialog({ onClose, toast }) {
   };
   return html`<div class="modal-bg" onClick=${(e) => e.target === e.currentTarget && onClose()}><div class="modal">
     <div class="modal-head"><h3>Add sources</h3><button class="icon-btn" onClick=${onClose}><${Icon.close} /></button></div>
-    <div class="modal-body"><${SourcesPicker} value=${picked} onChange=${setPicked} autoSelect=${false} /></div>
+    <div class="modal-body"><${SourcesPicker} torrents=${torrentsOn} value=${picked} onChange=${setPicked} autoSelect=${false} /></div>
     <div class="modal-foot"><span class="muted grow">${picked.length} selected</span><button class="btn" onClick=${onClose}>Cancel</button>
       <button class="btn primary" disabled=${!picked.length || busy} onClick=${add}>${busy ? 'Scanning…' : 'Add & scan'}</button></div>
   </div></div>`;
@@ -534,7 +534,7 @@ export function FreeTvDialog({ onClose, toast }) {
   const go = () => {
     // Everything runs in the background — the slim bar up top shows progress.
     if (free.classics.length) tv.freeAdd(free.classics, 60).catch(() => {});
-    if (free.live) tv.iptvAuto({ country: free.country, countries: free.countries || [free.country], categories: free.categories, languages: free.languages || [], anime: !!free.anime, max: free.max ?? 0, sources: free.sources || ['iptv-org', 'free-tv'], urls: free.m3u?.trim() ? [free.m3u.trim()] : [] }).catch(() => {});
+    if (free.live) tv.iptvAuto({ country: free.country, countries: free.countries || [free.country], regions: free.regions || [], servicesOff: free.servicesOff || [], categories: free.categories, languages: free.languages || [], anime: !!free.anime, max: free.max ?? 0, sources: free.sources || ['iptv-org', 'free-tv'], urls: free.m3u?.trim() ? [free.m3u.trim()] : [] }).catch(() => {});
     toast('📡 Adding free TV in the background — watch the bar up top; stations appear as they’re checked');
     onClose();
   };

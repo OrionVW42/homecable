@@ -74,12 +74,16 @@ function inputArgs(st) {
 // Is the stream up, and can we copy it as-is? Resolves { ok, video, audio }.
 // ALWAYS resolves: a station that doesn't answer in time is simply not ok and the
 // checker moves on — one dead stream can never wedge an add (or the progress bar).
-function checkStream(st, timeout = 12000) {
+// Given a master playlist, ffmpeg opens EVERY quality level to probe it: 13-22 s on live
+// services, so most working stations failed the check. So it reads just the one that
+// would play, and only falls back to the master if that one won't open.
+const CHECK_MS = 20000;
+function probeStream(st, url, timeout) {
   return new Promise((resolve) => {
     let err = '', done = false, t = null, hard = null;
     const finish = (r) => { if (done) return; done = true; clearTimeout(t); clearTimeout(hard); resolve(r); };
     let p;
-    try { p = spawn(ffmpegPath(), [...inputArgs(st), '-i', st.url, '-t', '0.1', '-f', 'null', '-'], { windowsHide: true }); } catch { return finish({ ok: false }); }
+    try { p = spawn(ffmpegPath(), [...inputArgs(st), '-i', url, '-t', '0.1', '-f', 'null', '-'], { windowsHide: true }); } catch { return finish({ ok: false }); }
     t = setTimeout(() => { try { p.kill('SIGKILL'); } catch {} }, timeout);
     // Backstop: even if the killed process never reports closing (stuck network
     // I/O on Windows can do this), the slot is freed and the station skipped.
@@ -91,6 +95,16 @@ function checkStream(st, timeout = 12000) {
       finish({ ok: !!(info.video || info.audio), video: info.video, audio: info.audio, width: info.width, height: info.height });
     });
   });
+}
+async function checkStream(st, timeout = CHECK_MS) {
+  const t0 = Date.now();
+  const best = await bestVariant(st).catch(() => null);
+  if (!best) return probeStream(st, st.url, Math.max(1000, timeout - (Date.now() - t0)));
+  const r = await probeStream(st, best.url, Math.max(1000, timeout - (Date.now() - t0)));
+  // Separate sound isn't in the picture playlist, so it reads as none: the master says it's there.
+  if (r.ok) return best.audio && !r.audio ? { ...r, audio: 'aac' } : r;
+  const left = timeout - (Date.now() - t0);
+  return left > 4000 ? probeStream(st, st.url, left) : r;
 }
 
 async function checkMany(list, { concurrency = 6, onProgress } = {}) {
@@ -107,14 +121,24 @@ async function checkMany(list, { concurrency = 6, onProgress } = {}) {
 }
 
 // Some HLS services (Pluto TV and other free ad-supported TV) send the picture
-// and the sound as SEPARATE playlists whose clocks sit ~16 s apart. Read as
-// one, ffmpeg "corrected" the gap on almost every packet and its output stalled
-// — the picture froze or jumped back every 30-40 s until a reconnect. Read as
-// two inputs (best picture ≤1080p + the default sound) they can't fight.
-// Returns { video, audio } for such masters, null for everything else (those
-// play exactly as before). Soak-tested: 8 min × 3 Pluto channels, 16
-// reconnects + 24 freezes before → 0 after, and 1216×684 instead of 640×360.
-async function resolveHls(st) {
+// and the sound as SEPARATE playlists. Read as one, ffmpeg's output stalled; read as
+// two inputs, it picked its own start for each and corrected every clip change on
+// each side alone, so they began off or drifted apart. hlsPair.js now joins them.
+// Returns { video, audio } (best picture ≤1080p + the default sound) for such
+// masters, null for everything else (those play exactly as before).
+// Only the languages you picked. A station counts if a language list has it, or if no list
+// says what language it is, so nothing is lost just for having no label.
+function keepLanguages(lists, langLists, unknown = []) {
+  const ok = new Set([...langLists.flat(), ...unknown].map((s) => s.url));
+  return lists.map((l) => { const out = l.filter((s) => ok.has(s.url)); out.tvgUrls = l.tvgUrls; return out; });
+}
+// A list that fails to download is tried again: losing one loses hundreds of stations.
+async function fetchList(url, tries = 3) {
+  for (let i = 1; ; i++) {
+    try { return await fetchPlaylist(url); } catch (e) { if (i >= tries) throw e; await new Promise((r) => setTimeout(r, 1500 * i)); }
+  }
+}
+async function bestVariant(st) {
   if (!/\.m3u8?(\?|$)/i.test(st.url)) return null;
   try {
     const headers = { 'User-Agent': st.userAgent || 'Mozilla/5.0 HomeCable' };
@@ -139,13 +163,18 @@ async function resolveHls(st) {
     }
     const fit = variants.filter((v) => !v.h || v.h <= 1080).sort((a, b) => b.bw - a.bw);
     const pick = fit[0] || variants.sort((a, b) => a.bw - b.bw)[0];
-    if (!pick?.group || !audio[pick.group]) return null; // sound is inside the picture stream: leave it to ffmpeg
-    return { video: pick.url, audio: audio[pick.group] };
+    if (!pick) return null;
+    return { url: pick.url, audio: (pick.group && audio[pick.group]) || null };
   } catch { return null; }
+}
+async function resolveHls(st) {
+  const b = await bestVariant(st);
+  // No separate sound: it's inside the picture stream, so leave it to ffmpeg.
+  return b?.audio ? { video: b.url, audio: b.audio } : null;
 }
 
 // Args to restream a live channel into fragmented MP4 for the player.
-// `hls` (from resolveHls) = separate picture + sound playlists.
+// `hls` (from resolveHls) = separate picture + sound playlists; { pipe: true } = joined by hlsPair.
 function liveArgs(st, mode, hls = null) {
   const perInput = (url) => {
     const a = [...inputArgs(st).slice(2), '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
@@ -155,7 +184,9 @@ function liveArgs(st, mode, hls = null) {
     return [...a, '-i', url];
   };
   const a = ['-hide_banner', '-nostdin', '-loglevel', 'error'];
-  if (hls) a.push(...perInput(hls.video), ...perInput(hls.audio), '-map', '0:v:0', '-map', '1:a:0');
+  // Already joined onto one clock by hlsPair.js: it arrives through stdin as one stream.
+  if (hls?.pipe) a.push('-analyzeduration', '3000000', '-probesize', '3000000', '-fflags', '+genpts+discardcorrupt', '-f', 'mpegts', '-i', 'pipe:0', '-map', '0:v:0', '-map', '0:a:0');
+  else if (hls) a.push(...perInput(hls.video), ...perInput(hls.audio), '-map', '0:v:0', '-map', '1:a:0');
   else a.push(...perInput(st.url), '-map', '0:v:0?', '-map', '0:a:0?');
   a.push('-sn', '-dn');
   if (mode === 'copy') a.push('-c:v', 'copy');
@@ -193,4 +224,4 @@ async function fetchAnime() {
   return [...anim, ...all].filter((s) => ANIME.test(s.name) && !seen.has(s.url) && seen.add(s.url)).map((s) => ({ ...s, group: 'Anime', anime: true }));
 }
 
-module.exports = { providerOf, PROVIDERS, resolveHls, fetchAnime, fetchFreeTv, FREE_TV, SOURCES, inputArgs, presetUrl, parseM3U, fetchPlaylist, checkStream, checkMany, liveArgs, CATEGORIES, IPTV_ORG };
+module.exports = { keepLanguages, fetchList, providerOf, PROVIDERS, bestVariant, resolveHls, fetchAnime, fetchFreeTv, FREE_TV, SOURCES, inputArgs, presetUrl, parseM3U, fetchPlaylist, checkStream, checkMany, liveArgs, CATEGORIES, IPTV_ORG };

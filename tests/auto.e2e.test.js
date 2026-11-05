@@ -27,8 +27,6 @@ test('automatic setup builds a full lineup: your media + free TV', async () => {
   await page.getByRole('button', { name: 'Next', exact: true }).click(); // what we found
   await page.getByRole('button', { name: 'Next', exact: true }).click(); // free TV (defaults on)
   await expect(page.getByText('The stuff between the shows')).toBeVisible(); // Showtime: bumpers & the wacky ads
-  await page.getByRole('button', { name: 'Next', exact: true }).click(); // showtime
-  await page.getByRole('button', { name: 'Next', exact: true }).click(); // how it runs
   await expect(page.getByText('Here’s what will happen')).toBeVisible();
   await page.getByRole('button', { name: 'Set it up' }).click();
   await expect(page.getByText('You’re on the air.')).toBeVisible({ timeout: 480000 });

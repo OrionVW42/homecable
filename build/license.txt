@@ -26,12 +26,17 @@ come from the Internet Archive's public-domain collections. Availability and
 content are up to each broadcaster. HomeCable hosts none of it.
 
 TORRENTS AND SEARCH
-HomeCable can download and share torrents you add, and search sources you
-choose. It comes with one search source, the Internet Archive, limited to items
-marked public domain or Creative Commons. It hosts no torrents and does not
-supply, list or recommend any other source. You alone are responsible for any
-source you add and for having the right to download and share what you add.
-Torrents share what you download with other people.
+Torrents are off and hidden unless you turn them on in HomeCable and accept a
+warning. When on, HomeCable can download and share torrents you add, and search
+sources you choose. It comes with one search source, the Internet Archive,
+limited to items marked public domain or Creative Commons. It hosts no torrents
+and does not supply, list or recommend any other source.
+
+Do not use torrents for anything illegal. Torrents share what you download with
+other people and show them your internet address, so always use a VPN. A VPN
+does not make anything legal. You alone are responsible for any source you add
+and for having the right to download and share what you add. HomeCable and its
+authors are not responsible for how you use this feature.
 
 NO WARRANTY
 This software is provided "as is", without warranty of any kind. The full MIT

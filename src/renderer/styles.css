@@ -1278,3 +1278,33 @@ details.od-tag-more > .od-tags { margin: 6px 0 4px; }
 .eng-opts { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
 .eng-opts label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--dim); }
 .eng-opts .input { height: 32px; min-width: 280px; font-size: 13px; }
+
+/* First-run setup: where you are, the extra detail, and the last screen's Change buttons */
+.setup-progress { display: flex; align-items: center; gap: 14px; margin: 0 0 18px; padding-top: 2px; line-height: 1.5; color: var(--faint); font: 600 12.5px var(--font); }
+.setup-progress span { flex: none; }
+.setup-progress-bar { flex: 1; height: 6px; border-radius: 999px; background: var(--raise); overflow: hidden; }
+.setup-progress-bar i { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width .25s ease; }
+.tell-more { margin: 14px 0 0; color: var(--dim); font-size: 13.5px; }
+.tell-more summary { cursor: pointer; color: var(--accent); font-weight: 600; width: fit-content; }
+.tell-more > div { margin-top: 8px; line-height: 1.5; }
+.sum-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.setup-card kbd { padding: 1px 6px; border-radius: 5px; background: var(--raise-2); border: 1px solid var(--line); font-size: 12px; }
+
+/* The torrent warning */
+.consent { display: flex; flex-direction: column; gap: 10px; padding-bottom: 14px; }
+.consent-box { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 12px; background: var(--raise); border: 1px solid var(--line); font-size: 13.5px; line-height: 1.45; }
+.consent-box b { font-size: 14.5px; }
+.consent-box span { color: var(--dim); }
+.consent-box.bad { border-color: rgba(255, 110, 90, .55); }
+.consent-box .consent-ok { color: var(--good, #4cd08a); font-weight: 600; }
+.consent-box .consent-warn { color: var(--warn); font-weight: 600; }
+.consent-tick { display: flex; align-items: flex-start; gap: 10px; padding: 4px 2px; cursor: pointer; font-size: 14px; line-height: 1.4; }
+.consent-tick input { width: 18px; height: 18px; flex: none; margin-top: 1px; accent-color: var(--accent); }
+.consent-modal { width: min(640px, calc(100vw - 48px)); }
+
+/* Settings: search and jump buttons */
+.settings-find-row { position: sticky; top: 0; z-index: 3; padding: 2px 0 10px; background: var(--bg, #0b0d12); }
+.settings-find { width: 100%; }
+.settings-jump { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+.settings-none[hidden] { display: none; }
+.overlay-body .section-title[id] { scroll-margin-top: 100px; }

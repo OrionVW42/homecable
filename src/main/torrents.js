@@ -41,9 +41,9 @@ class Torrents {
   constructor(lib, { dir, store, log = () => {}, iface = () => '', settings = () => ({}), send = () => {}, onNew = () => {}, playing = () => null }) {
     this.lib = lib; this.dir = dir; this.store = store; this.log = log; this.iface = iface;
     this.settings = settings; this.send = send; this.onNew = onNew; this.playing = playing;
-    this._cleanT = setInterval(() => this.enforceLimit().catch((e) => this.log('torrents: clean-up', e.message)), 5 * 60e3);
+    this._cleanT = setInterval(() => this.settings().torrentsOn === false || this.enforceLimit().catch((e) => this.log('torrents: clean-up', e.message)), 5 * 60e3);
     this._cleanT.unref?.();
-    this._queueT = setInterval(() => this._status().then(() => this._schedule()).catch(() => {}), 15000);
+    this._queueT = setInterval(() => this.settings().torrentsOn === false || this._status().then(() => this._schedule()).catch(() => {}), 15000);
     this._queueT.unref?.();
     // [{ infoHash, name, link, torrentFile (base64), policy, added, length, fileList, files?: [paths picked], paused?, progress? }]
     this.saved = store.read('torrents', []);
@@ -500,7 +500,7 @@ class Torrents {
     const child = this.child;
     if (!child) return;
     try { child.kill(); } catch {}
-    this.child = null; this._starting = null; this.state = 'idle';
+    this.child = null; this._starting = null; this.state = 'idle'; this.base = ''; this._live.clear();
   }
 }
 

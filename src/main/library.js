@@ -91,8 +91,8 @@ class Library extends EventEmitter {
 
   // Everything except what's in the locked section's folders (see setPrivateFolders)
   // and what was hidden by hand (right-click in the Library; hiddenList shows those).
-  list() { const all = Object.values(this.items).filter((it) => !it.hiddenUser); return this.private?.length ? all.filter((it) => it.remote || !this.isPrivate(it.path)) : all; }
-  hiddenList() { const all = Object.values(this.items).filter((it) => it.hiddenUser); return this.private?.length ? all.filter((it) => it.remote || !this.isPrivate(it.path)) : all; }
+  list() { const all = Object.values(this.items).filter((it) => !it.hiddenUser && !(this.hideTorrents && it.torrent)); return this.private?.length ? all.filter((it) => it.remote || !this.isPrivate(it.path)) : all; }
+  hiddenList() { const all = Object.values(this.items).filter((it) => it.hiddenUser && !(this.hideTorrents && it.torrent)); return this.private?.length ? all.filter((it) => it.remote || !this.isPrivate(it.path)) : all; }
   listAll() { return Object.values(this.items); }
   // The locked section: its videos never show up in lists, channels, shows or searches.
   setPrivateFolders(list) { this.private = (list || []).filter(Boolean).map((f) => path.resolve(f).toLowerCase()); }
@@ -320,7 +320,7 @@ class Library extends EventEmitter {
       // mine: only your own files (this PC, USB, network) — not the free archive classics.
       case 'kind': return ordered(all.filter((it) => it.kind === src.kind && (!src.mine || !String(it.server || '').startsWith('archive:'))));
       case 'genre': return ordered(all.filter((it) => it.kind === 'episode' && (this.meta[it.showKey]?.genres || []).includes(src.genre)));
-      case 'item': return this.items[src.id] && (src.private || !this.isPrivate(this.items[src.id].path)) ? [this.items[src.id]] : [];
+      case 'item': return this.items[src.id] && !(this.hideTorrents && this.items[src.id].torrent) && (src.private || !this.isPrivate(this.items[src.id].path)) ? [this.items[src.id]] : [];
       case 'recent': {
         const since = Date.now() - (src.days || 14) * 86400e3;
         return ordered(all.filter((it) => it.added >= since && it.kind !== 'music' && it.kind !== 'short'));
