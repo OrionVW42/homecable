@@ -55,4 +55,22 @@ async function detect(choice) {
   return detectNow(choice);
 }
 
-module.exports = { pickVpn, detect, detectNow, PROVIDERS: PROVIDERS.map(([id, name]) => ({ id, name })) };
+// The adapters that are really this PC's home network, for finding and talking to TVs.
+// VPNs, private-network tools and virtual adapters are left out, so the answer is the same
+// with a VPN on or off. A VPN's tunnel often has a one-address mask, which also gives it away.
+const privateIp = (ip) => /^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(ip);
+function homeNetworks(interfaces = os.networkInterfaces(), descriptions = described) {
+  const out = [];
+  for (const [name, list] of Object.entries(interfaces)) {
+    const label = `${name} ${descriptions[name] || ''}`;
+    if (NOT_PRIVACY.test(label) || GENERIC.test(label) || PROVIDERS.some(([, , re]) => re.test(label))) continue;
+    for (const a of list || []) {
+      if ((a.family !== 'IPv4' && a.family !== 4) || a.internal || !privateIp(a.address) || privateMesh(a.address)) continue;
+      if (a.netmask === '255.255.255.255' || a.netmask === '255.255.255.254') continue;
+      out.push({ name, address: a.address, netmask: a.netmask });
+    }
+  }
+  return out;
+}
+
+module.exports = { pickVpn, detect, detectNow, homeNetworks, PROVIDERS: PROVIDERS.map(([id, name]) => ({ id, name })) };

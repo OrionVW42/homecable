@@ -19,6 +19,8 @@ const unxml = (s) => String(s).replace(/&lt;/g, '<').replace(/&gt;/g, '>').repla
 const tag = (xml, t) => { const m = new RegExp(`<(?:[\\w-]+:)?${t}[^>]*>([\\s\\S]*?)</(?:[\\w-]+:)?${t}>`, 'i').exec(xml || ''); return m ? unxml(m[1].trim()) : ''; };
 
 function lanAddrs() {
+  const home = require('./vpn').homeNetworks();
+  if (home.length) return home; // the home network only: never announced into a VPN
   const out = [];
   for (const [name, list] of Object.entries(os.networkInterfaces())) {
     if (/vEthernet|VirtualBox|VMware|WSL|Hyper-V/i.test(name)) continue;

@@ -105,17 +105,15 @@ function discover(timeout = 3500) {
 function localAddressFor(deviceIp) {
   const toInt = (ip) => ip.split('.').reduce((n, p) => (n << 8) + (+p), 0) >>> 0;
   const target = toInt(deviceIp);
-  let fallback = null;
   for (const list of Object.values(os.networkInterfaces())) {
     for (const a of list || []) {
       if (a.family !== 'IPv4' && a.family !== 4) continue;
       if (a.internal) continue;
       const mask = toInt(a.netmask);
       if (((toInt(a.address) & mask) >>> 0) === ((target & mask) >>> 0)) return a.address;
-      if (!fallback && /^(192\.168|10\.|172\.(1[6-9]|2\d|3[01]))/.test(a.address)) fallback = a.address;
     }
   }
-  return fallback;
+  return require('./vpn').homeNetworks()[0]?.address || null; // never the VPN: a TV can't reach that
 }
 
 // ---------- a session with one Cast device ----------

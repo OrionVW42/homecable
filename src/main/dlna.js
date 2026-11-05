@@ -9,12 +9,15 @@
 // (server.js `fmt=ts`). No extra dependencies; nothing is installed on the TV.
 const dgram = require('dgram');
 const http = require('http');
+const net = require('net');
 const os = require('os');
 const { EventEmitter } = require('events');
 
 const SSDP = { host: '239.255.255.250', port: 1900 };
 const RENDERER = 'urn:schemas-upnp-org:device:MediaRenderer:1';
 const AVT = 'urn:schemas-upnp-org:service:AVTransport:1';
+// Different sets answer different questions, so ask all three.
+const SEARCHES = [RENDERER, AVT, 'upnp:rootdevice'];
 const RC = 'urn:schemas-upnp-org:service:RenderingControl:1';
 
 const localIps = () => {
@@ -71,13 +74,16 @@ function tvLabel(maker, modelName) {
   return [brand ? `${brand} Smart TV` : 'Smart TV', y, modelName].filter(Boolean).join(' · ');
 }
 
+const searchFor = (st, host) => Buffer.from(`M-SEARCH * HTTP/1.1\r\nHOST: ${host}:${SSDP.port}\r\nMAN: "ssdp:discover"\r\nMX: 2\r\nST: ${st}\r\nUSER-AGENT: HomeCable/1.0 UPnP/1.0\r\n\r\n`);
+// A device may only point us at itself.
+const sameHost = (loc, ip) => { try { const u = new URL(loc); return u.protocol === 'http:' && u.hostname === ip; } catch { return false; } };
+
 // Ask the network "any media players out there?" on every adapter (VPNs otherwise
 // swallow multicast on Windows, like with mDNS in cast.js).
 function discover(timeout = 3000) {
   return new Promise((resolve) => {
     const locations = new Set();
     const socks = [];
-    const msg = Buffer.from(`M-SEARCH * HTTP/1.1\r\nHOST: ${SSDP.host}:${SSDP.port}\r\nMAN: "ssdp:discover"\r\nMX: 2\r\nST: ${RENDERER}\r\nUSER-AGENT: HomeCable/1.0 UPnP/1.0\r\n\r\n`);
     const mine = new Set(localIps());
     for (const ip of [...mine, null]) {
       try {
@@ -86,11 +92,11 @@ function discover(timeout = 3000) {
         s.on('message', (buf, rinfo) => {
           if (mine.has(rinfo.address)) return; // this PC's own players (Windows Media Player…)
           const loc = /^location:\s*(\S+)/im.exec(buf.toString())?.[1];
-          if (loc && /^http:\/\//i.test(loc)) locations.add(loc);
+          if (sameHost(loc, rinfo.address)) locations.add(loc);
         });
         s.bind(0, ip || undefined, () => {
           try { s.setMulticastTTL(2); if (ip) s.setMulticastInterface(ip); } catch {}
-          const send = () => { try { s.send(msg, SSDP.port, SSDP.host); } catch {} };
+          const send = () => { for (const st of SEARCHES) { try { s.send(searchFor(st, SSDP.host), SSDP.port, SSDP.host); } catch {} } };
           send(); setTimeout(send, 700);
         });
         socks.push(s);
@@ -104,6 +110,62 @@ function discover(timeout = 3000) {
       resolve(out.sort((a, b) => a.name.localeCompare(b.name)));
     }, timeout);
   });
+}
+
+// Asking the home network directly, for TVs that miss the broadcast or never answer it
+// (crowded Wi-Fi, routers that thin out multicast, a TV still waking up). It only ever
+// touches this PC's own home network, never a VPN, and only reads the TV's description.
+const WELL_KNOWN = [
+  [52235, '/dmr/SamsungMRDesc.xml'], // Samsung, about 2009-2013
+  [9197, '/dmr'], // Samsung, 2014 and later
+  [52323, '/dmr.xml'], // Sony
+  [55000, '/dmr/ddd.xml'], // Panasonic
+  [49153, '/nmrDescription.xml'], // Philips
+];
+const ipToInt = (ip) => ip.split('.').reduce((n, p) => (n * 256) + (+p), 0);
+const intToIp = (n) => [n / 16777216, n / 65536, n / 256, n].map((x) => Math.floor(x) % 256).join('.');
+// Every address on one network, without this PC. Very large networks: just the nearest 254.
+function hostsOn({ address, netmask }) {
+  const me = ipToInt(address);
+  let mask = ipToInt(netmask);
+  if (4294967296 - mask > 1024) mask = ipToInt('255.255.255.0');
+  const size = 4294967296 - mask;
+  const first = me - (me % size);
+  const out = [];
+  for (let i = first + 1; i < first + size - 1; i++) if (i !== me) out.push(intToIp(i));
+  return out;
+}
+const portOpen = (host, port, ms) => new Promise((resolve) => {
+  const s = net.connect({ host, port, timeout: ms });
+  const done = (v) => { s.destroy(); resolve(v); };
+  s.on('connect', () => done(true));
+  s.on('timeout', () => done(false));
+  s.on('error', () => done(false));
+});
+async function sweep({ networks, ports = WELL_KNOWN, ms = 800, width = 96 } = {}) {
+  const nets = networks || require('./vpn').homeNetworks();
+  const hosts = [...new Set(nets.flatMap(hostsOn))];
+  const locations = new Set();
+  // Many sets also answer a search sent straight to them, on any port and from any maker.
+  const sock = dgram.createSocket({ type: 'udp4' });
+  sock.on('error', () => {});
+  sock.on('message', (buf, rinfo) => {
+    const loc = /^location:\s*(\S+)/im.exec(buf.toString())?.[1];
+    if (sameHost(loc, rinfo.address)) locations.add(loc);
+  });
+  await new Promise((ok) => sock.bind(0, ok));
+  for (const h of hosts) { try { sock.send(searchFor(RENDERER, h), SSDP.port, h); } catch {} }
+  const jobs = hosts.flatMap((h) => ports.map(([port, file]) => ({ h, port, file })));
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(width, jobs.length) }, async () => {
+    while (next < jobs.length) {
+      const j = jobs[next++];
+      if (await portOpen(j.h, j.port, ms)) locations.add(`http://${j.h}:${j.port}${j.file}`);
+    }
+  }));
+  try { sock.close(); } catch {}
+  const found = (await Promise.all([...locations].map((l) => describe(l).catch(() => null)))).filter(Boolean);
+  return found.filter((d, i) => found.findIndex((x) => x.id === d.id) === i);
 }
 
 // One SOAP call to the TV.
@@ -229,4 +291,4 @@ class DlnaSession extends EventEmitter {
   }
 }
 
-module.exports = { discover, describe, DlnaSession, soap, didl, protocolInfo, tvYear, tvLabel };
+module.exports = { discover, describe, sweep, hostsOn, WELL_KNOWN, DlnaSession, soap, didl, protocolInfo, tvYear, tvLabel };

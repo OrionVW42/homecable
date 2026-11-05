@@ -21,6 +21,12 @@ export function CastMenu({ cast, tvs, setTvs, settings, setSettings, onClose, to
     tv.castDevices(refresh).then((l) => { setTvs(l); setLooking(false); }).catch(() => setLooking(false));
   };
   useEffect(() => { look(false); const t = setTimeout(() => look(true), 400); return () => clearTimeout(t); }, []);
+  // A TV switched on while this is open turns up by itself.
+  useEffect(() => {
+    if (cast?.on) return;
+    const t = setInterval(() => tv.castDevices(true).then(setTvs).catch(() => {}), 15000);
+    return () => clearInterval(t);
+  }, [cast?.on]);
   // Keyboard: Enter casts to the highlighted (last-used) TV straight away.
   useEffect(() => { if (!cast?.on) first.current?.focus(); }, [tvs.length]);
 
@@ -56,9 +62,10 @@ export function CastMenu({ cast, tvs, setTvs, settings, setSettings, onClose, to
         <span class="go">${busy === d.id ? html`<span class="spin"></span> Connecting…` : d.online === false ? 'Try' : cast?.on ? 'Switch' : 'Cast'}</span></button>
         ${d.saved && html`<button class="cast-forget" title=${`Forget ${d.name}`} onClick=${async () => setTvs(await tv.castForget(d.id))}>✕</button>`}</div>`)}
       ${tvs.length > 0 && html`<p class="muted small" style="margin:8px 2px 0">★ = saved (your last 10 TVs). Works with Chromecast / Google TV and smart TVs with a built-in media player (DLNA) — Samsung 2010 and later, LG, Sony, Panasonic and more.</p>`}
+      <p class="muted small" style="margin:8px 2px 0">Using a VPN? It can stay on. If a TV doesn’t show up, look in your VPN’s settings for something like “Allow LAN connections”.</p>
 
       ${!tvs.length && (looking ? html`<div class="cast-dev muted" style="cursor:default"><span class="spin"></span> Looking for TVs on your Wi-Fi…</div>`
-        : html`<div class="cast-empty"><b>No TVs found yet</b><span>Switch the TV (or Chromecast) on, and make sure it’s on the same Wi-Fi as this PC. Older smart TVs (Samsung AllShare and others with DLNA) show up here too. Then press “Look again”.</span></div>`)}
+        : html`<div class="cast-empty"><b>No TVs found yet</b><span>Switch the TV (or Chromecast) on, and make sure it’s on the same Wi-Fi as this PC. Older smart TVs (Samsung AllShare and others with DLNA) show up here too. It should appear by itself within a few seconds, or press “Look again”.</span></div>`)}
       ${problem && html`<div class="cast-problem">${problem}</div>`}
 
       ${settings.castLast && html`<label class="cast-auto">

@@ -529,18 +529,36 @@ async function lookForTvs() {
   // Tests: a pretend DLNA TV at a fixed address (HOMECABLE_DLNA_TEST = its description URL).
   if (process.env.HOMECABLE_DLNA_TEST) { const d = await dlna.describe(process.env.HOMECABLE_DLNA_TEST).catch(() => null); if (d) found.push(d); }
   const now = Date.now();
-  // Saved TVs that didn't answer the broadcast: ask them directly where they were last.
-  for (const s of savedTvs()) {
+  // TVs that didn't answer the broadcast: ask the saved ones and the ones found lately directly.
+  for (const s of [...savedTvs(), ...tvSeen.values()]) {
     if (found.some((d) => d.id === s.id)) continue;
     if (s.kind === 'dlna' && s.location) { const d = await dlna.describe(s.location).catch(() => null); if (d && d.id === s.id) found.push(d); }
     else if (s.kind !== 'dlna' && s.host && await reachable(s.host, s.port || 8009)) found.push({ id: s.id, name: s.name, model: s.model || '', host: s.host, port: s.port || 8009 });
   }
+  return noteTvs(found, now);
+}
+function noteTvs(found, now = Date.now()) {
   for (const d of found) tvSeen.set(d.id, { ...d, seen: now });
   for (const [id, d] of tvSeen) if (now - d.seen > 5 * 60e3 && casting?.device.id !== id) tvSeen.delete(id);
+  // A saved TV the router gave a new address: remember where it is now.
+  let moved = false;
+  for (const d of found) { const s = savedTvs().find((x) => x.id === d.id); if (s && d.location && s.location !== d.location) { s.location = d.location; s.host = d.host; moved = true; } }
+  if (moved) saveSettings();
   const before = castDevices.map((d) => d.id).sort().join();
   castDevices = [...tvSeen.values()];
   if (castDevices.map((d) => d.id).sort().join() !== before) send('cast-devices', publicDevices());
   return castDevices;
+}
+// Older TVs that missed the broadcast: ask this PC's home network directly (never a VPN).
+// Not while casting, and not more than twice a minute.
+let tvSweep = null, tvSweptAt = 0;
+function sweepForTvs(force = false) {
+  if (process.env.HOMECABLE_FAKE_TV || process.env.HOMECABLE_NO_CAST || process.env.HOMECABLE_DEMO) return Promise.resolve();
+  if (tvSweep) return tvSweep;
+  if (!force && (casting || Date.now() - tvSweptAt < 30e3)) return Promise.resolve();
+  tvSweptAt = Date.now();
+  tvSweep = vpn.detect('auto').catch(() => null).then(() => dlna.sweep()).then((found) => { noteTvs(found); }).catch((e) => log('tv sweep', e.message)).finally(() => { tvSweep = null; });
+  return tvSweep;
 }
 // Every TV you've cast to is remembered (up to 10, most recent first), so it's in the
 // list straight away — even while it's switched off — and found directly next time.
@@ -569,7 +587,7 @@ async function startCasting(deviceId, mode = settings.castMode || 'mirror') {
   if (casting?.device.id === deviceId) return casting.mode === mode ? castState() : setCastMode(mode);
   if (casting) await stopCasting('switch');
   let device = castDevices.find((d) => d.id === deviceId);
-  if (!device) { await lookForTvs(); device = castDevices.find((d) => d.id === deviceId); }
+  if (!device) { await Promise.all([lookForTvs(), sweepForTvs(true)]); device = castDevices.find((d) => d.id === deviceId); }
   if (!device) throw new Error('That TV isn’t answering — is it switched on?');
   const lanIp = device.fake ? '127.0.0.1' : cast.localAddressFor(device.host);
   if (!lanIp) throw new Error('This PC isn’t on the same network as that TV');
@@ -676,6 +694,8 @@ function watchForTvs() {
   setTimeout(round, 2500);
   setTimeout(round, 9000); // TVs waking up answer late
   setInterval(round, 90e3);
+  setTimeout(sweepForTvs, 12000);
+  setInterval(sweepForTvs, 4 * 60e3);
   // Stop trying to auto-cast a while after start (it's a "when HomeCable opens" thing).
   setTimeout(() => { autoCastDone = true; }, 60e3);
 }
@@ -1238,7 +1258,8 @@ function handlers() {
   // ---- Chromecast ----
   h('cast:devices', async (refresh) => {
     if (process.env.HOMECABLE_NO_CAST && !refresh) return publicDevices(); // automated tests: don't go looking for real TVs
-    if (refresh || !castDevices.length) await lookForTvs();
+    if (refresh) await Promise.all([lookForTvs(), sweepForTvs()]);
+    else if (!castDevices.length) await lookForTvs();
     return publicDevices();
   });
   h('cast:start', (deviceId, mode) => startCasting(deviceId, mode));
