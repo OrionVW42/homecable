@@ -20,7 +20,7 @@ export function MoviesConsent({ ticks, setTicks }) {
     <div class="consent-box"><b>👪 Not checked for children</b>
       <span>It lists grown-up films, with their covers and stories, and has no rating filter yet. Only grown-up profiles can see this tab.</span></div>
     <div class="consent-box"><b>🌐 It goes online</b>
-      <span>Titles are sent to look up covers, stories, episode lists and free copies, and free films stream from the Internet Archive, which can see your internet address, like any website. If you play films through torrents, a film’s name also goes to each search source you have on. What you watch stays on this PC. The details are in Privacy, content & licenses.</span></div>
+      <span>Titles are sent to look up covers, stories, episode lists and free copies, and free films stream from the Internet Archive, which can see your internet address, like any website. If you play films through torrents, the name of a film you don’t own also goes to each search source you have on. What you watch stays on this PC. The details are in Privacy, content & licenses.</span></div>
     <div class="consent-box"><b>🤝 It’s up to you</b>
       <span>You alone choose what you play and are responsible for having the right to play it. HomeCable and the people who make it are not responsible for how you use this feature.</span></div>
     ${tick('rights', 'I will only play what I have the right to watch.')}
@@ -55,7 +55,7 @@ function TorrentPlayDialog({ onClose, onChoose }) {
     <div class="modal-head"><h3>Play films through torrents?</h3><button class="icon-btn" title="Close" onClick=${onClose}><${Icon.close} /></button></div>
     <div class="modal-body"><div class="consent">
       <div class="consent-box"><b>🔎 It searches the sources you have on</b>
-        <span>Opening a film sends its name to every search source you turned on or added, then offers the result with the most seeders at each quality. HomeCable doesn’t check what those results are, whether they’re the right film, or whether you may use them. Your own copies and free web copies aren’t offered on the film’s page in this mode.</span></div>
+        <span>Opening a film you don’t own sends its name to every search source you turned on or added, then offers the result with the most seeders at each quality. HomeCable doesn’t check what those results are, whether they’re the right film, or whether you may use them. A film you own plays from your library, with no search. Free web copies aren’t offered on a film’s page in this mode.</span></div>
       <div class="consent-box bad"><b>📤 You’d be sharing, not only watching</b>
         <span>While a film plays this way, your PC downloads it and sends pieces of it to other people, and they can see your internet address. Always use a VPN. It protects your privacy, but it doesn’t make anything legal.</span></div>
       <label class="consent-tick"><input type="checkbox" checked=${ok} onChange=${(e) => setOk(e.target.checked)} /><span>I understand, and I’m responsible for what I download and share.</span></label>
@@ -91,7 +91,7 @@ export function BetaSettings({ settings, setSettings, toast, onOpenMovies = () =
         <span>When you open a film or show from before 1978, ask the Internet Archive’s film and Classic TV collections for a copy marked public domain or Creative Commons. Only the title is sent, and newer titles and anime are never looked up, because those labels are often wrong on them. They can still be wrong. Turn this off and only what you own will play, unless films are set to play through torrents.</span></div>
         <${Toggle} on=${free} label="Look for free films" onClick=${() => setSettings({ moviesFree: !free })} /></div>
       <div class="settings-row"><div class="grow"><b>How films play</b>
-        <span>${by === 'web' ? 'Your own and free copies: films you own, and free films straight from the Internet Archive, with nothing to download or clear up.' : 'Through torrents: opening a film searches every source you turned on or added and offers the result with the most seeders at each quality. Each one is a torrent like any you add yourself: it follows your VPN, torrent and clean-up settings, and shares with others.'}
+        <span>${by === 'web' ? 'Your own and free copies: films you own, and free films straight from the Internet Archive, with nothing to download or clear up.' : 'Through torrents: a film you own plays from your library. Opening any other film searches every source you turned on or added and offers the result with the most seeders at each quality. Each one is a torrent like any you add yourself: it follows your VPN, torrent and clean-up settings, and shares with others.'}
           ${!torrentsOn && ' Through torrents needs Torrents turned on first, in the section above.'}</span></div>
         <div class="seg"><button class=${by === 'web' ? 'on' : ''} onClick=${() => setSettings({ moviesPlayBy: 'web' })}>Own and free copies</button><button class=${by === 'torrent' ? 'on' : ''} disabled=${!torrentsOn} onClick=${() => by !== 'torrent' && setAskTor(true)}>Through torrents</button></div>
         ${askTor && html`<${TorrentPlayDialog} onClose=${() => setAskTor(false)} onChoose=${() => { setAskTor(false); setSettings({ moviesPlayBy: 'torrent' }); }} />`}</div>`}`;

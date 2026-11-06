@@ -12,6 +12,27 @@ export function TermsDialog({ onClose }) {
   </div></div>`;
 }
 
+// Asked once when the terms have changed since this person last agreed. Nothing plays until they answer.
+export function TermsChanged({ onAgreed }) {
+  const [agreed, setAgreed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const go = async () => {
+    setBusy(true);
+    try { await tv.termsAccept(true); onAgreed(); } catch { setBusy(false); }
+  };
+  return html`<div class="modal-bg terms-changed"><div class="modal consent-modal">
+    <div class="modal-head"><h3>The Terms of Use have changed</h3></div>
+    <div class="modal-body">
+      <p class="muted">They now cover the Movies, TV shows and anime lists, and what happens if you choose to play films through torrents: a film’s name goes to your search sources, HomeCable doesn’t check the results, and what you play that way is downloaded and shared with other people. Those features stay off unless you turn them on.</p>
+      <${TermsAgree} agreed=${agreed} onAgree=${setAgreed} />
+      <div class="row" style="justify-content:flex-end;gap:10px">
+        <button class="btn" onClick=${() => window.close()}>Close HomeCable</button>
+        <button class="btn primary" disabled=${!agreed || busy} onClick=${go}>Continue</button>
+      </div>
+    </div>
+  </div></div>`;
+}
+
 // The first screen of setup: plain words, the full text one press away, and a box to tick.
 export function TermsAgree({ agreed, onAgree }) {
   const [read, setRead] = useState(false);

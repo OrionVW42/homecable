@@ -188,13 +188,15 @@ class Catalog {
     out.directors = [...new Set(out.directors)]; out.cast = [...new Set(out.cast)].slice(0, 12);
     return out;
   }
-  async sources(id, { fresh = false } = {}) {
+  // own: only what's in your library, with nothing asked of the Archive.
+  async sources(id, { fresh = false, own: ownOnly = false } = {}) {
     this._load();
     const m = this.byId.get(id);
     if (!m) return [];
     const c = this.cache.sources[id];
     const free = this._free();
     const ctx = { items: this.items, log: this.log, free };
+    if (ownOnly) return findSources(m, { ...ctx, free: false });
     // What you own is always looked at again. A free film found lately is remembered, so opening
     // a film doesn't ask the Archive every time.
     if (!free || (c && !fresh && Date.now() - c.at < SOURCE_TTL)) {
@@ -294,10 +296,11 @@ class Catalog {
     this._load();
     const m = this.byId.get(id);
     if (!m) throw new Error('That title is not in the index');
-    const list = await this.sources(id);
+    const st = this.settings();
+    // Through torrents, this page only offers your own copy.
+    const list = await this.sources(id, { own: st.moviesPlayBy === 'torrent' && !!st.torrentsOn });
     const s = list.find((x) => x.quality === quality) || list[0];
     if (!s) throw new Error('No streams available');
-    const st = this.settings();
     const itemId = await openSource(s, { torrents: this.torrents(), items: this.items, lib: this.lib, playBy: st.moviesPlayBy, torrentsOn: !!st.torrentsOn });
     const it = this.lib.items[itemId];
     if (it && s.source !== 'library') { Object.assign(it, { titleUser: m.title, year: m.year, kindUser: 'movie', catalogId: id, catalogOnly: true, genres: it.genres?.length ? it.genres : m.genres }); this.lib.save(); }

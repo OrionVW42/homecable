@@ -12,6 +12,7 @@ import { Setup } from './setup.js';
 import { startGamepad, focusDefault, pressButton } from './gamepad.js';
 import { Arcade } from './arcade.js';
 import { ProfilePicker } from './profiles.js';
+import { TermsChanged } from './terms.js';
 import { CastMenu, CastGlyph } from './castmenu.js';
 import { OnDemandWall } from './ondemand.js';
 import { ChannelManager } from './manager.js';
@@ -51,6 +52,8 @@ function App() {
   const [vod, setVod] = useState(null);       // on-demand playback from the library
   const [profile, setProfile] = useState(null); // { list, active, ... }
   const [isAdult, setIsAdult] = useState(true);
+  const [termsAsk, setTermsAsk] = useState(false);
+  const afterTerms = useRef(null);
   const [picker, setPicker] = useState(false);
   const vodRef = useRef(null);
   vodRef.current = vod;
@@ -140,7 +143,9 @@ function App() {
   // Boot
   useEffect(() => {
     loadVault();
-    tv.state().then((s) => {
+    tv.state().then(async (s) => {
+      const ask = !!(await tv.terms().catch(() => null))?.ask;
+      setTermsAsk(ask);
       setChannels(s.channels); setSettingsState(s.settings); setStats(s.stats); setVersion(s.version);
       setProfile(s.profile); setIsAdult(s.isAdult); if (s.cast) setCast(s.cast);
       setReady(true);
@@ -148,7 +153,8 @@ function App() {
       // More than one person: ask who's watching before the TV comes on.
       if (s.settings.setupDone && s.profile.needsPick) { setPicker(true); return; }
       const first = s.channels.find((c) => c.id === s.settings.lockChannel) || s.channels.find((c) => c.id === s.settings.lastChannel) || s.channels.find((c) => !c.ondemand) || s.channels[0];
-      if (first) tune(first.id);
+      // The TV waits for an answer. A child's profile isn't asked; the next grown-up is.
+      if (first) { if (ask && s.isAdult) afterTerms.current = () => tune(first.id); else tune(first.id); }
     });
     const offs = [
       tv.onScanProgress(setProgress),
@@ -771,6 +777,7 @@ function App() {
       onDone=${async () => { const s = await tv.state(); setChannels(s.channels); setStats(s.stats); setSettingsState(s.settings); setSetup(false); const f = s.channels.find((c) => c.id === s.settings.lockChannel) || s.channels.find((c) => !c.ondemand) || s.channels[0]; if (f) tune(f.id); if (!s.settings.tourDone) setTour(true); }} />`}
     ${picker && profile && html`<${ProfilePicker} view=${profile} onPicked=${onPicked} onCancel=${settings.setupDone && !profile.needsPick || tuned ? () => setPicker(false) : null} />`}
     ${tour && html`<${Tour} onClose=${() => { setTour(false); setSettings({ tourDone: true }); }} />`}
+    ${termsAsk && isAdult && !setup && !picker && html`<${TermsChanged} onAgreed=${() => { setTermsAsk(false); const go = afterTerms.current; afterTerms.current = null; go?.(); }} />`}
     ${bgAdd && !setup && html`<div class="bgjob"><div class="bgjob-bar"><i style=${bgAdd.pct != null ? `width:${Math.round(bgAdd.pct * 100)}%` : 'width:30%;animation:bgslide 1.2s linear infinite'}></i></div><span>${bgAdd.text}</span></div>`}
     ${toastMsg && html`<div class="toast">${toastMsg}</div>`}
     ${liveNote && !overlay && html`<div class="live-note">${liveNote}</div>`}

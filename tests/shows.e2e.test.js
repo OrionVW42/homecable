@@ -1,7 +1,7 @@
 // HCtorrents menu, TV shows and anime: hidden unless torrents are on; genres you like; seasons and
 // episodes; what you own plays, and everything else says "No streams available".
 // Temp data, silent test clips, off-screen. It looks up show facts online but never touches a
-// swarm, tracker or torrent site: nothing here adds or searches for a torrent.
+// swarm, tracker or torrent site: nothing here adds a torrent, and every search source is off.
 const { test, expect, _electron: electron } = require('@playwright/test');
 const path = require('path');
 const fs = require('fs');
@@ -20,6 +20,7 @@ fs.mkdirSync(data, { recursive: true });
 clip('Breaking Bad/Season 1/Breaking.Bad.S01E01.mp4');
 clip('Breaking Bad/Season 1/Breaking.Bad.S01E02.mp4');
 clip('Neon Genesis Evangelion/Season 1/Neon.Genesis.Evangelion.S01E01.mp4');
+clip('Rear Window (1954).mp4');
 fs.writeFileSync(path.join(data, 'settings.json'), JSON.stringify({ updateOnStart: false, updateEvery: 'off', setupDone: true, tourDone: true, adsOn: false, seedDefault173: true, privacyClean173: true, torrentLock176: true }));
 
 let app, page;
@@ -123,6 +124,32 @@ test('a show with nothing to play says so, and no torrent is ever started', asyn
   await expect(page.locator('.cat-playbtn')).toHaveCount(0);
   await expect(page.locator('.cat-fullsearch')).toHaveCount(0);
   expect(await page.evaluate(() => window.tv.torrentsList?.().then((l) => l.length).catch(() => 0) ?? 0)).toBe(0);
+});
+
+test('through torrents, a film you own keeps its Play button and is not searched for', async () => {
+  for (const e of await page.evaluate(() => window.tv.searchEngines())) await page.evaluate((id) => window.tv.searchEnable(id, false), e.id);
+  await page.evaluate(() => window.tv.setSettings({ moviesPlayBy: 'torrent' }));
+  await page.reload(); await page.waitForSelector('.topbar');
+  await openKind('Browse films');
+  const pick = page.locator('.cat-pick-go button', { hasText: 'Show everything' });
+  await pick.or(page.locator('.cat-row').first()).first().waitFor({ timeout: 20000 });
+  if (await pick.count()) await pick.click();
+  await page.locator('.cat-search').fill('Rear Window');
+  await page.locator('.cat-card', { hasText: 'Rear Window' }).first().click();
+  const mine = page.locator('.cat-playbtn', { hasText: 'Your library' });
+  await expect(mine).toHaveCount(1, { timeout: 20000 });
+  await expect(page.locator('.cat-streams')).not.toContainText('Searching your torrent sources');
+  await expect(page.locator('.cat-streams .cat-nostream')).toHaveCount(0);
+  await mine.click();
+  await page.waitForFunction(() => { const v = document.querySelector('.stage video'); return v && v.currentTime > 1; }, null, { timeout: 30000 });
+  expect(await page.evaluate(() => window.tv.torrentsList().then((l) => l.length)), 'your own copy, no torrent').toBe(0);
+  await page.keyboard.press('Escape');
+  await page.locator('.overlay').first().waitFor({ timeout: 10000 });
+  await openKind('Browse films');
+  await page.locator('.cat-search').fill('Psycho');
+  await page.locator('.cat-card', { hasText: 'Psycho' }).first().click();
+  await expect(page.locator('.cat-streams .cat-nostream'), 'one you do not own goes to the search').toContainText('No search sources are on', { timeout: 20000 });
+  await page.evaluate(() => window.tv.setSettings({ moviesPlayBy: 'web' }));
 });
 
 test('the index tags what is in your library, and it stays out of your shows', async () => {

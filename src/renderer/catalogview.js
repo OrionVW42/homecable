@@ -130,16 +130,18 @@ function Details({ id, onOpen, onBack, onPlay, toast, torrentMode = false, onFul
   const [busy, setBusy] = useState('');
   const isShow = /^(tv|anime):/.test(id); // shows list what can play in their guide, below
   const [tor, setTor] = useState(null); // torrent-mode: { best: {quality: result}, done, error }
+  const [own, setOwn] = useState(null); // torrent-mode: your own copies, which are played without searching
   useEffect(() => {
-    setD(null); setSources(null);
+    setD(null); setSources(null); setOwn(null);
+    if (torrentMode && !isShow) tv.catalogSources(id, { own: true }).then(setOwn).catch(() => setOwn([]));
     tv.catalogDetails(id).then(setD).catch((e) => toast(plain(e)));
     if (!torrentMode && !isShow) tv.catalogSources(id).then(setSources).catch(() => setSources([]));
   }, [id]);
-  // Torrent mode: search the turned-on sources for this film and keep the best-seeded
-  // result per quality as it comes in, so each quality shows one play button.
+  // Torrent mode: unless you own this film, search the turned-on sources for it and keep the
+  // best-seeded result per quality as it comes in, so each quality shows one play button.
   const title = d?.title;
   useEffect(() => {
-    if (!torrentMode || isShow || !title) return;
+    if (!torrentMode || isShow || !title || own === null || own.length) return;
     let sid = null, live = true; const buf = [], pend = [];
     setTor(null);
     const take = (m) => {
@@ -150,7 +152,7 @@ function Details({ id, onOpen, onBack, onPlay, toast, torrentMode = false, onFul
     tv.searchRun(title, 'all').then((r) => { sid = r.searchId; for (const m of pend) if (m.searchId === sid) take(m); })
       .catch((e) => { if (live) setTor({ best: {}, done: true, error: plain(e) }); });
     return () => { live = false; off?.(); };
-  }, [torrentMode, title]);
+  }, [torrentMode, title, own]);
   const play = async (quality) => {
     setBusy(quality);
     try { const r = await tv.catalogOpen(id, quality); onPlay(r.itemId); } catch (e) { toast(plain(e)); }
@@ -179,10 +181,10 @@ function Details({ id, onOpen, onBack, onPlay, toast, torrentMode = false, onFul
         ${d.directors?.length > 0 && html`<div class="cat-credit"><b>Directed by</b> ${d.directors.join(', ')}</div>`}
         ${d.cast?.length > 0 && html`<div class="cat-credit"><b>Starring</b> ${d.cast.join(', ')}</div>`}
         ${!isShow && html`<div class="cat-streams">
-          ${torrentMode ? torrentButtons({ tor, busy, playTorrent })
-            : sources === null ? html`<span class="muted">Looking for streams…</span>`
-              : !sources.length ? html`<div class="cat-nostream">No streams available</div>`
-                : sources.map((s) => html`<button class="btn cat-playbtn" disabled=${!!busy} onClick=${() => play(s.quality)}><${Icon.play} /> ${busy === s.quality ? 'Starting…' : `${d.resumeAt ? 'Resume' : 'Play'} ${s.quality}`}<small>${s.sourceName}</small></button>`)}
+          ${torrentMode && own && !own.length ? torrentButtons({ tor, busy, playTorrent })
+            : (torrentMode ? own : sources) === null ? html`<span class="muted">Looking for streams…</span>`
+              : !(torrentMode ? own : sources).length ? html`<div class="cat-nostream">No streams available</div>`
+                : (torrentMode ? own : sources).map((s) => html`<button class="btn cat-playbtn" disabled=${!!busy} onClick=${() => play(s.quality)}><${Icon.play} /> ${busy === s.quality ? 'Starting…' : `${d.resumeAt ? 'Resume' : 'Play'} ${s.quality}`}<small>${s.sourceName}</small></button>`)}
           ${torrentMode && onFullSearch && html`<button class="btn ghost cat-fullsearch" onClick=${() => onFullSearch(d.title)}><${Icon.magnet} /> Search all torrent sources…<small>if none of these are right</small></button>`}
         </div>`}
         ${d.resumeAt > 0 && html`<div class="muted small">You stopped at ${fmtDur(d.resumeAt)}.</div>`}

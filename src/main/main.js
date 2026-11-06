@@ -291,7 +291,7 @@ async function subsInfo(it) {
 // Once a VPN has been seen, torrents wait for it rather than quietly using the normal
 // connection when it drops (your choice: Torrents → Privacy).
 const NO_VPN = '(your VPN)';
-const TERMS_VERSION = '2026-11';
+const TERMS_VERSION = '2026-11-05'; // change it when the terms change, and everyone is asked once
 let vpnNow = null, vpnApplied = null, catalog = null;
 const vpnOn = () => settings.torrentVpn !== 'off' && !process.env.HOMECABLE_DEMO;
 function netIface() {
@@ -1252,7 +1252,7 @@ function handlers() {
     'profiles:upsert', 'profiles:remove', 'profiles:setLock', 'profiles:ask', 'ondemand:useFolder', 'ondemand:pickFolder', 'art:set', 'art:candidates', 'art:pickFile', 'meta:refresh', 'meta:refreshAll', 'name:set', 'show:move', 'show:make', 'tags:set', 'items:hide', 'app:startOver', 'vault:create', 'vault:update', 'vault:remove', 'phone:enable', 'phone:pairStart', 'phone:forget', 'phone:setLevel']);
   const VIEWER_SETTINGS = new Set(['volume', 'muted', 'brightness', 'fit', 'lastChannel', 'prevChannel', 'arcadeScores', 'castAuto', 'castHinted', 'vodResume', 'vodWatched', 'castMode', 'showLast', 'subMode', 'subLang', 'audioPref', 'liveCaptions']);
   const h = (name, fn) => (handlerFns[name] = fn, ipcMain.handle(name, async (_e, ...a) => {
-    if ((ADMIN.has(name) || name === 'torrentsLock:set') && !profiles.isAdult()) throw new Error('Ask a grown-up to do that');
+    if ((ADMIN.has(name) || name === 'torrentsLock:set' || name === 'terms:accept') && !profiles.isAdult()) throw new Error('Ask a grown-up to do that');
     if (/^(torrents|search):/.test(name) && name !== 'torrents:vpn' && !settings.torrentsOn) throw new Error('Torrents are turned off. You can turn them on in Settings.');
     if (name.startsWith('catalog:') && !(settings.moviesOn && settings.torrentsOn)) throw new Error('Movies, TV and anime are turned off. Turn on Torrents, then Settings → Beta.');
     if (name === 'settings:set' && !profiles.isAdult() && Object.keys(a[0] || {}).some((k) => !VIEWER_SETTINGS.has(k))) throw new Error('Ask a grown-up to change settings');
@@ -2071,7 +2071,9 @@ function handlers() {
   h('sources:removeServer', async (id) => { if (id.startsWith('torrent:')) await torrents.remove(id); else lib.removeServer(id); return libraryStats(); });
   // The Terms of Use: the installer's text. Agreed to once on the first setup screen, because
   // small updates and copies not installed with the installer never show its page.
-  h('terms:get', () => ({ text: fs.readFileSync(path.join(__dirname, '../../build/license.txt'), 'utf8'), version: TERMS_VERSION, accepted: settings.termsAccepted === TERMS_VERSION }));
+  h('terms:get', () => ({ text: fs.readFileSync(path.join(__dirname, '../../build/license.txt'), 'utf8'), version: TERMS_VERSION, accepted: settings.termsAccepted === TERMS_VERSION,
+    // Someone who set the app up under older terms is asked once. Tests skip this unless they're testing it.
+    ask: !!settings.setupDone && settings.termsAccepted !== TERMS_VERSION && !process.env.HOMECABLE_NO_TERMS_ASK }));
   h('terms:accept', (yes) => { if (yes === true) settings.termsAccepted = TERMS_VERSION; else delete settings.termsAccepted; saveSettings(); return yes === true; });
   // The Movies tab, in Settings → Beta. Turning it on needs its warning accepted.
   h('moviesLock:set', (on, accepted) => {
@@ -2103,7 +2105,7 @@ function handlers() {
   h('catalog:browse', (o) => catalog.browse(o && typeof o === 'object' ? o : {}));
   h('catalog:art', (ids) => { catalog.art(Array.isArray(ids) ? ids : [], send); return true; });
   h('catalog:details', (id) => catalog.details(String(id)));
-  h('catalog:sources', (id) => catalog.sources(String(id)));
+  h('catalog:sources', (id, o) => catalog.sources(String(id), { own: !!o?.own }));
   h('catalog:open', async (id, quality) => { const r = await catalog.open(String(id), String(quality || '')); saveSettings(); send('library-changed', libraryStats()); return r; });
   h('torrents:interfaces', () => torrents?.interfaces() || []);
   h('torrents:vpn', async () => { if (!settings.torrentsOn) vpnNow = vpnOn() ? await vpn.detect(settings.torrentVpn || 'auto').catch(() => null) : null; return ({ setting: settings.torrentVpn || 'auto', providers: vpn.PROVIDERS, found: vpnNow && { provider: vpnNow.provider, name: vpnNow.name }, manual: settings.torrentInterface || '', required: !!settings.torrentVpnRequired, waiting: netIface() === NO_VPN, warn: settings.torrentVpnWarn !== false, protectedBy: settings.torrentInterface || vpnNow?.name || '', encryption: settings.torrentEncryption || 'require' }); });
