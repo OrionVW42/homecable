@@ -195,8 +195,8 @@ function Details({ id, onOpen, onBack, onPlay, toast, torrentMode = false, onFul
 }
 
 export function CatalogView({ settings, setSettings, onPlay, toast, onFullSearch = null, kind = 'movie', setKind = () => {}, onPlayEpisode = () => {} }) {
-  // When free films are set to play through torrents, the film's page offers torrent
-  // play buttons (best-seeded per quality) instead of the web streams.
+  // When films are set to play through torrents, the film's page offers torrent play
+  // buttons (best-seeded per quality, from the sources you have on) instead of the usual ones.
   const torrentMode = settings?.moviesPlayBy === 'torrent' && !!settings?.torrentsOn;
   // Filters are remembered per section; older settings held the films' at the top level.
   const allPrefs = settings?.catalogPrefs || {};

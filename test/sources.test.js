@@ -28,6 +28,34 @@ test('your own copy plays, an exact name and year only', async () => {
   } finally { global.fetch = realFetch; }
 });
 
+test('free films: only titles from before 1978, only in the Archive\'s film collections', async () => {
+  const real = global.fetch; const asked = [];
+  global.fetch = async (u) => { asked.push(decodeURIComponent(String(u))); return { ok: true, status: 200, json: async () => ({ response: { docs: [] } }) }; };
+  try {
+    assert.deepEqual(await findSources({ title: 'Avatar', year: 2009 }, { items: () => [] }), []);
+    assert.equal(asked.length, 0, 'a recent film is never looked up');
+    await findSources({ title: 'Night of the Living Dead', year: 1968 }, { items: () => [] });
+    assert.equal(asked.length, 1);
+    assert.match(asked[0], /collection:\(feature_films/);
+    asked.length = 0;
+    await findSources({ title: 'No Date', year: null }, { items: () => [] });
+    assert.equal(asked.length, 0, 'no year, no lookup');
+  } finally { global.fetch = real; }
+});
+
+test('free films remembered from before the limit are forgotten, once', () => {
+  const { Catalog } = require('../src/main/catalog');
+  const saved = {}; let stored = { sources: { x: { at: 1, list: [{ source: 'archive' }] } }, freeAt: 5, art: { x: 'a.jpg' } };
+  const store = { read: () => stored, write: (k, v) => { saved[k] = v; } };
+  const c = new Catalog({ store, settings: () => ({}) });
+  assert.deepEqual(c.cache.sources, {});
+  assert.equal(c.cache.art.x, 'a.jpg', 'covers stay');
+  assert.ok(saved.catalogCache);
+  c.cache.sources.y = { at: 2, list: [] };
+  stored = c.cache;
+  assert.ok(new Catalog({ store, settings: () => ({}) }).cache.sources.y, 'only the once');
+});
+
 test('nothing but the built-in sources can supply a stream', () => {
   const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'src', 'main', 'sources.js'), 'utf8');
   assert.match(src, /const SOURCES = \[library, archive\];/);

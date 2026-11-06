@@ -44,14 +44,20 @@ Beta features are new and still being worked on. They are off and hidden unless
 you turn them on in HomeCable and accept a warning. They may be wrong or
 incomplete, may stop working, and may change or be removed in any update.
 
-The Movies tab is a list of films. HomeCable does not host them, and a film
-being listed does not mean you have the right to watch, copy or share it. Only
-films in your own library and copies the Internet Archive marks as public domain
-or Creative Commons can play. Those labels mostly come from whoever uploaded the
-film and can be wrong, and HomeCable cannot promise that any film is free to
-use. If you know a film is not, do not play it. Choosing to play free films
-through torrents means your computer shares them with other people, and the
-Torrents section above applies.
+The Movies, TV shows and anime lists are lists of titles. HomeCable does not
+host them, and a title being listed does not mean you have the right to watch,
+copy or share it. Normally only titles in your own library and older titles the
+Internet Archive marks as public domain or Creative Commons can play. Those
+labels mostly come from whoever uploaded the title and can be wrong, and
+HomeCable cannot promise that anything is free to use. If you know a title is
+not, do not play it.
+
+If you choose to play films through torrents, opening a film sends its name to
+the search sources you turned on or added, and HomeCable offers the results with
+the most seeders. HomeCable does not check what those results are, whether they
+are the right film, or whether you may use them. Your computer downloads what
+you play this way and shares it with other people, and the Torrents section
+above applies.
 
 CHILDREN AND SHARED COMPUTERS
 Live stations, film lists and other outside content are not checked by us and

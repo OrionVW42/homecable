@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 const { identify, norm, suggestTags } = require('./identify');
-const { findSources, findEpisodeSources, openSource, onePerQuality } = require('./sources');
+const { FILM_COLLECTIONS, findSources, findEpisodeSources, openSource, onePerQuality } = require('./sources');
 const { guideFor, coverFor } = require('./showguide');
 
 const UA = { 'User-Agent': 'HomeCable (home media player)', Accept: 'application/json' };
@@ -20,6 +20,8 @@ class Catalog {
     this.store = store; this.settings = settings; this.log = log; this.items = items; this.torrents = torrents; this.lib = lib;
     this.cache = store.read('catalogCache', { art: {}, info: {}, sources: {}, guide: {} });
     this.cache.art = this.cache.art || {}; this.cache.info = this.cache.info || {}; this.cache.sources = this.cache.sources || {}; this.cache.guide = this.cache.guide || {};
+    // Free films found before the 1978 limit aren't trusted any more; what you own is looked up afresh anyway.
+    if (!this.cache.freeLimit) { this.cache.sources = {}; this.cache.freeAt = 0; this.cache.freeLimit = 1; store.write('catalogCache', this.cache); }
     this.list = null; this.byId = null; this._artQ = []; this._artBusy = 0;
   }
   _load() {
@@ -110,7 +112,7 @@ class Catalog {
     this._freeBusy = true;
     try {
       this._load();
-      const q = 'mediatype:movies AND collection:(feature_films OR film_noir OR sci-fi_horror OR comedy_films OR classic_tv) AND licenseurl:(*publicdomain* OR *creativecommons*)';
+      const q = `mediatype:movies AND ${FILM_COLLECTIONS} AND year:[1900 TO 1977] AND licenseurl:(*publicdomain* OR *creativecommons*)`;
       const j = await (await fetch(`https://archive.org/advancedsearch.php?q=${encodeURIComponent(q)}&fl[]=title&fl[]=year&rows=400&sort[]=downloads+desc&output=json`, { signal: AbortSignal.timeout(20000), headers: UA })).json();
       const byKey = new Map();
       for (const m of this.list) { if (!byKey.has(m.key)) byKey.set(m.key, []); byKey.get(m.key).push(m); }

@@ -2857,6 +2857,9 @@ app.whenReady().then(async () => {
   vpnNow = vpnOn() ? vpn.detectNow(settings.torrentVpn || 'auto') : null;
   if (settings.moviesOn && !settings.moviesAccepted) settings.moviesOn = false; // never on without the warning
   // 1.7.6: torrents became opt-in, for everyone once. Anyone who had some is told, once, that they're safe.
+  // The 1.9.0 warning said this used only the Archive's own torrent. Anyone who chose it then is
+  // asked again, with what it really does.
+  if (!settings.moviesPlayNotice110) { settings.moviesPlayNotice110 = true; if (settings.moviesPlayBy === 'torrent') settings.moviesPlayBy = 'web'; saveSettings(); }
   if (!settings.torrentLock176) { settings.torrentLock176 = true; if (!settings.torrentsOn && torrents.saved.length) settings.torrentsLockNote = torrents.saved.length; saveSettings(); }
   if (settings.torrentsOn) checkVpn().catch(() => {}).finally(() => { if (torrents.saved.length) torrents.start().catch((e) => log('torrents', e.message)); });
   setInterval(() => { if (settings.torrentsOn) checkVpn().catch(() => {}); }, 10000).unref?.();

@@ -1,13 +1,18 @@
 // Where a title in the index can be played. Each source answers find(movie) with the ways it
 // can play that exact title; anything none of them can play says "No streams available".
 // Built in: your own library, and the Internet Archive's free films (items marked public
-// domain or Creative Commons). Those play straight from the web, or through their own torrent
-// if you chose that and torrents are on; the torrent lock always wins.
+// domain or Creative Commons, from before FREE_BEFORE, in its feature-film collections).
 const crypto = require('crypto');
 const { norm, similar } = require('./identify');
 
 const UA = { 'User-Agent': 'HomeCable (home media player)', Accept: 'application/json' };
 const FREE = 'licenseurl:(*publicdomain* OR *creativecommons*)';
+// The Archive's "free" labels are typed in by uploaders, and current films and whole seasons of
+// current shows carry them (Breaking Bad does). So only titles old enough to really have fallen out
+// of copyright are looked for, and only in the Archive's own curated collections.
+const FREE_BEFORE = 1978;
+const FILM_COLLECTIONS = 'collection:(feature_films OR film_noir OR sci-fi_horror OR comedy_films)';
+const oldEnough = (m) => +m.year > 0 && +m.year < FREE_BEFORE;
 const json = async (url) => { const r = await fetch(url, { signal: AbortSignal.timeout(15000), headers: UA }); if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); };
 const label = (h) => (h >= 1000 ? '1080p' : h >= 700 ? '720p' : h >= 450 ? '480p' : 'SD');
 const RANK = { '1080p': 0, '720p': 1, '480p': 2, SD: 3 };
@@ -36,9 +41,10 @@ const archive = {
   id: 'archive',
   name: 'Internet Archive',
   async find(m) {
+    if (!oldEnough(m)) return [];
     const words = m.title.replace(/[()":\[\]{}^~\\!*?]/g, ' ').replace(/\s+/g, ' ').trim();
     if (!words) return [];
-    const q = `title:(${words}) AND mediatype:movies AND ${FREE}`;
+    const q = `title:(${words}) AND mediatype:movies AND ${FILM_COLLECTIONS} AND ${FREE}`;
     const j = await json(`https://archive.org/advancedsearch.php?q=${encodeURIComponent(q)}&fl[]=identifier&fl[]=title&fl[]=year&fl[]=date&fl[]=licenseurl&rows=25&sort[]=downloads+desc&output=json`);
     const hits = (j?.response?.docs || []).filter((d) => exact(d.title, m.title) && !RIP.test(`${d.identifier} ${d.title}`) && nearYear(d.year || String(d.date || '').slice(0, 4), m.year));
     const out = new Map();
@@ -108,11 +114,7 @@ function showItemSeason(itemTitle, showTitle) {
   if (!m || norm(m[1]) !== k) return null;
   return { season: m[2] ? +m[2] : m[3] ? +m[3] : null };
 }
-// The Archive's "free" labels are typed in by uploaders, and whole seasons of current shows carry
-// them (Breaking Bad does). So a show only looks there if it's old enough to really have fallen out
-// of copyright, and only in the Archive's own Classic TV collection.
-const FREE_SHOWS_BEFORE = 1978;
-const mayBeFree = (show) => show.kind !== 'anime' && +show.year > 0 && +show.year < FREE_SHOWS_BEFORE;
+const mayBeFree = (show) => show.kind !== 'anime' && oldEnough(show);
 // Free copies of a show's episodes. A season that comes as one item is preferred over single episodes.
 async function archiveEpisodes(show) {
   if (!mayBeFree(show)) return new Map();
@@ -197,4 +199,4 @@ const openSource = (s, ctx) => {
   return src.open(s, ctx);
 };
 
-module.exports = { findSources, findEpisodeSources, episodeOf, showItemSeason, openSource, onePerQuality, bestFiles, similar };
+module.exports = { FILM_COLLECTIONS, findSources, findEpisodeSources, episodeOf, showItemSeason, openSource, onePerQuality, bestFiles, similar };

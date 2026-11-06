@@ -47,7 +47,14 @@ test('Settings → Beta turns it on, and the tab works', async () => {
   await expect(yes, 'both boxes are needed').toBeDisabled();
   await page.locator('.consent-modal .consent-tick input').nth(1).check();
   await yes.click();
-  await expect(page.locator('.settings-row', { hasText: 'How free films play' })).toHaveCount(1);
+  const how = page.locator('.settings-row', { hasText: 'How films play' });
+  await expect(how).toHaveCount(1);
+  await how.getByRole('button', { name: 'Through torrents' }).click();
+  await expect(page.locator('.consent-modal'), 'the warning says what it really does').toContainText('searches the sources you have on');
+  await expect(page.locator('.consent-modal')).toContainText('downloads it');
+  await expect(page.getByRole('button', { name: 'Use torrents' })).toBeDisabled();
+  await page.getByRole('button', { name: 'Keep it off' }).click();
+  expect((await settings()).moviesPlayBy, 'nothing changes until you agree').not.toBe('torrent');
   await page.locator('.topbar .nav button', { hasText: 'HCtorrents' }).click();
   await page.locator('.drop-menu button', { hasText: 'Browse films' }).click();
   await page.locator('.cat-pick-go button', { hasText: 'Show everything' }).click();
