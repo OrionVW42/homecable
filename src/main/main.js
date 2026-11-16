@@ -25,6 +25,7 @@ const { enrichLibrary, lookupShow } = require('./metadata');
 const network = require('./network');
 const iptv = require('./iptv');
 const adult = require('./adult');
+const { Dramas } = require('./dramas');
 const free = require('./freecontent');
 const { Torrents, looksLikeLink } = require('./torrents');
 const { TorrentSearch } = require('./search');
@@ -296,7 +297,7 @@ async function subsInfo(it) {
 // connection when it drops (your choice: Torrents → Privacy).
 const NO_VPN = '(your VPN)';
 const TERMS_VERSION = '2026-11-05'; // change it when the terms change, and everyone is asked once
-let vpnNow = null, vpnApplied = null, catalog = null;
+let vpnNow = null, vpnApplied = null, catalog = null, dramas = null;
 const vpnOn = () => settings.torrentVpn !== 'off' && !process.env.HOMECABLE_DEMO;
 function netIface() {
   if (settings.torrentInterface) return settings.torrentInterface;
@@ -1258,6 +1259,7 @@ function handlers() {
   const h = (name, fn) => (handlerFns[name] = fn, ipcMain.handle(name, async (_e, ...a) => {
     if ((ADMIN.has(name) || name === 'torrentsLock:set' || name === 'terms:accept') && !profiles.isAdult()) throw new Error('Ask a grown-up to do that');
     if (/^(torrents|search):/.test(name) && name !== 'torrents:vpn' && !settings.torrentsOn) throw new Error('Torrents are turned off. You can turn them on in Settings.');
+    if (name.startsWith('dramas:') && name !== 'dramas:set' && !(settings.dramasOn && profiles.isAdult())) throw new Error('Short dramas are turned off.');
     if (name.startsWith('adult:') && !['adult:status', 'adult:enable', 'adult:off'].includes(name) && !(settings.adultOn && profiles.isAdult())) throw new Error('Adults only is turned off.');
     if (name.startsWith('catalog:') && !(settings.moviesOn && settings.torrentsOn)) throw new Error('Movies, TV and anime are turned off. Turn on Torrents, then Settings → Beta.');
     if (name === 'settings:set' && !profiles.isAdult() && Object.keys(a[0] || {}).some((k) => !VIEWER_SETTINGS.has(k))) throw new Error('Ask a grown-up to change settings');
@@ -1336,7 +1338,7 @@ function handlers() {
   });
   h('settings:set', async (patch) => {
     if (patch && 'vault' in patch) { patch = { ...patch }; delete patch.vault; } // only changed through vault:*
-    if (patch && ['torrentsOn', 'torrentsAccepted', 'moviesOn', 'moviesAccepted', 'termsAccepted', 'adultOn', 'adultAccepted'].some((k) => k in patch)) { patch = { ...patch }; for (const k of ['torrentsOn', 'torrentsAccepted', 'moviesOn', 'moviesAccepted', 'termsAccepted', 'adultOn', 'adultAccepted']) delete patch[k]; } // only through their own switches, below
+    if (patch && ['torrentsOn', 'torrentsAccepted', 'moviesOn', 'moviesAccepted', 'termsAccepted', 'adultOn', 'adultAccepted', 'dramasOn'].some((k) => k in patch)) { patch = { ...patch }; for (const k of ['torrentsOn', 'torrentsAccepted', 'moviesOn', 'moviesAccepted', 'termsAccepted', 'adultOn', 'adultAccepted', 'dramasOn']) delete patch[k]; } // only through their own switches, below
     if ('subMode' in patch || 'subLang' in patch) subsCache.clear(); // (audioPref is applied per request)
     Object.assign(settings, patch);
     lib.defaultPolicy = settings.newMedia;
@@ -2262,6 +2264,14 @@ function handlers() {
     refreshGuides().catch(() => {});
     return { ok: true, id: ch.id, number: ch.number, name: ch.name };
   });
+  // ---- Short dramas: YouTube series and channels in YouTube's own player. Off until a grown-up turns it on.
+  h('dramas:set', (on) => { if (!profiles.isAdult()) throw new Error('Ask a grown-up to do that'); settings.dramasOn = !!on; saveSettings(); return settings.dramasOn; });
+  h('dramas:home', () => dramas.home());
+  h('dramas:add', (link) => dramas.add(String(link || '').slice(0, 500)));
+  h('dramas:remove', (id) => dramas.remove(String(id)));
+  h('dramas:titles', (ids) => dramas.titles(Array.isArray(ids) ? ids.map(String) : []));
+  h('dramas:progress', (id, p) => dramas.progress(String(id), p && typeof p === 'object' ? p : {}));
+  h('dramas:playerUrl', () => `${media.base}/ytplayer/x?k=${media.token}`);
   // ---- Adults only: off and hidden until a grown-up turns it on and confirms they're 18 or older.
   // Its stations are links people add themselves (HomeCable ships and names none). They're
   // locked channels: out of the lineup, guide, surfing, phone, TV menu and guide lookups.
@@ -2912,6 +2922,7 @@ app.whenReady().then(async () => {
   if (!settings.torrentLock176) { settings.torrentLock176 = true; if (!settings.torrentsOn && torrents.saved.length) settings.torrentsLockNote = torrents.saved.length; saveSettings(); }
   if (settings.torrentsOn) checkVpn().catch(() => {}).finally(() => { if (torrents.saved.length) torrents.start().catch((e) => log('torrents', e.message)); });
   setInterval(() => { if (settings.torrentsOn) checkVpn().catch(() => {}); }, 10000).unref?.();
+  dramas = new Dramas({ store, log });
   catalog = new Catalog({ store, settings: () => settings, log, items: () => lib.list(), torrents: () => torrents, lib });
   setTimeout(() => { try { tagFromIndex(); } catch (e) { log('index tags', e.message); } }, 5000).unref?.();
   // Torrent search: engines that run on the torrent network interface, started when first used.

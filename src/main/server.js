@@ -84,6 +84,11 @@ function startServer(lib, log = () => {}, { liveFor = () => null, thumbDir = nul
   const handle = async (req, res, url, who = {}) => {
     const [, route, id] = url.pathname.split('/');
     const group = who.group || 'pc';
+    // The page holding YouTube's player for Short dramas (this PC's screen only: see ytpage.js).
+    if (route === 'ytplayer' && group === 'pc') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Referrer-Policy': 'strict-origin', 'X-Content-Type-Options': 'nosniff' });
+      return res.end(require('./ytpage'));
+    }
     if (route === 'live') {
       const st = liveFor(id, who);
       if (!st) { res.writeHead(404); return res.end(); }

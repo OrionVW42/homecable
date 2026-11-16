@@ -8,6 +8,7 @@ import { ControlsMap } from './controls.js';
 import { TorrentLockRow } from './torrentlock.js';
 import { BetaSettings } from './beta.js';
 import { AdultSettings } from './adult.js';
+import { DramaSettings } from './dramas.js';
 import { TermsDialog } from './terms.js';
 import { FreeTvDialog } from './libraryview.js';
 import { ProfilesSettings, LEVEL_LABEL } from './profiles.js';
@@ -364,7 +365,7 @@ function TvMenuRow({ settings, setSettings }) {
     <button class=${'toggle' + (settings.tvMenu ? ' on' : '')} disabled=${busy} onClick=${flip}></button></div>`;
 }
 
-export function SettingsPanel({ onOpenAdult = () => {}, onAdultOff = () => {}, onOpenMovies, settings, setSettings, onRunSetup, onShowTour, version, onEnrich, channels, onLock, stats, onOpenLibrary, onOpenTorrents, toast, isAdult, profile, setProfile, onSwitch, cast, tvs, onOpenCast, vault, setVault, onOpenVault, lockAsk = false, onLockAsked = () => {} }) {
+export function SettingsPanel({ onOpenDramas = () => {}, onOpenAdult = () => {}, onAdultOff = () => {}, onOpenMovies, settings, setSettings, onRunSetup, onShowTour, version, onEnrich, channels, onLock, stats, onOpenLibrary, onOpenTorrents, toast, isAdult, profile, setProfile, onSwitch, cast, tvs, onOpenCast, vault, setVault, onOpenVault, lockAsk = false, onLockAsked = () => {} }) {
   const [freeOpen, setFreeOpen] = useState(false);
   const [find, setFind] = useState('');
   const body = useRef(null);
@@ -419,6 +420,7 @@ export function SettingsPanel({ onOpenAdult = () => {}, onAdultOff = () => {}, o
       <div class="settings-row"><div class="grow"><b>Sources</b><span>${(stats?.folders.length || 0)} folders · ${(stats?.servers || []).length} media servers. Add network shares, NAS boxes and media servers.</span></div><button class="btn sm" onClick=${onOpenLibrary}>Manage in Library</button></div>
       <div class="section-title" id="set-freetv">Free TV</div>
       <div class="settings-row"><div class="grow"><b>Free TV</b><span>Free live IPTV stations and public-domain classic movies, cartoons and TV.</span></div><button class="btn sm" onClick=${() => setFreeOpen(true)}>📡 Add free channels</button></div>
+      <${DramaSettings} settings=${settings} setSettings=${setSettings} toast=${toast} onOpen=${onOpenDramas} />
       <div class="section-title" id="set-watching">Watching</div>
       <div class="settings-row"><div class="grow"><b>Single channel mode</b><span>Lock the TV to one channel, all the time. Channel flipping is turned off; the guide shows just that channel's schedule.</span></div>
         <select class="select" style="min-width:220px" value=${settings.lockChannel || ''} onChange=${(e) => onLock(e.target.value)}>
