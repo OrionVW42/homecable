@@ -13,6 +13,7 @@ import { startGamepad, focusDefault, pressButton } from './gamepad.js';
 import { Arcade } from './arcade.js';
 import { ProfilePicker } from './profiles.js';
 import { TermsChanged } from './terms.js';
+import { AdultView } from './adult.js';
 import { CastMenu, CastGlyph } from './castmenu.js';
 import { OnDemandWall } from './ondemand.js';
 import { ChannelManager } from './manager.js';
@@ -646,7 +647,7 @@ function App() {
   };
   const miniDragEnd = (e) => { miniDrag.current = null; e.currentTarget.classList.remove('dragging'); };
   return html`<div class=${'app' + (idle ? ' idle' : '') + (mini ? ' mini' : '') + (miniBig ? ' mini-big' : '') + (overlay ? ' has-overlay' : '')} onMouseMove=${poke} onMouseDown=${poke} onWheel=${onWheel}>
-    ${(channels.length > 0 || vod) && html`<${Player} tuned=${vod || tuned} settings=${settings} transitions=${settings.transitions} pip=${overlay === 'guide'} quiet=${overlay === 'arcade'} covered=${(!!overlay && overlay !== 'guide' && overlay !== 'help') || setup} bufferStart=${bufferStart.current} apiRef=${player} cast=${cast.mode === 'media' ? cast : null} onEnded=${onEnded} onFailed=${onFailed} onShift=${onShift} onCaptionsError=${() => { toast('💬 Live captions couldn’t start on this PC'); setSettings({ liveCaptions: false }); }} onVolume=${(p) => setSettings(p)} onStalled=${onStalled} onHiccup=${onHiccup} onPlaying=${onPlaying}>
+    ${(channels.length > 0 || vod || tuned) && html`<${Player} tuned=${vod || tuned} settings=${settings} transitions=${settings.transitions} pip=${overlay === 'guide'} quiet=${overlay === 'arcade'} covered=${(!!overlay && overlay !== 'guide' && overlay !== 'help') || setup} bufferStart=${bufferStart.current} apiRef=${player} cast=${cast.mode === 'media' ? cast : null} onEnded=${onEnded} onFailed=${onFailed} onShift=${onShift} onCaptionsError=${() => { toast('💬 Live captions couldn’t start on this PC'); setSettings({ liveCaptions: false }); }} onVolume=${(p) => setSettings(p)} onStalled=${onStalled} onHiccup=${onHiccup} onPlaying=${onPlaying}>
       <${Banner} tuned=${vod || tuned} show=${banner && !overlay} live=${live} getBehind=${() => player.current.behind?.() || 0} getPos=${() => player.current.position?.() || 0} paused=${player.current.paused} raised=${chrome} />
       ${digits && html`<div class="number-entry">${digits.padEnd(2, '–')}<small>${channels.find((c) => c.number === +digits)?.name || ''}</small></div>`}
       ${volFlash === 'volume' && html`<div class="osd-level">${settings.muted ? html`<${Icon.mute} />` : html`<${Icon.vol} />`}<div class="meter"><i style=${`width:${settings.muted ? 0 : (settings.volume ?? 0.9) * 100}%`}></i></div><span>${settings.muted ? 'Muted' : Math.round((settings.volume ?? 0.9) * 100)}</span></div>`}
@@ -682,7 +683,7 @@ function App() {
     ${settings.muted && !overlay && channels.length > 0 && html`<div class="mute-badge" title="Muted (M / B)"><${Icon.mute} /></div>`}
     ${settings.showClock && !overlay && !chrome && channels.length > 0 && html`<div class="clock">${new Date(clock).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</div>`}
 
-    ${!channels.length && !setup && !overlay && html`<div class="card-screen" style="z-index:3"><div class="empty">
+    ${!channels.length && !tuned && !setup && !overlay && html`<div class="card-screen" style="z-index:3"><div class="empty">
       <div><${Logo} size=${72} /><h2>No channels yet</h2><p>Let HomeCable suggest channels from your library, or build your own lineup.</p>
       <div class="row" style="justify-content:center"><button class="btn primary big" onClick=${() => setSetup(true)}><${Icon.sparkle} /> Find my videos</button><button class="btn big" onClick=${() => setOverlay('channels')}>Make a channel</button></div></div>
     </div></div>`}
@@ -696,8 +697,9 @@ function App() {
     ${overlay === 'freetv' && html`<${FreeTvPanel} isAdult=${isAdult} setChannels=${setChannels} toast=${toast} onTune=${(id) => { setOverlay(null); ui.current.overlay = null; tune(id); }} />`}
     ${overlay === 'library' && html`<${LibraryPanel} isAdult=${isAdult} stats=${stats} onScan=${scan} enrichProgress=${enrichProgress} channels=${channels} setChannels=${setChannels} onPlay=${playVod} onEdit=${setEditing} toast=${toast} onOpenTorrents=${() => setOverlay('torrents')} torrentsOn=${!!settings.torrentsOn} />`}
     ${overlay === 'catalog' && settings.moviesOn && settings.torrentsOn && html`<${CatalogView} kind=${catalogKind} setKind=${setCatalogKind} onPlayEpisode=${(r) => playVod(r.itemId, 0, 'catalog', { queue: r.queue, seriesKey: r.seriesKey, label: r.label, title: r.title })} settings=${settings} setSettings=${setSettings} onPlay=${playVod} toast=${toast} onFullSearch=${(title) => { requestTorrentSearch(title, 'all'); setOverlay('torrents'); }} />`}
+    ${overlay === 'adult' && isAdult && settings.adultOn && html`<${AdultView} toast=${toast} onTune=${(id) => { setOverlay(null); ui.current.overlay = null; tune(id); }} />`}
     ${overlay === 'torrents' && settings.torrentsOn && html`<${TorrentsView} isAdult=${isAdult} settings=${settings} setSettings=${setSettings} onPlay=${playVod} toast=${toast} />`}
-    ${overlay === 'settings' && html`<${SettingsPanel} onOpenMovies=${() => setOverlay('catalog')} lockAsk=${lockAsk} onLockAsked=${() => setLockAsk(false)} isAdult=${isAdult} profile=${profile} setProfile=${setProfile} onSwitch=${() => { setOverlay(null); setPicker(true); }} stats=${stats} onOpenLibrary=${() => setOverlay('library')} onOpenTorrents=${() => setOverlay('torrents')} toast=${toast} channels=${channels} onLock=${(id) => { setSettings({ lockChannel: id || null }); if (id) tune(id); }} settings=${settings} setSettings=${setSettings} version=${version} onShowTour=${() => { setOverlay(null); ui.current.overlay = null; setTour(true); }} onRunSetup=${() => { setOverlay(null); setSetup(true); }} onEnrich=${() => { tv.enrich().then((n) => toast(`Looked up ${n} shows`)); }} cast=${cast} tvs=${tvs} onOpenCast=${() => setOverlay('cast')} vault=${vault} setVault=${setVault} onOpenVault=${() => { setOverlay(null); ui.current.overlay = null; tune(vault.channelId, { quiet: true }); }} />`}
+    ${overlay === 'settings' && html`<${SettingsPanel} onOpenAdult=${() => setOverlay('adult')} onAdultOff=${() => { if (tunedRef.current?.channel?.adult) { const c = channels.find((x) => x.id === settings.lastChannel) || channels.find((x) => !x.ondemand) || channels[0]; if (c) tune(c.id); else setTuned(null); } }} onOpenMovies=${() => setOverlay('catalog')} lockAsk=${lockAsk} onLockAsked=${() => setLockAsk(false)} isAdult=${isAdult} profile=${profile} setProfile=${setProfile} onSwitch=${() => { setOverlay(null); setPicker(true); }} stats=${stats} onOpenLibrary=${() => setOverlay('library')} onOpenTorrents=${() => setOverlay('torrents')} toast=${toast} channels=${channels} onLock=${(id) => { setSettings({ lockChannel: id || null }); if (id) tune(id); }} settings=${settings} setSettings=${setSettings} version=${version} onShowTour=${() => { setOverlay(null); ui.current.overlay = null; setTour(true); }} onRunSetup=${() => { setOverlay(null); setSetup(true); }} onEnrich=${() => { tv.enrich().then((n) => toast(`Looked up ${n} shows`)); }} cast=${cast} tvs=${tvs} onOpenCast=${() => setOverlay('cast')} vault=${vault} setVault=${setVault} onOpenVault=${() => { setOverlay(null); ui.current.overlay = null; tune(vault.channelId, { quiet: true }); }} />`}
     ${overlay === 'cast' && html`<${CastMenu} cast=${cast} tvs=${tvs} setTvs=${setTvs} settings=${settings} setSettings=${setSettings} toast=${toast} onClose=${() => setOverlay(null)} />`}
     ${overlay === 'arcade' && html`<${Arcade} settings=${settings} setSettings=${setSettings} onClose=${() => setOverlay(null)} />`}
     ${overlay === 'help' && html`<div class="modal-bg" onClick=${() => setOverlay(null)}><div class="modal narrow"><div class="modal-head"><h3>Controls</h3></div><div class="modal-body" onClick=${(e) => e.stopPropagation()}><${ControlsMap} /></div></div></div>`}
@@ -735,6 +737,8 @@ function App() {
             onClick=${() => { setOverlay(null); ui.current.overlay = null; tune(c.id, { quiet: true }); }}>${c.odStyle === 'series' ? '📺' : '🎬'}<span class="l"> ${c.odStyle === 'series' ? 'Stream Demand' : 'On Demand'}</span></button>`)}
         ${vault.set && vault.showButton && vault.channelId && html`<button class=${'od-nav-btn' + (tuned?.channel?.id === vault.channelId && !overlay && !vod ? ' on' : '')} title=${vault.name}
           onClick=${() => { setOverlay(null); ui.current.overlay = null; tune(vault.channelId, { quiet: true }); }}>🗂<span class="l"> ${vault.name}</span></button>`}
+        ${isAdult && settings.adultOn && html`<button class=${'od-nav-btn adult-nav' + (overlay === 'adult' || (tuned?.channel?.adult && !overlay && !vod) ? ' on' : '')} title="Adults only"
+          onClick=${() => setOverlay((o) => (o === 'adult' ? null : 'adult'))}>🔞<span class="l"> Adults only</span></button>`}
       </div>
       <div class="spacer"></div>
       ${overlay && html`<button class="btn sm" onClick=${() => setOverlay(null)}>Back to TV <kbd>Esc</kbd></button>`}

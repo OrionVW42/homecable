@@ -7,6 +7,7 @@ import { PhoneSettings } from './phonesettings.js';
 import { ControlsMap } from './controls.js';
 import { TorrentLockRow } from './torrentlock.js';
 import { BetaSettings } from './beta.js';
+import { AdultSettings } from './adult.js';
 import { TermsDialog } from './terms.js';
 import { FreeTvDialog } from './libraryview.js';
 import { ProfilesSettings, LEVEL_LABEL } from './profiles.js';
@@ -363,7 +364,7 @@ function TvMenuRow({ settings, setSettings }) {
     <button class=${'toggle' + (settings.tvMenu ? ' on' : '')} disabled=${busy} onClick=${flip}></button></div>`;
 }
 
-export function SettingsPanel({ onOpenMovies, settings, setSettings, onRunSetup, onShowTour, version, onEnrich, channels, onLock, stats, onOpenLibrary, onOpenTorrents, toast, isAdult, profile, setProfile, onSwitch, cast, tvs, onOpenCast, vault, setVault, onOpenVault, lockAsk = false, onLockAsked = () => {} }) {
+export function SettingsPanel({ onOpenAdult = () => {}, onAdultOff = () => {}, onOpenMovies, settings, setSettings, onRunSetup, onShowTour, version, onEnrich, channels, onLock, stats, onOpenLibrary, onOpenTorrents, toast, isAdult, profile, setProfile, onSwitch, cast, tvs, onOpenCast, vault, setVault, onOpenVault, lockAsk = false, onLockAsked = () => {} }) {
   const [freeOpen, setFreeOpen] = useState(false);
   const [find, setFind] = useState('');
   const body = useRef(null);
@@ -395,7 +396,7 @@ export function SettingsPanel({ onOpenMovies, settings, setSettings, onRunSetup,
     <div class="overlay-head"><h2>Settings</h2></div>
     <div class="overlay-body" style="max-width:820px" ref=${body}>
       <div class="settings-find-row"><input class="input settings-find" placeholder="Search settings, like “subtitles” or “update”" value=${find} onInput=${(e) => setFind(e.target.value)} onKeyDown=${(e) => { e.stopPropagation(); if (e.key === 'Escape') setFind(''); }} />
-        ${isAdult && !find && html`<div class="settings-jump">${[['people', 'People'], ['library', 'Videos'], ['freetv', 'Free TV'], ['watching', 'Watching'], ['screens', 'Other screens'], ['fun', 'Fun extras'], ['help', 'Help & setup'], ['torrents', 'Torrents'], ['beta', 'Beta'], ['controls', 'Controls'], ['about', 'About & updates']].map(([k, l]) => html`<button class="btn ghost sm" onClick=${() => jump(k)}>${l}</button>`)}</div>`}</div>
+        ${isAdult && !find && html`<div class="settings-jump">${[['people', 'People'], ['library', 'Videos'], ['freetv', 'Free TV'], ['watching', 'Watching'], ['screens', 'Other screens'], ['fun', 'Fun extras'], ['help', 'Help & setup'], ['torrents', 'Torrents'], ['adults', 'Adults only'], ['beta', 'Beta'], ['controls', 'Controls'], ['about', 'About & updates']].map(([k, l]) => html`<button class="btn ghost sm" onClick=${() => jump(k)}>${l}</button>`)}</div>`}</div>
       <p class="muted settings-none" hidden>Nothing matches that. Try a simpler word.</p>
       ${!isAdult ? html`
         <div class="settings-row"><div class="grow"><b>${profile?.list.find((p) => p.id === profile.active)?.avatar} ${profile?.list.find((p) => p.id === profile.active)?.name}</b><span>Ask a grown-up to change settings and channels.</span></div><button class="btn sm" onClick=${onSwitch}>Switch profile</button></div>
@@ -456,6 +457,8 @@ export function SettingsPanel({ onOpenMovies, settings, setSettings, onRunSetup,
       <div class="section-title" id="set-torrents">Torrents</div>
       <${TorrentLockRow} settings=${settings} setSettings=${setSettings} toast=${toast} askOpen=${lockAsk} onAsked=${onLockAsked} />
       ${settings.torrentsOn && html`<${TorrentSettings} settings=${settings} setSettings=${setSettings} toast=${toast} onOpenTorrents=${onOpenTorrents} />`}
+      <div class="section-title" id="set-adults">Adults only</div>
+      <${AdultSettings} settings=${settings} setSettings=${setSettings} toast=${toast} onOpen=${onOpenAdult} onOff=${onAdultOff} />
       <div class="section-title" id="set-beta">Beta</div>
       <${BetaSettings} settings=${settings} setSettings=${setSettings} toast=${toast} onOpenMovies=${onOpenMovies} />
       <div class="section-title" id="set-controls">Controls</div>

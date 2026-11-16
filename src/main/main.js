@@ -24,6 +24,7 @@ const { importLegacySchedule } = require('./legacyImport');
 const { enrichLibrary, lookupShow } = require('./metadata');
 const network = require('./network');
 const iptv = require('./iptv');
+const adult = require('./adult');
 const free = require('./freecontent');
 const { Torrents, looksLikeLink } = require('./torrents');
 const { TorrentSearch } = require('./search');
@@ -128,9 +129,11 @@ function normalizeChannel(c) {
     blocks: Array.isArray(c.blocks) ? c.blocks.map((b) => ({ ...b, id: b.id || crypto.randomUUID().slice(0, 8) })) : [],
     ...(c.iptv ? { iptv: c.iptv } : {}),
     // On demand: no schedule — tuning in shows a wall of its movies to pick from.
+    // Adults only: a station someone added there. Kept out of every lineup (locked), adults only.
+    ...(c.adult && c.iptv ? { adult: true, locked: true } : {}),
     ...(c.ondemand && !c.iptv ? { ondemand: true, odStyle: c.odStyle === 'series' ? 'series' : 'movies', ...(c.locked ? { locked: true } : {}) } : {}),
     // Who can see it: 'all' (kids too), 'teen', 'adult'. Picked automatically unless set.
-    rating: ['all', 'teen', 'adult'].includes(c.rating) ? c.rating : null,
+    rating: c.adult && c.iptv ? 'adult' : ['all', 'teen', 'adult'].includes(c.rating) ? c.rating : null,
     // Unchecked from being seen (guide right-click / Free TV manager): stays in the
     // lineup lists for restoring, but out of the guide, surfing and the phone.
     ...(c.hidden ? { hidden: true } : {}),
@@ -164,7 +167,7 @@ function stationGenre(name, group) {
 // Keep live-station numbers gapless: visible stations count up from liveStart,
 // hidden ones are parked after them (numbers stay unique for when they return).
 function renumberIptv() {
-  const live = channels.filter((c) => c.iptv).sort((a, b) => a.number - b.number);
+  const live = channels.filter((c) => c.iptv && !c.adult).sort((a, b) => a.number - b.number);
   let n = settings.liveStart || 100;
   for (const c of live.filter((x) => !x.hidden)) c.number = n++;
   for (const c of live.filter((x) => x.hidden)) c.number = n++;
@@ -174,7 +177,8 @@ function renumberIptv() {
 const ratingCache = new Map();
 const ratingOf = (c) => c.rating || ratingCache.get(c.id) || (() => { const v = autoRating(c, lib); ratingCache.set(c.id, v); return v; })();
 // What the current profile is allowed to see.
-const visible = () => channels.filter((c) => profiles.allows(ratingOf(c)));
+// Adults only's stations need it turned on, as well as a grown-up profile.
+const visible = () => channels.filter((c) => profiles.allows(ratingOf(c)) && (!c.adult || (settings.adultOn && profiles.isAdult())));
 
 function sortedChannels() { return visible().filter((c) => !c.locked).sort((a, b) => a.number - b.number); }
 
@@ -803,7 +807,7 @@ function tune(id, atTime, opts = {}) {
     return { channel: ch, ondemand: true, entry: onDemandEntry(ch, now), next: null, play: null, offset: 0, now, at: now, earliest: now };
   }
   if (ch.iptv) {
-    if (!opts.phone && settings.lastChannel !== id) { settings.prevChannel = settings.lastChannel; settings.lastChannel = id; saveSettings(); }
+    if (!ch.locked && !opts.phone && settings.lastChannel !== id) { settings.prevChannel = settings.lastChannel; settings.lastChannel = id; saveSettings(); }
     const entry = liveEntry(ch, now);
     return { channel: ch, entry, next: { ...liveEntry(ch, entry.end) }, offset: 0, now, at: now, earliest: now,
       play: { mode: 'live', url: media.liveUrl(ch.id, ++liveSeq), offset: 0, startedAt: 0, audioOnly: !!ch.iptv.audioOnly } };
@@ -1003,8 +1007,8 @@ async function iptvAutoAdd({ country = 'us', countries = null, regions = [], cat
     if (!skipPresets && sources.includes('free-tv')) for (const cc of ccs) lists.unshift(await iptv.fetchFreeTv(cc).catch((e) => { log('free-tv', e.message); return []; }));
     if (anime) lists.unshift(await iptv.fetchAnime().catch((e) => { log('anime', e.message); return []; }));
     playlistGuides = [...new Set(lists.flatMap((l) => l.tvgUrls || []))].slice(0, 4);
-    const have = new Set(channels.filter((c) => c.iptv).map((c) => c.iptv.url));
-    const seenName = new Set(channels.filter((c) => c.iptv).map((c) => c.name.toLowerCase()));
+    const have = new Set(channels.filter((c) => c.iptv && !c.adult).map((c) => c.iptv.url));
+    const seenName = new Set(channels.filter((c) => c.iptv && !c.adult).map((c) => c.name.toLowerCase()));
     // This scan runs at every start. Without this it re-tested every dead station each time.
     const MISS_WAIT = 24 * 3600e3;
     const missed = store.read('liveMisses', {});
@@ -1128,7 +1132,7 @@ async function refreshGuides() {
   return guideRefreshing;
 }
 async function refreshGuidesNow() {
-  const stations = channels.filter((c) => c.iptv).map((c) => ({ id: c.id, name: c.name, tvgId: c.iptv.tvgId, url: c.iptv.url, altId: iptv.providerOf(c.iptv.url)?.id || null, service: iptv.providerOf(c.iptv.url)?.service || null }));
+  const stations = channels.filter((c) => c.iptv && !c.adult).map((c) => ({ id: c.id, name: c.name, tvgId: c.iptv.tvgId, url: c.iptv.url, altId: iptv.providerOf(c.iptv.url)?.id || null, service: iptv.providerOf(c.iptv.url)?.service || null }));
   if (!stations.length) return 0;
   const cc = settings.live?.country || 'us';
   // A guide for every country the lineup has stations from (most stations
@@ -1159,7 +1163,7 @@ function guidesRunningOut() {
 }
 function guideStatus() {
   const g = store.read('guides', {});
-  const live = channels.filter((c) => c.iptv);
+  const live = channels.filter((c) => c.iptv && !c.adult);
   const has = live.filter((c) => (g.guides || {})[c.id]?.length);
   const by = {};
   for (const c of has) { const k = (g.sources || {})[c.id] || 'guide'; by[k] = (by[k] || 0) + 1; }
@@ -1177,7 +1181,7 @@ async function refreshLive() {
   // connection per viewer and kick the live session when the test connects —
   // that was "my stream just randomly died mid-show" after the boot re-scan
   // shipped. The watched channel keeps its current state untouched.
-  const live = channels.filter((c) => c.iptv && c.id !== settings.lastChannel);
+  const live = channels.filter((c) => c.iptv && !c.adult && c.id !== settings.lastChannel);
   // A few at a time, not one by one — re-checking hundreds of stations serially
   // took ages; in parallel the whole lineup is done in a couple of minutes.
   if (live.length) {
@@ -1192,19 +1196,19 @@ async function refreshLive() {
   // (settings.lastChannel) is never pulled out from under them. The 💤 dead
   // mark itself is informational either way.
   const gone = settings.live.autoRemove
-    ? channels.filter((c) => c.iptv && c.iptv.misses >= 3 && c.id !== settings.lastChannel).map((c) => c.id)
+    ? channels.filter((c) => c.iptv && !c.adult && c.iptv.misses >= 3 && c.id !== settings.lastChannel).map((c) => c.id)
     : [];
   channels = channels.filter((c) => !gone.includes(c.id));
   if (gone.includes(settings.lockChannel)) settings.lockChannel = null;
   if (gone.includes(settings.lastChannel)) settings.lastChannel = channels.find((c) => !c.ondemand)?.id || null;
   if (gone.length) saveSettings();
   saveChannels();
-  const have = channels.filter((c) => c.iptv).length;
+  const have = channels.filter((c) => c.iptv && !c.adult).length;
   const cap = settings.live.max > 0 ? settings.live.max : Infinity;
   if (have < cap) await iptvAutoAdd({ ...settings.live, max: cap === Infinity ? 0 : cap - have });
   await refreshGuides();
   send('channels-changed');
-  log('live refresh: removed', gone.length, 'now', channels.filter((c) => c.iptv).length);
+  log('live refresh: removed', gone.length, 'now', channels.filter((c) => c.iptv && !c.adult).length);
 }
 
 // A cable-style "New Arrivals" channel that plays whatever was added lately.
@@ -1254,6 +1258,7 @@ function handlers() {
   const h = (name, fn) => (handlerFns[name] = fn, ipcMain.handle(name, async (_e, ...a) => {
     if ((ADMIN.has(name) || name === 'torrentsLock:set' || name === 'terms:accept') && !profiles.isAdult()) throw new Error('Ask a grown-up to do that');
     if (/^(torrents|search):/.test(name) && name !== 'torrents:vpn' && !settings.torrentsOn) throw new Error('Torrents are turned off. You can turn them on in Settings.');
+    if (name.startsWith('adult:') && !['adult:status', 'adult:enable', 'adult:off'].includes(name) && !(settings.adultOn && profiles.isAdult())) throw new Error('Adults only is turned off.');
     if (name.startsWith('catalog:') && !(settings.moviesOn && settings.torrentsOn)) throw new Error('Movies, TV and anime are turned off. Turn on Torrents, then Settings → Beta.');
     if (name === 'settings:set' && !profiles.isAdult() && Object.keys(a[0] || {}).some((k) => !VIEWER_SETTINGS.has(k))) throw new Error('Ask a grown-up to change settings');
     try { return await fn(...a); } catch (err) { log('ipc', name, err.stack || err); throw err; }
@@ -1331,7 +1336,7 @@ function handlers() {
   });
   h('settings:set', async (patch) => {
     if (patch && 'vault' in patch) { patch = { ...patch }; delete patch.vault; } // only changed through vault:*
-    if (patch && ['torrentsOn', 'torrentsAccepted', 'moviesOn', 'moviesAccepted', 'termsAccepted'].some((k) => k in patch)) { patch = { ...patch }; for (const k of ['torrentsOn', 'torrentsAccepted', 'moviesOn', 'moviesAccepted', 'termsAccepted']) delete patch[k]; } // only through their own switches, below
+    if (patch && ['torrentsOn', 'torrentsAccepted', 'moviesOn', 'moviesAccepted', 'termsAccepted', 'adultOn', 'adultAccepted'].some((k) => k in patch)) { patch = { ...patch }; for (const k of ['torrentsOn', 'torrentsAccepted', 'moviesOn', 'moviesAccepted', 'termsAccepted', 'adultOn', 'adultAccepted']) delete patch[k]; } // only through their own switches, below
     if ('subMode' in patch || 'subLang' in patch) subsCache.clear(); // (audioPref is applied per request)
     Object.assign(settings, patch);
     lib.defaultPolicy = settings.newMedia;
@@ -2209,11 +2214,11 @@ function handlers() {
     return sortedChannels();
   });
   // ---- The Free TV manager (Edit → Free TV stations) ----
-  h('iptv:list', () => { const gd = guides || {}; return channels.filter((c) => c.iptv).sort((a, b) => a.number - b.number)
+  h('iptv:list', () => { const gd = guides || {}; return channels.filter((c) => c.iptv && !c.adult).sort((a, b) => a.number - b.number)
     .map((c) => ({ id: c.id, number: c.number, name: c.name, group: c.iptv.genre || c.iptv.group || '', country: c.iptv.country || '', logo: c.iptv.logo || '', hidden: !!c.hidden, dead: !!c.iptv.dead,
       provider: iptv.providerOf(c.iptv.url)?.name || null, guide: !!gd[c.id]?.length })); });
   h('iptv:genres', () => {
-    const have = [...new Set(channels.filter((c) => c.iptv).map((c) => c.iptv.genre || stationGenre(c.name, c.iptv.group)))].sort((a, b) => String(a).localeCompare(String(b), undefined, { sensitivity: 'base' }));
+    const have = [...new Set(channels.filter((c) => c.iptv && !c.adult).map((c) => c.iptv.genre || stationGenre(c.name, c.iptv.group)))].sort((a, b) => String(a).localeCompare(String(b), undefined, { sensitivity: 'base' }));
     return { have, all: iptv.CATEGORIES };
   });
   // Search the iptv-org index by name / genre / country. Lists are cached for the
@@ -2227,7 +2232,7 @@ function handlers() {
       if (iptvCatalog.size > 12) iptvCatalog.delete(iptvCatalog.keys().next().value);
     }
     const base = iptvCatalog.get(kind);
-    const have = new Set(channels.filter((c) => c.iptv).map((c) => c.iptv.url));
+    const have = new Set(channels.filter((c) => c.iptv && !c.adult).map((c) => c.iptv.url));
     const qq = q.trim().toLowerCase(), cat = String(category).toLowerCase();
     const results = [], seen = new Set();
     for (const st of base) {
@@ -2257,6 +2262,48 @@ function handlers() {
     refreshGuides().catch(() => {});
     return { ok: true, id: ch.id, number: ch.number, name: ch.name };
   });
+  // ---- Adults only: off and hidden until a grown-up turns it on and confirms they're 18 or older.
+  // Its stations are links people add themselves (HomeCable ships and names none). They're
+  // locked channels: out of the lineup, guide, surfing, phone, TV menu and guide lookups.
+  const adultList = () => channels.filter((c) => c.adult).sort((a, b) => a.number - b.number)
+    .map((c) => ({ id: c.id, number: c.number, name: c.name, logo: c.iptv.logo || '', group: c.iptv.group || '', dead: !!c.iptv.dead }));
+  h('adult:status', () => ({ adult: profiles.isAdult(), on: !!settings.adultOn && profiles.isAdult() }));
+  h('adult:enable', ({ birth, over18, ownLinks } = {}) => {
+    if (!profiles.isAdult()) throw new Error('Ask a grown-up to do that');
+    const age = adult.ageOn(birth);
+    if (age == null) throw new Error('Enter your real date of birth.');
+    if (age < 18 || over18 !== true || ownLinks !== true) throw new Error('Adults only is for people 18 or older.');
+    // Only that it was confirmed is kept: never the date of birth.
+    settings.adultOn = true; settings.adultAccepted = true; saveSettings();
+    return true;
+  });
+  h('adult:off', () => { settings.adultOn = false; saveSettings(); send('channels-changed'); return true; });
+  h('adult:list', () => adultList());
+  h('adult:add', async (url) => {
+    url = String(url || '').trim();
+    if (!/^https?:\/\/[^\s]+$/i.test(url)) throw new Error('Paste a link that starts with http:// or https://');
+    const r = await fetch(url, { signal: AbortSignal.timeout(30000), headers: { 'User-Agent': 'HomeCable' } }).catch(() => null);
+    // A playlist is read; anything else (a stream itself) is checked as one station.
+    const type = r?.headers?.get('content-type') || '';
+    const text = r?.ok && !/^(video|audio)\/(?!.*mpegurl)/i.test(type) && +(r.headers.get('content-length') || 0) < 20e6 ? await r.text().catch(() => '') : '';
+    if (r && !r.bodyUsed) r.body?.cancel?.().catch?.(() => {});
+    const have = new Set(channels.filter((c) => c.adult).map((c) => c.iptv.url));
+    const found = adult.readLink(url, text);
+    const fresh = found.filter((s) => !have.has(s.url));
+    const checked = await iptv.checkMany(fresh, { concurrency: 6, onProgress: (n, total) => send('adult-progress', { n, total }) });
+    let added = 0;
+    for (const st of checked.filter((x) => x.check?.ok)) {
+      channels.push(normalizeChannel({
+        number: nextNumber(5000), name: String(st.name || 'Station').slice(0, 60), color: PALETTE[channels.length % PALETTE.length], adult: true,
+        iptv: { url: st.url, logo: st.logo, group: st.group, genre: stationGenre(st.name, st.group), userAgent: st.userAgent, referer: st.referer, audioOnly: !st.check.video, mode: st.check.video && st.check.video !== 'h264' ? 'transcode' : 'copy' },
+      }));
+      added++;
+    }
+    if (added) saveChannels();
+    return { added, failed: checked.length - added, already: found.length - fresh.length };
+  });
+  h('adult:remove', (id) => { channels = channels.filter((c) => !(c.adult && c.id === id)); saveChannels(); return adultList(); });
+  h('adult:removeAll', () => { channels = channels.filter((c) => !c.adult); saveChannels(); return adultList(); });
   // Heart a channel (guide right-click) — the guide's ♥ filter shows only these.
   h('channels:fav', (id, on = true) => {
     const ch = channels.find((c) => c.id === id);
@@ -2279,7 +2326,7 @@ function handlers() {
     // Remember what the lineup should be stocked with, for the daily refresh.
     settings.live = { country: opts.country || (opts.countries || [])[0] || 'us', countries: opts.countries || [opts.country || 'us'], regions: opts.regions || [], categories: opts.categories || [], languages: opts.languages || [], max: opts.max ?? 0, sources: opts.sources || ['iptv-org', 'free-tv'], urls: opts.urls || [], anime: !!opts.anime, servicesOff: opts.servicesOff || [] };
     // A service you turned off leaves the lineup (never the channel you're watching). Turn it on and it comes back.
-    const off = channels.filter((c) => c.iptv && settings.live.servicesOff.includes(iptv.providerOf(c.iptv.url)?.key) && c.id !== settings.lastChannel).map((c) => c.id);
+    const off = channels.filter((c) => c.iptv && !c.adult && settings.live.servicesOff.includes(iptv.providerOf(c.iptv.url)?.key) && c.id !== settings.lastChannel).map((c) => c.id);
     if (off.length) { channels = channels.filter((c) => !off.includes(c.id)); if (off.includes(settings.lockChannel)) settings.lockChannel = null; renumberIptv(); saveChannels(); send('channels-changed'); send('schedule-changed'); log('iptv: removed', off.length, 'stations from services turned off'); }
     saveSettings();
     store.write('liveMisses', {}); // you asked: try everything again now
@@ -2303,7 +2350,7 @@ function handlers() {
   });
   h('guides:refresh', async () => { await refreshGuides(); return guideStatus(); });
   h('guides:status', () => guideStatus());
-  h('live:stations', () => channels.filter((c) => c.iptv && !c.iptv.dead).map((c) => ({ id: c.id, number: c.number, name: c.name, logo: c.iptv.logo, group: c.iptv.group, dead: !!c.iptv.dead, now: liveEntry(c, Date.now()).program || null })));
+  h('live:stations', () => channels.filter((c) => c.iptv && !c.adult && !c.iptv.dead).map((c) => ({ id: c.id, number: c.number, name: c.name, logo: c.iptv.logo, group: c.iptv.group, dead: !!c.iptv.dead, now: liveEntry(c, Date.now()).program || null })));
   // "Mix into a channel": put a live programme (or a whole time slot) into one of your channels.
   h('live:mix', ({ channelId, stationId, start, end, repeat, name }) => {
     const ch = channels.find((c) => c.id === channelId && !c.iptv);
@@ -2321,7 +2368,7 @@ function handlers() {
   });
   // Re-test every live station; mark the ones that are off the air.
   h('iptv:checkAll', async () => {
-    const live = channels.filter((c) => c.iptv);
+    const live = channels.filter((c) => c.iptv && !c.adult);
     let i = 0, up = 0, down = 0;
     await Promise.all(Array.from({ length: 8 }, async () => {
       while (i < live.length) {
@@ -2341,7 +2388,7 @@ function handlers() {
     // Move every live station into a block starting at `start`, keeping their order.
     settings.liveStart = Math.max(1, +start || 100);
     saveSettings();
-    const live = channels.filter((c) => c.iptv).sort((a, b) => a.number - b.number);
+    const live = channels.filter((c) => c.iptv && !c.adult).sort((a, b) => a.number - b.number);
     const mine = new Set(channels.filter((c) => !c.iptv).map((c) => c.number));
     let n = settings.liveStart;
     for (const c of live) { while (mine.has(n)) n++; c.number = n++; }
@@ -2366,7 +2413,7 @@ function handlers() {
     return { autoRemove: !!settings.live?.autoRemove };
   });
   h('iptv:removeDead', () => {
-    const dead = channels.filter((c) => c.iptv?.dead).map((c) => c.id);
+    const dead = channels.filter((c) => c.iptv?.dead && !c.adult).map((c) => c.id);
     channels = channels.filter((c) => !dead.includes(c.id));
     if (dead.includes(settings.lockChannel)) { settings.lockChannel = null; saveSettings(); }
     saveChannels();
@@ -2787,7 +2834,7 @@ app.whenReady().then(async () => {
   fs.mkdirSync(thumbDir, { recursive: true });
   media = await startServer(lib, log, {
     thumbDir,
-    liveFor: (id) => channels.find((c) => c.id === id)?.iptv || null,
+    liveFor: (id) => { const c = channels.find((x) => x.id === id); return c && (!c.adult || (settings.adultOn && profiles.isAdult())) ? c.iptv || null : null; },
     subtitleArgs: async (id, s, t) => {
       const it = lib.items[id];
       const info = it && (await subsInfo(it));
