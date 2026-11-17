@@ -20,6 +20,16 @@ const BUILTIN = { version: require('../../package.json').version, dir: path.join
 const REPO_DEFAULT = (() => { try { return require('../../package.json').homecable.github; } catch { return null; } })();
 
 if (process.env.HOMECABLE_DATA) app.setPath('userData', process.env.HOMECABLE_DATA);
+// Portable HomeCable: a "portable.txt" beside HomeCable.exe keeps everything — settings,
+// channels, downloaded updates — in a "HomeCable Data" folder next to it (a USB stick works),
+// and nothing is written to this PC's own HomeCable folders or Windows' program list.
+const PORTABLE_DIR = (() => { try { const d = path.dirname(process.execPath); return fs.existsSync(path.join(d, 'portable.txt')) ? d : null; } catch { return null; } })();
+if (PORTABLE_DIR && !process.env.HOMECABLE_DATA) {
+  const data = path.join(PORTABLE_DIR, 'HomeCable Data');
+  app.setPath('userData', data);
+  process.env.HOMECABLE_PORTABLE = '1';
+  if (!process.env.HOMECABLE_VERSIONS_DIR) process.env.HOMECABLE_VERSIONS_DIR = path.join(data, 'app-versions');
+}
 
 // Running from source (npm start): no launcher, the app as-is.
 if (!app.isPackaged && !process.env.HOMECABLE_BOOT_TEST) {
@@ -61,7 +71,7 @@ const wantCheck = settings.updateOnStart !== false && !!repo && !updatedArg;
 // every few hours, so an offline PC doesn't keep trying at every start.
 const ffmpegExe = app.isPackaged && process.platform === 'win32' ? path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'ffmpeg-static', 'ffmpeg.exe') : null;
 const repairFile = path.join(core.versionsDir(), 'repair.json');
-const broken = !!ffmpegExe && !fs.existsSync(ffmpegExe) && !!repo && Date.now() - (core.readJson(repairFile, {}).at || 0) > 3 * 3600e3;
+const broken = !process.env.HOMECABLE_PORTABLE && !!ffmpegExe && !fs.existsSync(ffmpegExe) && !!repo && Date.now() - (core.readJson(repairFile, {}).at || 0) > 3 * 3600e3;
 if (broken) log('ffmpeg is missing from the installed program — repairing with the full installer');
 
 // Nothing to show: start the app right now, exactly like a plain start.
@@ -87,7 +97,7 @@ function start(t, splash) {
       app.removeListener('browser-window-created', onWin);
       // The TV window is up: this version works. Close the updater window.
       try { if (!t.builtin) core.markGood(t.version); } catch {}
-      if (app.isPackaged) core.syncWindowsVersion(t.version, process.execPath, log);
+      if (app.isPackaged && !process.env.HOMECABLE_PORTABLE) core.syncWindowsVersion(t.version, process.execPath, log);
       setTimeout(() => { try { splash?.destroy(); } catch {} }, 300);
     });
   };

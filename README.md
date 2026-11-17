@@ -82,7 +82,18 @@ Captured from the real app running only free, open-licensed films. (Smoother ver
 
 > **Note:** the installer is not code-signed yet, so Windows SmartScreen may warn on first run — *More info → Run anyway*. Code signing is on the roadmap.
 
+**Portable (no install):** download `HomeCable-Portable-<version>.zip` from the same release, unzip it anywhere (another drive, a USB stick) and run `HomeCable.exe`. Everything it keeps — channels, settings, updates — stays in the `HomeCable Data` folder beside it, so the whole folder can move with you. It updates itself the same way; it never touches an installed HomeCable on that PC.
+
 **Phones:** Settings → Phone app → pair with the QR code. Requirements: Windows 10/11 64-bit; Android 8+ for the companion APK.
+
+**TVs:** HomeCable for TVs looks and works like the PC program — full-screen channels, the info bar, static between channels, the grid guide with show times. When it opens it asks **Connect to my PC** (pair with the 6-digit code from Settings → Other screens → Pair a phone…) or **Standalone** (no PC: it finds free live channels from the public iptv-org and Free-TV lists, tests them, and builds a guide with show times). Every remote works; Settings → Remote picks the button hints, teaches a button and resets them. Downloads in the release:
+
+| TV | File | How to install |
+|---|---|---|
+| Fire TV, Android TV, Google TV, NVIDIA Shield, Android boxes | `HomeCable-TV-<version>.apk` | Allow "unknown apps", then install it (Fire TV: the Downloader app) |
+| Roku | `HomeCable-Roku-<version>.zip` | Developer Mode (Home ×3, Up ×2, Right, Left, Right, Left, Right), then upload the zip from the Roku's web page |
+| Samsung (2015+) | `HomeCable-Samsung-<version>.wgt` | TV in Developer Mode, installed from a PC with Tizen Studio |
+| LG (webOS) | `HomeCable-LG-<version>.ipk` | LG's Developer Mode app, installed with the webOS CLI |
 
 ## Platforms
 
@@ -91,12 +102,15 @@ Captured from the real app running only free, open-licensed films. (Smoother ver
 | Windows 10/11 (x64) | ✅ Full app |
 | Android phone / tablet | ✅ Companion APK (pairs to your PC) |
 | Chromecast / Google TV | ✅ Casting |
-| Fire TV / Android TV | 🔜 Roadmap |
+| Fire TV / Android TV / Google TV | ✅ TV app (PC or Standalone) |
+| Roku | ✅ TV app (sideloaded) |
+| Samsung / LG smart TVs | ✅ TV app (Developer Mode) |
+| Windows, no install | ✅ Portable zip |
 | iOS | 🔮 Future |
 
 ## Roadmap
 
-- **Fire TV / Android TV app** — D-pad-first, paired to the PC like phones.
+- **TV apps in the stores** — Amazon Appstore, Google Play, Roku, Samsung and LG stores, so no Developer Mode is needed.
 - **Phone APK updates served from the paired PC.**
 - **Code signing** — no more SmartScreen warning.
 - **iOS** — future; not started.

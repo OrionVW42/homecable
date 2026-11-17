@@ -105,7 +105,8 @@ async function latest({ repo, current, timeoutMs, any = false }) { // any: even 
 function plan(info, shell) {
   if (!info) return null;
   if (info.app && shell && info.app.shell === shell) return { kind: 'app', size: info.app.size };
-  if (info.setup) return { kind: 'installer', size: info.setup.size };
+  // Portable copies never run the installer (it would install a normal copy): new app files only.
+  if (info.setup && !process.env.HOMECABLE_PORTABLE) return { kind: 'installer', size: info.setup.size };
   return null;
 }
 
