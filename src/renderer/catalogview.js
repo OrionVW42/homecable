@@ -3,7 +3,7 @@
 // for each title with its story and the ways to play it, or "No streams available". Shows have
 // their seasons and episodes, with their movies, OVAs and specials in the order to watch.
 import { html } from 'htm/preact';
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { tv, Icon, fmtDur } from './util.js';
 
 const SORTS = [['popular', 'Most known'], ['newest', 'Newest'], ['oldest', 'Oldest'], ['az', 'A–Z'], ['za', 'Z–A']];
@@ -52,6 +52,72 @@ function Row({ title, items, onOpen }) {
     <button class="cat-arrow right" aria-label="More" onClick=${() => go(1)}><${Icon.right} /></button></div></section>`;
 }
 
+// Run a torrent search across the turned-on sources and report the best-seeded result per
+// quality as results arrive. onUpdate is called with an updater, like a setState. Returns a stop fn.
+function runTorrentSearch(query, onUpdate) {
+  let sid = null, live = true; const buf = [], pend = [];
+  const take = (m) => {
+    if (m.event === 'search') {
+      buf.push(...(m.results || []).map((r) => ({ ...r, key: `${r.engine}|${r.link || r.page}` })));
+      const best = {};
+      for (const r of buf) { const q = qualityOf(r.name); if (!best[q] || (r.seeds || 0) > (best[q].seeds || 0)) best[q] = r; }
+      if (live) onUpdate((t) => ({ best, done: !!t?.done }));
+    } else if (m.event === 'search-done' && live) onUpdate((t) => ({ best: t?.best || {}, done: true }));
+  };
+  const off = tv.onTorrentSearch((m) => { if (sid == null) { pend.push(m); return; } if (m.searchId === sid) take(m); });
+  tv.searchRun(query, 'all').then((r) => { sid = r.searchId; for (const m of pend) if (m.searchId === sid) take(m); })
+    .catch((e) => { if (live) onUpdate({ best: {}, done: true, error: plain(e) }); });
+  return () => { live = false; off?.(); };
+}
+
+// Like runTorrentSearch, but hands back every result as it arrives (keyed, not grouped) so the
+// caller can sort them into scopes. Calls onResults(resultArray) and onDone(). Returns a stop fn.
+function runTorrentSearchRaw(query, onResults, onDone) {
+  let sid = null, live = true; const pend = [];
+  const take = (m) => {
+    if (m.event === 'search') { if (live && m.results?.length) onResults(m.results.map((r) => ({ ...r, key: `${r.engine}|${r.link || r.page}` }))); }
+    else if (m.event === 'search-done' && live) onDone?.();
+  };
+  const off = tv.onTorrentSearch((m) => { if (sid == null) { pend.push(m); return; } if (m.searchId === sid) take(m); });
+  tv.searchRun(query, 'all').then((r) => { sid = r.searchId; for (const m of pend) if (m.searchId === sid) take(m); })
+    .catch(() => { if (live) onDone?.(); });
+  return () => { live = false; off?.(); };
+}
+
+// What to search for an episode: the show (or part) name with a SxxExx tag for a numbered season,
+// the title on its own for a one-off movie, OVA or special, else the part name plus the number.
+const pad2 = (n) => String(n).padStart(2, '0');
+function episodeQuery(part, e) {
+  const base = part.names?.[0] || part.title || '';
+  if (part.type === 'season' && part.season != null) return `${base} S${pad2(part.season)}E${pad2(e.n)}`;
+  if (part.episodes.length <= 1) return base;
+  return `${base} ${e.n}`;
+}
+
+// Which scope a torrent is, from its release name: the whole series, several seasons, one season,
+// or a single episode. The scope decides which group's play buttons it can fill.
+function scopeOf(name = '') {
+  const n = name.toLowerCase();
+  if (/\bcomplete\b|all\s*seasons|the\s*complete\s*series|\bcollection\b|\bseries\b\s*\d*\s*-\s*\d|\bbatch\b/.test(n)) return 'series';
+  if (/s\d{1,2}\s*[-–]\s*s?\d{1,2}|seasons?\s*\d{1,2}\s*[-–]\s*\d{1,2}/.test(n)) return 'multiseason';
+  if (/s\d{1,2}\s*[ex._-]?\s*e\d{1,3}|\b\d{1,2}x\d{2,3}\b|\bepisode\s*\d+|\b-\s*\d{1,4}\b(?!\s*p)/.test(n)) return 'episode';
+  if (/\bs\d{1,2}\b|season\s*\d{1,2}/.test(n)) return 'season';
+  return 'episode';
+}
+// The season number a result is for, when it names one (used to keep "Season N" to that season).
+function seasonNumOf(name = '') { const m = /\bs(\d{1,2})\b|season\s*(\d{1,2})/i.exec(name); return m ? +(m[1] || m[2]) : null; }
+// The season + episode a single-episode release is for, from the many ways releases name them —
+// SxxExx, 1x03, "Episode 7", "E07", or anime's absolute "Show - 07". null when it isn't one episode.
+function epInfoOf(name = '') {
+  let m;
+  if ((m = /s(\d{1,2})\s*[._-]?\s*e(\d{1,3})/i.exec(name))) return { season: +m[1], ep: +m[2] };
+  if ((m = /\b(\d{1,2})x(\d{2,3})\b/.exec(name))) return { season: +m[1], ep: +m[2] };
+  if ((m = /\bepisode\s*(\d{1,4})/i.exec(name))) return { season: null, ep: +m[1] };
+  if ((m = /(?:^|[\s_.([-])e[p]?\.?\s*(\d{1,4})(?=$|[\s_.)\]v-])/i.exec(name))) return { season: null, ep: +m[1] };
+  if ((m = /\s[-–]\s*(\d{1,4})(?:v\d)?\s*(?=$|[\s[(])/.exec(name))) return { season: null, ep: +m[1] };
+  return null;
+}
+
 // The play buttons on a film's page in torrent mode: one per quality found, each the
 // result with the most seeders, highest quality first. Click one to start and play it.
 function torrentButtons({ tor, busy, playTorrent }) {
@@ -66,36 +132,124 @@ const dayOf = (s) => { const d = s ? new Date(s + 'T12:00:00') : null; return d 
 
 // Seasons and episodes, with movies, OVAs and specials in the order to watch them. A season that
 // has anything to play gets a button, which starts at its next unwatched episode.
-function ShowGuide({ id, onPlayEpisode, toast }) {
+// The pack scopes a series is offered by, highest-reach first; episodes are offered on their rows.
+const SCOPES = [['series', 'Whole series'], ['multiseason', 'Multiple seasons'], ['season', 'This season'], ['other', 'Best matches']];
+
+function ShowGuide({ id, onPlayEpisode, onPlay = () => {}, toast, torrentMode = false, onFullSearch = null, showTitle = '' }) {
   const [g, setG] = useState(null);
   const [err, setErr] = useState('');
   const [sel, setSel] = useState(null);
   const [busy, setBusy] = useState('');
-  useEffect(() => { let live = true; setG(null); setErr(''); setSel(null); tv.catalogGuide(id).then((r) => { if (live) setG(r); }).catch((e) => { if (live) setErr(plain(e)); }); return () => { live = false; }; }, [id]);
-  if (err) return html`<div class="cat-nostream cat-guide-msg">${err}</div>`;
-  if (!g) return html`<div class="muted cat-guide-msg">Getting the episode list…</div>`;
-  if (!g.parts?.length) return html`<div class="cat-guide"><div class="cat-nostream">No streams available</div><div class="muted small cat-guide-msg">No episode list was found for this title.</div></div>`;
-  const has = (e) => !!g.sources[e.key];
-  const anyInPart = (p) => p.episodes.some(has);
-  const lastPart = g.last && g.parts.find((p) => p.episodes.some((e) => e.key === g.last));
-  const part = g.parts.find((p) => p.key === sel) || lastPart || g.parts.find(anyInPart) || g.parts[0];
+  const [tors, setTors] = useState({}); // torrent mode: episode key → { best, done, error } from a manual find
+  const [pool, setPool] = useState([]); // torrent mode: every result found for the viewed part, keyed and deduped
+  const [poolDone, setPoolDone] = useState(false);
+  const stops = useRef({});
+  // Load the episode guide; clear everything (searches included) when the title changes.
+  useEffect(() => {
+    let live = true; setG(null); setErr(''); setSel(null);
+    for (const s of Object.values(stops.current)) s?.(); stops.current = {}; setTors({});
+    tv.catalogGuide(id).then((r) => { if (live) setG(r); }).catch((e) => { if (live) setErr(plain(e)); });
+    return () => { live = false; for (const s of Object.values(stops.current)) s?.(); stops.current = {}; };
+  }, [id]);
+  // Pick the part to show: the one you were last on, else the first with anything to play, else the first.
+  const part = useMemo(() => {
+    if (!g?.parts?.length) return null;
+    const anyInPart = (p) => p.episodes.some((e) => !!g.sources[e.key]);
+    const lastPart = g.last && g.parts.find((p) => p.episodes.some((e) => e.key === g.last));
+    return g.parts.find((p) => p.key === sel) || lastPart || g.parts.find(anyInPart) || g.parts[0];
+  }, [g, sel]);
+  const season = part?.season ?? null;
+  // Torrent mode: search the turned-on sources for the viewed part by the name releases use
+  // (the same name the full-search button uses — anime titles differ from the catalog's), plus a
+  // "complete" query for whole-series packs. Every result is kept so each scope can offer buttons.
+  const searchName = part?.names?.[0] || part?.title || showTitle;
+  useEffect(() => {
+    setPool([]); setPoolDone(false);
+    if (!torrentMode || !searchName) return undefined;
+    const add = (rs) => setPool((prev) => { const seen = new Set(prev.map((r) => r.key)); const more = rs.filter((r) => !seen.has(r.key)); return more.length ? [...prev, ...more] : prev; });
+    const base = season != null ? `${searchName} S${pad2(season)}` : searchName;
+    const queries = [...new Set([searchName, base, `${searchName} complete`])];
+    let left = queries.length;
+    const done = () => { if (--left <= 0) setPoolDone(true); };
+    const offs = queries.map((q) => runTorrentSearchRaw(q, add, done));
+    return () => offs.forEach((o) => o?.());
+  }, [torrentMode, searchName, season]);
+  // Sort the pool: whole-series and multi-season packs, this season's packs, a best-seeded result
+  // per quality per episode (matched by number), and a "Best matches" catch-all so nothing is lost.
+  const groups = useMemo(() => {
+    const out = { series: {}, multiseason: {}, season: {}, other: {} };
+    const eps = new Map(); // episode number → { quality: result }
+    const pick = (b, r) => { const q = qualityOf(r.name); if (!b[q] || (r.seeds || 0) > (b[q].seeds || 0)) b[q] = r; };
+    for (const r of pool) {
+      const sc = scopeOf(r.name);
+      if (sc === 'series' || sc === 'multiseason') { pick(out[sc], r); continue; }
+      if (sc === 'season') { const sn = seasonNumOf(r.name); if (season == null || sn == null || sn === season) pick(out.season, r); else pick(out.other, r); continue; }
+      const info = epInfoOf(r.name); // an episode: file it on its row when we can place it, always keep it in "Best matches"
+      if (info && (info.season == null || season == null || info.season === season)) { let b = eps.get(info.ep); if (!b) eps.set(info.ep, (b = {})); pick(b, r); }
+      pick(out.other, r);
+    }
+    return { ...out, eps };
+  }, [pool, season]);
+
   const start = async (key) => {
     setBusy(key);
     try { onPlayEpisode(await tv.catalogOpenEpisode(id, key)); } catch (e) { toast(plain(e)); }
     setBusy('');
   };
+  // Manual single-episode search, when the pool didn't place one for this episode.
+  const searchEp = (p, e) => {
+    if (e.key in tors) return;
+    setTors((all) => ({ ...all, [e.key]: { best: {}, done: false } }));
+    const upd = (fn) => setTors((all) => ({ ...all, [e.key]: typeof fn === 'function' ? fn(all[e.key]) : fn }));
+    stops.current[e.key] = runTorrentSearch(episodeQuery(p, e), upd);
+  };
+  const playTor = async (r) => {
+    setBusy(r.key);
+    try {
+      const x = await tv.searchPlay(r.engine, { link: r.link, page: r.page, name: r.name });
+      if (x.itemId) onPlay(x.itemId);
+      else toast(`🧲 ${x.name || 'Added'}: it will play once a video is ready, see My torrents`);
+    } catch (e) { toast(plain(e)); }
+    setBusy('');
+  };
+  // An episode's play buttons: from the pool if it matched there, else a manual find, else (once
+  // searched) its own best-per-quality buttons.
+  const epTorrent = (p, e) => {
+    const fromPool = groups.eps.get(e.n);
+    if (fromPool && Object.keys(fromPool).length) return html`<div class="cat-ep-tor">${torrentButtons({ tor: { best: fromPool, done: poolDone }, busy, playTorrent: playTor })}</div>`;
+    return e.key in tors
+      ? html`<div class="cat-ep-tor">${torrentButtons({ tor: tors[e.key], busy, playTorrent: playTor })}</div>`
+      : html`<button class="btn sm ghost" disabled=${!!busy} onClick=${() => searchEp(p, e)}><${Icon.magnet} /> Find torrent</button>`;
+  };
+  const partQuery = (p) => { const base = p.names?.[0] || p.title || showTitle || ''; return p.type === 'season' && p.season != null ? `${base} S${pad2(p.season)}` : base; };
+
+  if (err) return html`<div class="cat-nostream cat-guide-msg">${err}</div>`;
+  if (!g) return html`<div class="muted cat-guide-msg">Getting the episode list…</div>`;
+  if (!g.parts?.length || !part) return html`<div class="cat-guide"><div class="cat-nostream">No streams available</div><div class="muted small cat-guide-msg">No episode list was found for this title.</div></div>`;
+  const has = (e) => !!g.sources[e.key];
+  const anyInPart = (p) => p.episodes.some(has);
   const total = Object.keys(g.sources).length;
   const count = part.episodes.filter(has).length;
   const single = part.episodes.length === 1 && part.type !== 'season';
+  const scopeList = SCOPES.filter(([k]) => k !== 'season' || season != null);
+  const anyScope = scopeList.some(([k]) => Object.keys(groups[k]).length);
   return html`<section class="cat-guide">
-    <div class="cat-guide-top"><h3>Watch order</h3>${total === 0 && html`<div class="cat-nostream">No streams available</div>`}</div>
+    <div class="cat-guide-top"><h3>Watch order</h3>${total === 0 && !torrentMode && html`<div class="cat-nostream">No streams available</div>`}</div>
     <div class="cat-parts" role="tablist">${g.parts.map((p, i) => html`<button role="tab" aria-selected=${p === part} class=${'cat-part' + (p === part ? ' on' : '') + (anyInPart(p) ? ' plays' : '')} title=${p.title} onClick=${() => setSel(p.key)}><small>${i + 1}</small><span>${p.type === 'season' ? p.label : p.title || p.label}</span></button>`)}</div>
     <div class="cat-part-head"><div><b>${part.title}</b><span class="muted small">${[part.year, single ? '' : `${part.episodes.length} episode${part.episodes.length === 1 ? '' : 's'}`, count && !single ? `${count} can play` : ''].filter(Boolean).join(' · ')}</span></div>
-      ${count > 0 ? html`<button class="btn cat-playbtn" disabled=${!!busy} onClick=${() => start(part.key)}><${Icon.play} /> ${busy === part.key ? 'Starting…' : single ? 'Play' : 'Play season'}</button>` : html`<span class="muted small">No streams available</span>`}</div>
+      ${count > 0 ? html`<button class="btn cat-playbtn" disabled=${!!busy} onClick=${() => start(part.key)}><${Icon.play} /> ${busy === part.key ? 'Starting…' : single ? 'Play' : 'Play season'}</button>`
+        : !torrentMode ? html`<span class="muted small">No streams available</span>` : null}</div>
+    ${torrentMode && html`<div class="cat-tor-scopes">
+      ${!anyScope ? html`<div class=${poolDone ? 'cat-nostream' : 'muted'}>${poolDone ? (single ? 'No torrents found. Try turning on more sources, or search all sources.' : 'No series or season packs found — try a single episode below, or search all sources.') : 'Searching your torrent sources…'}</div>`
+        : scopeList.map(([k, label]) => Object.keys(groups[k]).length ? html`<div class="cat-tor-scope"><h4>${k === 'season' ? `Season ${season}` : label}</h4>
+            <div class="cat-streams">${torrentButtons({ tor: { best: groups[k], done: poolDone }, busy, playTorrent: playTor })}</div></div>` : null)}
+    </div>`}
+    ${torrentMode && onFullSearch && html`<button class="btn ghost sm cat-fullsearch" onClick=${() => onFullSearch(partQuery(part))}><${Icon.magnet} /> Search all torrent sources…<small>for this ${part.type === 'season' ? 'season' : 'title'}</small></button>`}
     ${!single && html`<ol class="cat-eps">${part.episodes.map((e) => { const p = g.progress?.[e.key]; const s = g.sources[e.key]; return html`<li class=${'cat-ep' + (s ? ' plays' : '') + (p?.watched ? ' seen' : '')}>
       <span class="cat-ep-n">${e.n}</span>
       <div class="cat-ep-text"><b>${e.title}</b><span class="muted small">${[dayOf(e.air), e.runtime ? fmtDur(e.runtime * 60) : '', s?.sourceName, p?.watched ? '✓ Watched' : p?.resume ? `Stopped at ${fmtDur(p.resume)}` : ''].filter(Boolean).join(' · ')}</span>${e.summary && html`<p>${e.summary}</p>`}</div>
-      ${s && html`<button class="btn sm" disabled=${!!busy} onClick=${() => start(e.key)}><${Icon.play} /> ${busy === e.key ? 'Starting…' : p?.resume && !p.watched ? 'Resume' : 'Play'}</button>`}
+      ${s ? html`<button class="btn sm" disabled=${!!busy} onClick=${() => start(e.key)}><${Icon.play} /> ${busy === e.key ? 'Starting…' : p?.resume && !p.watched ? 'Resume' : 'Play'}</button>`
+        : torrentMode ? epTorrent(part, e) : null}
     </li>`; })}</ol>`}
     <div class="muted small cat-guide-from">Episode list from ${g.from}.</div>
   </section>`;
@@ -141,17 +295,9 @@ function Details({ id, onOpen, onBack, onPlay, toast, torrentMode = false, onFul
   // best-seeded result per quality as it comes in, so each quality shows one play button.
   const title = d?.title;
   useEffect(() => {
-    if (!torrentMode || isShow || !title || own === null || own.length) return;
-    let sid = null, live = true; const buf = [], pend = [];
+    if (!torrentMode || isShow || !title || own === null || own.length) return undefined;
     setTor(null);
-    const take = (m) => {
-      if (m.event === 'search') { buf.push(...(m.results || []).map((r) => ({ ...r, key: `${r.engine}|${r.link || r.page}` }))); const best = {}; for (const r of buf) { const q = qualityOf(r.name); if (!best[q] || (r.seeds || 0) > (best[q].seeds || 0)) best[q] = r; } if (live) setTor((t) => ({ best, done: !!t?.done })); }
-      else if (m.event === 'search-done' && live) setTor((t) => ({ best: t?.best || {}, done: true }));
-    };
-    const off = tv.onTorrentSearch((m) => { if (sid == null) { pend.push(m); return; } if (m.searchId === sid) take(m); });
-    tv.searchRun(title, 'all').then((r) => { sid = r.searchId; for (const m of pend) if (m.searchId === sid) take(m); })
-      .catch((e) => { if (live) setTor({ best: {}, done: true, error: plain(e) }); });
-    return () => { live = false; off?.(); };
+    return runTorrentSearch(title, setTor);
   }, [torrentMode, title, own]);
   const play = async (quality) => {
     setBusy(quality);
@@ -190,7 +336,7 @@ function Details({ id, onOpen, onBack, onPlay, toast, torrentMode = false, onFul
         ${d.resumeAt > 0 && html`<div class="muted small">You stopped at ${fmtDur(d.resumeAt)}.</div>`}
       </div>
     </div>
-    ${d.kind !== 'movie' && html`<${ShowGuide} id=${id} onPlayEpisode=${onPlayEpisode} toast=${toast} />`}
+    ${d.kind !== 'movie' && html`<${ShowGuide} id=${id} onPlayEpisode=${onPlayEpisode} onPlay=${onPlay} toast=${toast} torrentMode=${torrentMode} onFullSearch=${onFullSearch} showTitle=${d.title} />`}
     ${d.sameName?.length > 0 && html`<${Row} title="Others with this name" items=${d.sameName} onOpen=${onOpen} />`}
     ${d.similar?.length > 0 && html`<${Row} title="More like this" items=${d.similar} onOpen=${onOpen} />`}
   </div>`;
